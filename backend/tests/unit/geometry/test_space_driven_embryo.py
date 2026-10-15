@@ -89,7 +89,8 @@ def test_mislabeled_neighbor_still_grows_the_side_where_the_patch_physically_exi
     masks, _locked, quality = build_proximal_domains(
         result, frame, margin, {"distal": surface},
     )
-    assert quality["distal"]["axis_sign"] > 0
+    direction = np.asarray(quality["distal"]["direction_world"], float)
+    assert direction[0] > 0.75
     ids = np.flatnonzero(masks["distal"])
     assert len(ids) >= 40
     assert np.median(np.asarray(result.vertices)[ids, 0]) > 0.0
