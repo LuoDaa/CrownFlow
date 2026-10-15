@@ -10,20 +10,11 @@ import DesignPage from "./app/pages/DesignPage";
 import ReviewPage from "./app/pages/ReviewPage";
 import "./styles/app.css";
 
-const ABUTMENT_FLOW = [
-  { ...FLOW.find((item) => item.id === S.HOME), n: 1, label: "首页" },
-  { ...FLOW.find((item) => item.id === S.CASE), n: 2, label: "订单" },
-  { ...FLOW.find((item) => item.id === S.DESIGN), n: 3, label: "自动设计" },
-  { ...FLOW.find((item) => item.id === S.REVIEW), n: 4, label: "检查 / 导出" },
-];
-
-/** 每一步底部的主动作：只有这一步真的做完了，才允许往下走。 */
-function primaryOf(wf, step, fastAbutment) {
+/** Natural-prep still uses the explicit CAD workflow. Abutment orders use the
+ * Automate-style product shell: Upload -> Results -> Review/Edit on demand. */
+function primaryOf(wf, step) {
   switch (step) {
     case S.CASE:
-      // 基台快速流程的全部动作都在“订单”页完成：创建订单 -> 选牙库/参数 -> 一键生成。
-      // 天然牙仍保持原有显式 Margin / Axis 流程。
-      if (fastAbutment) return null;
       return { label: wf.design ? "下一步：Margin / Axis" : "创建设计", disabled: !wf.caseId || (!wf.design && (!wf.fdi || !wf.supportType)),
         run: () => (wf.design ? wf.go(S.MARGIN) : wf.prepare()) };
     case S.MARGIN:
@@ -55,56 +46,52 @@ function Page({ wf, step }) {
   }
 }
 
-function previousOf(step, fastAbutment) {
-  if (!fastAbutment) return prevStep(step);
-  if (step === S.CASE) return S.HOME;
-  if (step === S.DESIGN) return S.CASE;
-  if (step === S.REVIEW) return S.DESIGN;
-  return null;
-}
-
 export default function App() {
   const wf = useWorkflow();
   const fastAbutment = (wf.design?.support_type || wf.supportType) === "abutment";
-  // Old/resumed abutment designs may have persisted on MARGIN/SETUP.  In the new
-  // product flow those are implementation details, so render them as the order page.
+  const simpleShell = fastAbutment || wf.step === S.HOME || wf.step === S.CASE;
   const displayStep = fastAbutment && [S.MARGIN, S.SETUP].includes(wf.step) ? S.CASE : wf.step;
-  const primary = primaryOf(wf, displayStep, fastAbutment);
-  const previous = previousOf(displayStep, fastAbutment);
+  const primary = simpleShell ? null : primaryOf(wf, displayStep);
+  const previous = simpleShell ? null : prevStep(displayStep);
   const title = stepOf(displayStep).title;
-  const flow = fastAbutment ? ABUTMENT_FLOW : FLOW;
 
   return <div className="cd-app">
-    <header className="cd-topbar">
+    <header className="cd-topbar automate-topbar">
       <button type="button" className="cd-brand" onClick={() => wf.go(S.HOME)}>
         <div className="cd-logo">W</div>
-        <div><b>WelooAI 牙冠自动生成</b></div>
+        <div><b>WelooAI Automate</b><small>CrownFlow 1.0</small></div>
       </button>
-      <div className="cd-crumb">
-        {wf.caseId ? `${wf.detail?.name || "订单"}${wf.fdi ? ` / FDI ${wf.fdi}` : ""}${wf.design ? ` / ${wf.supportType === "abutment" ? "种植基台" : "天然牙预备体"}` : ""}` : "请选择订单"}
-      </div>
+
+      {simpleShell ? <nav className="cd-product-nav" aria-label="订单导航">
+        <button type="button" className={displayStep === S.CASE ? "active" : ""} disabled={wf.busy}
+          onClick={() => wf.caseId ? wf.setStep(S.CASE) : wf.createCase()}>上传</button>
+        <button type="button" className={displayStep === S.HOME ? "active" : ""} disabled={wf.busy}
+          onClick={() => wf.setStep(S.HOME)}>结果</button>
+      </nav> : <div className="cd-crumb">
+        {wf.caseId ? `${wf.detail?.name || "订单"}${wf.fdi ? ` / FDI ${wf.fdi}` : ""}` : ""}
+      </div>}
+
       <div className="cd-top-actions">
+        {wf.caseId && <span className="cd-order-chip">{wf.detail?.name || "当前订单"}{wf.fdi ? ` · FDI ${wf.fdi}` : ""}</span>}
         <span className="cd-state" role="status">{wf.busy ? "处理中…" : "就绪"}</span>
-        <button type="button" className="cd-btn ghost" disabled={wf.busy || !wf.caseId}
-          onClick={() => wf.setMsg("订单文件与设计修订会自动保存在服务端，无需手动保存")}>保存订单</button>
       </div>
     </header>
 
-    <Stepper step={displayStep} facts={wf.facts} busy={wf.busy} onGo={wf.go} flow={flow} />
+    {!simpleShell && <Stepper step={displayStep} facts={wf.facts} busy={wf.busy} onGo={wf.go} flow={FLOW} />}
 
-    <main className="cd-main">
+    <main className={`cd-main ${simpleShell ? "automate-main" : ""}`}>
       <Page wf={wf} step={displayStep} />
     </main>
 
-    <footer className="cd-bottom">
+    {!simpleShell && <footer className="cd-bottom">
       <button type="button" className="cd-btn secondary" disabled={!previous || wf.busy} onClick={() => previous && wf.go(previous)}>
         ← 上一步
       </button>
-      <b role="status">{wf.busy ? "正在处理…" : fastAbutment && displayStep === S.CASE ? "基台自动化订单" : title}</b>
+      <b role="status">{wf.busy ? "正在处理…" : title}</b>
       {primary
         ? <button type="button" className="cd-btn primary" disabled={wf.busy || primary.disabled} onClick={primary.run}>{primary.label}</button>
         : <span className="cd-bottom-spacer" />}
-    </footer>
+    </footer>}
 
     {wf.msg && <div className="cd-toast" role="status">
       <span>{wf.msg}</span>
