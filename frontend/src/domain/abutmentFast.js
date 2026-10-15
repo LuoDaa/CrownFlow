@@ -3,6 +3,10 @@ import adapter from "./adapter";
 
 const IDENTITY = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
 
+const emit = (onProgress, id, label, progress, detail = "") => {
+  onProgress?.({ id, label, progress, detail, at: Date.now() });
+};
+
 async function inputDigest(designId) {
   const status = await api.designStatus(designId);
   if (!status?.input_digest) throw new Error("无法读取当前设计输入版本");
@@ -23,21 +27,16 @@ function referencesReady(eligibility) {
   );
 }
 
-/**
- * Existing-abutment fast path.
- *
- * No routine Margin/Axis/Neighbor clicking is required.  The incoming upper/lower
- * scans are assumed to already be bite aligned; the current relative pose is
- * recorded as REGISTERED_EXPORT (identity transform).
- */
-export async function prepareAbutmentOrder({ caseId, fdi, designId = null }) {
+export async function prepareAbutmentOrder({ caseId, fdi, designId = null, onProgress = null }) {
   if (!caseId || !fdi) throw new Error("请先选择牙位并导入病例");
 
+  emit(onProgress, "DESIGN", "创建/恢复设计", 4);
   const design = designId
     ? await api.design(designId)
     : await adapter.setToothPosition({ caseId, fdi, supportType: "abutment" });
   if (design.support_type !== "abutment") throw new Error("当前设计不是基台冠，不能进入快速流程");
 
+  emit(onProgress, "MARGIN", "识别基台与 Margin", 10);
   const draft = await adapter.detectMargin({
     designId: design.id,
     axisConfirmed: false,
@@ -52,14 +51,17 @@ export async function prepareAbutmentOrder({ caseId, fdi, designId = null }) {
     throw new Error("基台自动插入方向无效");
   }
 
+  emit(onProgress, "AXIS", "确认 Margin 与插入方向", 18);
   await adapter.saveMarginPoints(design.id, margin);
   await adapter.setInsertionAxis(design.id, axis, "CAD1 abutment automatic insertion axis");
 
+  emit(onProgress, "FRAME", "建立患者坐标系", 24);
   await autoFitRequest(design.id, "abutment-frame", "POST", {
     expected_input_digest: await inputDigest(design.id),
     confirmed: true,
   });
 
+  emit(onProgress, "BITE", "锁定当前上下颌咬合位姿", 30);
   await api.confirmBite(design.id, {
     expected_input_digest: await inputDigest(design.id),
     confirmed: true,
@@ -68,54 +70,58 @@ export async function prepareAbutmentOrder({ caseId, fdi, designId = null }) {
     units: "mm",
   });
 
-  // Wider v2 search: coronal-band + mesiodistal percentile + connected patch.
+  emit(onProgress, "NEIGHBORS", "自动识别近中/远中邻牙", 36);
   const neighbors = await autoFitRequest(design.id, "auto-neighbors", "POST", {
     expected_input_digest: await inputDigest(design.id),
     confirmed: true,
     patch_radius_mm: 4.25,
   });
 
+  emit(onProgress, "READY", "自动参考建立完成", 40);
   return { design, margin, axis, neighbors };
 }
 
-export async function selectAbutmentTemplate({ designId, library, params }) {
+export async function selectAbutmentTemplate({ designId, library, params, onProgress = null }) {
   if (!designId) throw new Error("请先创建基台订单");
   if (!library) throw new Error("请选择牙库");
+  emit(onProgress, "PROFILE", "保存设计参数", 42);
   await adapter.saveProfile(designId, params);
+  emit(onProgress, "TEMPLATE", `载入牙库 ${library}`, 46);
   const candidate = await adapter.selectCrownTemplate(designId, library);
   await adapter.confirmTemplateReference(designId, candidate.id);
+  emit(onProgress, "TEMPLATE_READY", "模板参考已确认", 48);
   return candidate;
 }
 
-async function ensureAutomaticReferences(designId) {
+async function ensureAutomaticReferences(designId, onProgress = null) {
+  emit(onProgress, "SYNC", "同步服务端设计状态", 3);
   let eligibility = await api.generationEligibility(designId);
   if (referencesReady(eligibility)) return eligibility;
 
-  // Resumed/older cases can have stale frame/bite/neighbor revisions. Rebuild
-  // them automatically instead of asking the user to click confirmation pages.
   const design = await api.design(designId);
   await prepareAbutmentOrder({
     caseId: design.case_id,
     fdi: String(design.target_fdi),
     designId,
+    onProgress,
   });
   eligibility = await api.generationEligibility(designId);
   return eligibility;
 }
 
-export async function generateAbutmentOrder({ designId, params }) {
+export async function generateAbutmentOrder({ designId, params, onProgress = null }) {
   if (!designId) throw new Error("请先创建基台订单");
 
-  // Reference preparation comes first because a rebuilt Margin/Axis revision may
-  // invalidate downstream digests. Save the user's profile only after geometry
-  // references are current.
-  let eligibility = await ensureAutomaticReferences(designId);
+  emit(onProgress, "SYNC", "检查自动设计输入", 2);
+  let eligibility = await ensureAutomaticReferences(designId, onProgress);
+
+  emit(onProgress, "PROFILE", "同步牙冠参数", 8);
   await adapter.saveProfile(designId, params);
   eligibility = await api.generationEligibility(designId);
 
-  // One last automatic neighbor retry after profile persistence. No user click.
   let states = neighborStates(eligibility);
   if (states.length !== 2 || !states.every((state) => ["CONFIRMED", "ABSENT"].includes(state))) {
+    emit(onProgress, "NEIGHBORS", "重新建立邻牙参考", 14);
     await autoFitRequest(designId, "auto-neighbors", "POST", {
       expected_input_digest: await inputDigest(designId),
       confirmed: true,
@@ -126,6 +132,7 @@ export async function generateAbutmentOrder({ designId, params }) {
   }
 
   if (!eligibility?.bite_confirmed) {
+    emit(onProgress, "BITE", "重新确认静态咬合", 18);
     await api.confirmBite(designId, {
       expected_input_digest: await inputDigest(designId),
       confirmed: true,
@@ -136,9 +143,6 @@ export async function generateAbutmentOrder({ designId, params }) {
     eligibility = await api.generationEligibility(designId);
   }
 
-  // Input/reference failures remain hard failures because the solver has nothing
-  // meaningful to operate on. Geometry-quality gates after a candidate exists are
-  // deliberately non-blocking in the current engineering test flow.
   if (states.length !== 2 || !states.every((state) => ["CONFIRMED", "ABSENT"].includes(state))) {
     const text = Object.entries(eligibility?.neighbors || {})
       .map(([side, state]) => `${side}:${state}`)
@@ -151,32 +155,49 @@ export async function generateAbutmentOrder({ designId, params }) {
     throw new Error(blockers || "自动参考已建立，但当前参数没有形成可执行的邻接/对颌约束");
   }
 
+  // The backend candidate call now performs the actual patient-driven CAD chain:
+  // patient-space prefit -> Margin cervical fit -> proximal envelope -> antagonist
+  // height/occlusal refinement -> intaglio preflight.
+  emit(onProgress, "PREFIT", "患者空间整体适配", 28, "按邻牙宽度与咬合空间调整模板整体尺寸");
+  emit(onProgress, "CERVICAL", "颈缘贴合 Margin", 36);
+  emit(onProgress, "PROXIMAL", "生成近远中邻接形态", 48);
+  emit(onProgress, "OCCLUSAL", "生成冠高与咬合面适配", 62);
   const candidate = await adapter.generateInitialCrown(designId, { kind: "AUTO" });
 
-  // Engineering test mode: once an AUTO candidate artifact exists, publish it as
-  // the current outer even when PROXIMAL/OCCLUSAL reports CONSTRAINT_CONFLICT.
-  // The reports are preserved for diagnostics; they no longer stop the user from
-  // entering the 3D page and visually inspecting the actual geometry.
+  const payloadStages = candidate?.payload?.stages || [];
+  const stageNames = new Set(payloadStages.map((stage) => stage?.stage));
+  if (stageNames.has("GLOBAL_PREFIT")) emit(onProgress, "PREFIT_DONE", "患者空间整体适配完成", 68);
+  if (stageNames.has("CERVICAL_FIT")) emit(onProgress, "CERVICAL_DONE", "Margin 颈缘约束完成", 72);
+  if (stageNames.has("PROXIMAL")) emit(onProgress, "PROXIMAL_DONE", "邻接形态完成", 76);
+  if (stageNames.has("OCCLUSAL") || stageNames.has("OCCLUSAL_HEIGHT_PREFIT")) emit(onProgress, "OCCLUSAL_DONE", "咬合适配完成", 82);
+
+  emit(onProgress, "PUBLISH", "发布患者化外冠", 86);
   await adapter.confirmCrownCandidate(designId, candidate.id);
 
   let final = null;
   let finalizeWarning = null;
   try {
+    emit(onProgress, "INTAGLIO", "根据基台生成内冠", 90);
     final = await adapter.finalize(designId, { preserveCervical: true });
+    emit(onProgress, "FINAL", "连接内外冠并生成最终 STL", 96);
   } catch (error) {
-    // Final/intaglio/QC is best-effort while geometry is under active development.
-    // Keep the accepted outer available in 3D instead of turning a downstream
-    // quality gate into a dead end for the whole CAD test flow.
     finalizeWarning = error?.message || "最终内冠/QC 尚未完成";
   }
 
   const stageWarnings = (candidate?.payload?.stages || [])
     .filter((stage) => stage?.status && stage.status !== "PASS_ENGINEERING" && stage.status !== "PLACED")
     .map((stage) => `${stage.stage || "阶段"}:${stage.reason || stage.status}`);
+  (candidate?.payload?.warnings || []).forEach((warning) => {
+    const text = `${warning.stage || "检查"}:${warning.reason || "REVIEW_REQUIRED"}`;
+    if (!stageWarnings.includes(text)) stageWarnings.push(text);
+  });
   if (candidate?.payload?.status && candidate.payload.status !== "PASS_ENGINEERING") {
     stageWarnings.push(`candidate:${candidate.payload.status}`);
   }
   if (finalizeWarning) stageWarnings.push(`finalize:${finalizeWarning}`);
+
+  emit(onProgress, "DONE", final ? "自动牙冠设计完成" : "外冠完成，可进入 3D 检查", 100,
+    stageWarnings.length ? `${stageWarnings.length} 项工程提示` : "");
 
   return { candidate, final, eligibility, warnings: stageWarnings };
 }
