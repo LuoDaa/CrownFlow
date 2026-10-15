@@ -6,43 +6,65 @@ import { generateAbutmentOrder, prepareAbutmentOrder, selectAbutmentTemplate } f
 const FDI_OPTIONS = ["16", "15", "14", "13", "12", "11", "21", "22", "23", "24", "25", "26",
   "36", "35", "34", "33", "32", "31", "41", "42", "43", "44", "45", "46", "37", "47"];
 
+const MODEL_PARAM_KEYS = new Set([
+  "cement_gap_mm",
+  "cement_gap_start_mm",
+  "minimum_thickness_mm",
+  "proximal_target_mm",
+  "occlusal_target_mm",
+  "margin_band_mm",
+  "machine_axes",
+]);
+
+const MODEL_PARAMS = [...CORE_PARAMS, ...ADVANCED_PARAMS]
+  .filter((spec) => MODEL_PARAM_KEYS.has(spec.key) && !spec.fixed);
+
 function Upload({ label, mark, hint, name, disabled, onPick }) {
   const input = useRef(null);
-  return <label className={`cd-upload ${name ? "done" : ""}`}>
+  return <label className={`cd-upload cd-order-upload ${name ? "done" : ""}`}>
     <input ref={input} type="file" accept=".stl,.STL,.dcm,.DCM" disabled={disabled}
       onChange={(event) => { const file = event.target.files?.[0]; if (file) onPick(file); }} />
     <div className={`cd-upload-mark ${mark === "L" ? "lower" : ""}`}>{mark}</div>
-    <b>{label}</b>
-    <span>{name || `选择${label}文件`}</span>
-    <small>{hint}</small>
+    <div className="cd-order-upload-copy">
+      <b>{label}</b>
+      <span>{name || `选择${label}文件`}</span>
+      <small>{hint}</small>
+    </div>
+    <div className="cd-order-upload-state">{name ? "已导入" : "上传"}</div>
   </label>;
 }
 
-function ParamRow({ spec, value, disabled, onChange }) {
-  const locked = disabled || spec.fixed === true;
-  return <div className={`cd-param ${spec.fixed ? "fixed" : ""}`}>
-    <span className="cd-param-label"><b>{spec.label}</b><small>{spec.hint}</small></span>
-    <div className="cd-param-input">
-      <input type="number" min={spec.min} max={spec.max} step={spec.step} disabled={locked}
-        value={value ?? (spec.optional ? "" : 0)} placeholder={spec.optional ? "不设置" : ""}
-        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} />
-      <em>{spec.key === "machine_axes" ? "轴" : "mm"}</em>
+function ParamCard({ spec, value, disabled, onChange }) {
+  const preset = DEFAULT_PARAMS[spec.key];
+  const unit = spec.key === "machine_axes" ? "轴" : "mm";
+  return <label className="cd-model-param">
+    <div className="cd-model-param-head">
+      <span><b>{spec.label}</b><small>{spec.hint || "模型生成参数"}</small></span>
+      <em>预设 {preset}{unit === "mm" ? " mm" : ""}</em>
     </div>
-  </div>;
+    <div className="cd-model-param-control">
+      <input type="number" min={spec.min} max={spec.max} step={spec.step} disabled={disabled}
+        value={value ?? ""} placeholder={spec.optional ? "不设置" : String(preset ?? "")}
+        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} />
+      <span>{unit}</span>
+    </div>
+  </label>;
 }
 
 function GenerationProgress({ value }) {
   if (!value) return null;
   const progress = Math.max(0, Math.min(100, Number(value.progress || 0)));
   return <div className="cd-generation-progress" role="status" aria-live="polite">
-    <div style={{ display:"flex", justifyContent:"space-between", gap:12, marginBottom:6 }}>
-      <b>{value.label}</b><span>{Math.round(progress)}%</span>
-    </div>
-    <div style={{ height:8, borderRadius:999, background:"rgba(128,128,128,.2)", overflow:"hidden" }}>
-      <div style={{ width:`${progress}%`, height:"100%", background:"currentColor", transition:"width .25s ease" }} />
-    </div>
-    {value.detail && <small style={{ display:"block", marginTop:6 }}>{value.detail}</small>}
+    <div className="cd-generation-progress-head"><b>{value.label}</b><span>{Math.round(progress)}%</span></div>
+    <div className="cd-generation-progress-track"><div style={{ width:`${progress}%` }} /></div>
+    {value.detail && <small>{value.detail}</small>}
   </div>;
+}
+
+function assetName(assets, kind) {
+  const asset = assets.find((item) => item.kind === kind);
+  if (!asset) return "";
+  return asset.original_name || asset.filename || asset.name || "已导入";
 }
 
 export default function CasePage({ wf }) {
@@ -54,12 +76,23 @@ export default function CasePage({ wf }) {
   const [fastBusy, setFastBusy] = useState(false);
   const [fastMsg, setFastMsg] = useState("");
   const [fastProgress, setFastProgress] = useState(null);
-  const [advanced, setAdvanced] = useState(false);
   const [templatesRequested, setTemplatesRequested] = useState(false);
 
   const bothJaws = has("upper") && has("lower");
   const fastPrepared = Boolean(wf.design && wf.marginConfirmed && wf.axisConfirmed && wf.frameConfirmed && wf.serverStatus?.bite?.pose_confirmed);
   const neighbors = wf.serverStatus?.neighbors || {};
+  const selectedLibrary = wf.selectedTemplate?.library || wf.library || "";
+  const orderReady = Boolean(bothJaws && fdi && supportType);
+
+  useEffect(() => {
+    setFastBusy(false);
+    setFastMsg("");
+    setFastProgress(null);
+    setTemplatesRequested(false);
+    wf.setLibrary("");
+    // 病例相关的页面缓存必须随 caseId 清空；参数故意保留，作为用户偏好跨病例复用。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wf.caseId]);
 
   useEffect(() => { setTemplatesRequested(false); }, [wf.design?.id]);
   useEffect(() => {
@@ -85,7 +118,7 @@ export default function CasePage({ wf }) {
       wf.setStep("case");
       const detected = Object.values(result.neighbors?.neighbors || {}).filter((item) => item.confirmation_status === "CONFIRMED").length;
       setFastProgress({ id:"READY", label:"自动准备完成", progress:100, detail:`找到 ${detected} 个邻牙参考面` });
-      setFastMsg(`基台自动准备完成：Margin / Axis / Bite 已确认，自动找到 ${detected} 个邻牙接触面。`);
+      setFastMsg(`自动参考已建立：Margin / Axis / Bite 完成，找到 ${detected} 个邻牙接触面。`);
     } catch (error) {
       setFastMsg(`自动准备未完成：${error.message}`);
     } finally { setFastBusy(false); }
@@ -99,7 +132,7 @@ export default function CasePage({ wf }) {
       await wf.resumeDesign(wf.design.id, wf.caseId);
       wf.setStep("case");
       setFastProgress({ id:"TEMPLATE_READY", label:"牙库模板已确认", progress:100 });
-      setFastMsg(`已选定 ${name} 作为解剖模板。模板只是起始形态，生成时会按邻牙和对颌真实变形。`);
+      setFastMsg(`已选定 ${name}。生成时会按当前病例邻牙、对颌和基台空间变形。`);
     } catch (error) {
       setFastMsg(`牙库选择失败：${error.message}`);
     } finally { setFastBusy(false); }
@@ -124,92 +157,147 @@ export default function CasePage({ wf }) {
     } finally { setFastBusy(false); }
   };
 
-  return <div className="cd-page">
-    <PageHead eyebrow={fastAbutment ? "ABUTMENT FAST FLOW" : "STEP 2"}
-      title={fastAbutment ? "创建基台冠订单" : "病例信息"}
-      hint={fastAbutment
-        ? "上传已经 Bite 好的上下颌 STL，选择牙位、牙库和参数后直接生成。Margin、插入方向、静态咬合与邻牙参考由系统自动建立。"
-        : "导入上颌与下颌文件，并确认目标牙位与修复类型。上下颌使用病例文件中的原始相对位置。"} />
+  const primaryAction = () => {
+    if (!supportType) return { label:"请选择修复类型", disabled:true };
+    if (!orderReady) return { label:"请先上传上下颌并选择牙位", disabled:true };
+    if (!fastAbutment) return {
+      label: wf.design ? "继续天然牙完整流程" : "创建天然牙设计并进入 Margin / Axis",
+      disabled: wf.busy || fastBusy,
+      run: () => (wf.design ? wf.go("margin") : wf.prepare()),
+    };
+    if (!fastPrepared) return {
+      label: wf.design ? "继续自动准备病例" : "准备病例并读取牙模板",
+      disabled: wf.busy || fastBusy,
+      run: prepareFast,
+    };
+    if (!wf.selectedTemplate) return { label:"请选择牙模板", disabled:true };
+    return {
+      label: fastBusy ? "正在自动生成…" : "生成牙冠",
+      disabled: wf.busy || fastBusy,
+      run: runFastGeneration,
+    };
+  };
 
-    <div className="cd-grid two">
-      <Panel title={fastAbutment ? "1 · 上传已咬合模型" : "病例文件"} subtitle="Upper / Lower 保留输入相对坐标">
-        <div className="cd-uploads">
-          <Upload label="Upper Jaw" mark="U" hint="STL / DCM · 已 Bite" name={has("upper") ? "已导入" : ""}
-            disabled={wf.busy || fastBusy || !wf.caseId} onPick={(file) => wf.upload("upper", file)} />
-          <Upload label="Lower Jaw" mark="L" hint="STL / DCM · 已 Bite" name={has("lower") ? "已导入" : ""}
-            disabled={wf.busy || fastBusy || !wf.caseId} onPick={(file) => wf.upload("lower", file)} />
-        </div>
-        <Notice>{fastAbutment
-          ? "快速流程不会重新做 Bite 配准：上传的 Upper / Lower 必须已经处于正确咬合位置。"
-          : "Upper / Lower 直接使用病例文件里的相对位置，前端不做配准、不改变两者相对姿态。"}</Notice>
-      </Panel>
+  const action = primaryAction();
 
-      <Panel title={fastAbutment ? "2 · 订单信息" : "设计对象"}>
-        <Field label="牙位 FDI" hint={fdi ? "" : "必填"}>
-          <select value={fdi} disabled={!!wf.design || wf.busy || fastBusy} onChange={(event) => wf.setFdi(event.target.value)}>
-            <option value="">请选择</option>
-            {FDI_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-        </Field>
-        <Field label="修复类型">
-          <Segmented value={supportType} disabled={!!wf.design || wf.busy || fastBusy}
-            options={[{ value: "abutment", label: "种植基台 · 快速" }, { value: "prep", label: "天然牙 · 完整流程" }]}
-            onChange={wf.setSupportType} />
-        </Field>
-        <Field label="订单编号">
-          <input type="text" readOnly value={wf.detail?.case?.name || wf.detail?.name || "—"} />
-        </Field>
-
-        {fastAbutment ? <>
-          {!fastPrepared && <button type="button" className="cd-btn primary full"
-            disabled={wf.busy || fastBusy || !bothJaws || !fdi} onClick={prepareFast}>
-            {fastBusy ? "正在自动准备…" : wf.design ? "继续自动准备基台" : "创建订单并自动识别基台"}
-          </button>}
-          {fastPrepared && <Notice tone="ok">
-            自动准备完成：Margin、插入方向、PatientFrame、Bite 已确认；近中 {neighbors.mesial?.confirmation_status || "—"} / 远中 {neighbors.distal?.confirmation_status || "—"}。
-          </Notice>}
-          {fastProgress && <GenerationProgress value={fastProgress} />}
-          {fastMsg && <Notice tone={/失败|未完成|停止/.test(fastMsg) ? "warn" : "ok"}>{fastMsg}</Notice>}
-        </> : <>
-          {wf.design && <Notice tone="ok">设计已创建：FDI {wf.design.target_fdi} · 天然牙预备体</Notice>}
-          {!wf.design && <Notice>选择牙位与修复类型后，用底部“创建设计”进入 Margin / Axis 复核。</Notice>}
-        </>}
-      </Panel>
+  return <div className="cd-page cd-order-page">
+    <div className="cd-order-topline">
+      <button type="button" className="cd-order-back" disabled={wf.busy || fastBusy} onClick={() => wf.go("home")}>← 返回首页</button>
+      <span>病例资料只属于当前病例 · 设计参数会保留为下一病例的偏好</span>
     </div>
 
-    {fastAbutment && fastPrepared && <div className="cd-grid two">
-      <Panel title="3 · 选择牙库" subtitle="牙库只提供解剖初始形态；不是最终患者牙冠">
-        {(wf.templates.libraries || []).length > 0 ? <div className="cd-templates">
+    <PageHead eyebrow="NEW CROWN ORDER" title="新建牙冠病例"
+      hint="上传病例、选择牙位与修复类型、设置实际参与生成的参数并选择牙模板。所有输入都保留在这一页，不再把参数或牙库藏到下一步。" />
+
+    <div className="cd-order-flowline" aria-label="当前页面包含的输入">
+      <span><i>1</i>上传病例</span><b>→</b><span><i>2</i>牙位 / 修复</span><b>→</b><span><i>3</i>生成参数</span><b>→</b><span><i>4</i>牙模板</span>
+    </div>
+
+    <Panel title="病例与设计对象" subtitle="Upper / Lower 使用原始相对坐标；快速基台流程要求上传文件已经 Bite 对齐">
+      <div className="cd-order-intake-grid">
+        <div className="cd-order-scans">
+          <div className="cd-order-section-label"><b>上传病例</b><span>{bothJaws ? "2 / 2 已完成" : `${Number(has("upper")) + Number(has("lower"))} / 2 已完成`}</span></div>
+          <div className="cd-uploads cd-order-uploads">
+            <Upload label="Upper Jaw" mark="U" hint="STL / DCM · 保留原始坐标" name={assetName(assets, "upper")}
+              disabled={wf.busy || fastBusy || !wf.caseId} onPick={(file) => wf.upload("upper", file)} />
+            <Upload label="Lower Jaw" mark="L" hint="STL / DCM · 保留原始坐标" name={assetName(assets, "lower")}
+              disabled={wf.busy || fastBusy || !wf.caseId} onPick={(file) => wf.upload("lower", file)} />
+          </div>
+        </div>
+
+        <div className="cd-order-meta">
+          <div className="cd-order-section-label"><b>设计对象</b><span>{wf.detail?.case?.name || wf.detail?.name || "当前病例"}</span></div>
+          <Field label="牙位 FDI" hint={fdi ? "已选择" : "必填"}>
+            <select value={fdi} disabled={!!wf.design || wf.busy || fastBusy} onChange={(event) => wf.setFdi(event.target.value)}>
+              <option value="">请选择牙位</option>
+              {FDI_OPTIONS.map((item) => <option key={item} value={item}>FDI {item}</option>)}
+            </select>
+          </Field>
+          <Field label="修复类型" hint="必填">
+            <Segmented value={supportType} disabled={!!wf.design || wf.busy || fastBusy}
+              options={[{ value: "abutment", label: "种植基台冠" }, { value: "prep", label: "天然牙冠" }]}
+              onChange={wf.setSupportType} />
+          </Field>
+          <div className="cd-order-type-note">
+            {fastAbutment
+              ? <><b>自动基台流程</b><span>系统自动建立 Margin、插入轴、邻牙与静态咬合参考，不跳转确认页。</span></>
+              : supportType === "prep"
+                ? <><b>天然牙完整流程</b><span>当前页收集病例与参数；创建后进入 Margin / Axis 专业复核。</span></>
+                : <><b>请选择修复类型</b><span>不同类型会使用不同的后续几何流程。</span></>}
+          </div>
+        </div>
+      </div>
+    </Panel>
+
+    <Panel title="模型生成参数" subtitle="只保留当前后端确实参与几何生成的参数；没有实现或当前固定的设置不显示">
+      <div className="cd-parameter-toolbar">
+        <div><b>标准预设</b><span>新病例沿用你上一次调整的参数；病例资料、牙位和牙模板不会沿用。</span></div>
+        <button type="button" className="cd-btn ghost" disabled={wf.busy || fastBusy}
+          onClick={() => wf.setParams({ ...DEFAULT_PARAMS })}>恢复标准预设</button>
+      </div>
+      <div className="cd-model-params">
+        {MODEL_PARAMS.map((spec) => <ParamCard key={spec.key} spec={spec} value={wf.params[spec.key]}
+          disabled={wf.busy || fastBusy}
+          onChange={(value) => wf.setParams((params) => ({ ...params, [spec.key]: value }))} />)}
+      </div>
+      <div className="cd-order-param-legend">
+        <span><b>Cement Gap / 起隙位置</b> 控制内冠空间</span>
+        <span><b>Minimum Thickness</b> 控制外冠最小材料空间</span>
+        <span><b>Proximal / Occlusal</b> 控制邻接与对颌目标</span>
+        <span><b>边缘带 / 加工轴</b> 参与最终边缘过渡与插入方向 Blockout</span>
+      </div>
+    </Panel>
+
+    <Panel title="牙模板" subtitle="模板只提供牙体解剖身份；最终尺寸与接触由当前病例空间约束决定">
+      {!supportType && <Notice>先选择修复类型和牙位。牙模板区域不会消失，满足当前流程前置条件后会在这里直接加载。</Notice>}
+
+      {fastAbutment && !fastPrepared && <div className="cd-template-empty-state">
+        <div className="cd-template-empty-icon">◇</div>
+        <div><b>牙库将在本页原位加载</b><p>上传上下颌并选择牙位后，点击下方“准备病例并读取牙模板”。系统完成自动参考后不会跳页。</p></div>
+      </div>}
+
+      {supportType === "prep" && !wf.design && <div className="cd-template-empty-state">
+        <div className="cd-template-empty-icon">◇</div>
+        <div><b>天然牙模板入口保留在当前病例页</b><p>天然牙仍需 Margin / Axis 复核后才能确认模板几何；当前参数会直接带入后续生成，不再另设参数页。</p></div>
+      </div>}
+
+      {fastAbutment && fastPrepared && ((wf.templates.libraries || []).length > 0
+        ? <div className="cd-templates cd-order-templates">
           {wf.templates.libraries.map((library) => {
-            const selected = wf.selectedTemplate?.library === library.name;
+            const selected = selectedLibrary === library.name;
             const unavailable = library.status === "UNAVAILABLE";
             return <button key={library.name} type="button" className={`cd-template ${selected ? "active" : ""}`}
               disabled={wf.busy || fastBusy || unavailable} onClick={() => chooseLibrary(library.name)}>
-              <div className="cd-template-shape">{fdi}</div>
+              <div className="cd-template-shape"><span>FDI</span><strong>{fdi}</strong></div>
               <b>{library.label || library.name}</b>
-              <small>{selected ? "已选定" : unavailable ? library.reason || "不可用" : "点击选定"}</small>
+              <small>{selected ? "当前模板" : unavailable ? library.reason || "不可用" : "选择此模板"}</small>
             </button>;
           })}
-        </div> : <Notice>{wf.busy || fastBusy ? "正在读取牙库…" : "当前牙位没有可用模板牙库。"}</Notice>}
-        {wf.selectedTemplate && <Notice tone="ok">当前参考牙型：{wf.selectedTemplate.library}</Notice>}
-      </Panel>
-
-      <Panel title="4 · 设计参数" subtitle="确认后直接自动生成，不再经过 Margin / Axis 页面">
-        {CORE_PARAMS.filter((spec) => !spec.fixed).map((spec) => <ParamRow key={spec.key} spec={spec} value={wf.params[spec.key]}
-          disabled={wf.busy || fastBusy} onChange={(value) => wf.setParams((params) => ({ ...params, [spec.key]: value }))} />)}
-        <details className="cd-advanced" open={advanced} onToggle={(event) => setAdvanced(event.target.open)}>
-          <summary>高级参数</summary>
-          {ADVANCED_PARAMS.filter((spec) => !spec.fixed).map((spec) => <ParamRow key={spec.key} spec={spec} value={wf.params[spec.key]}
-            disabled={wf.busy || fastBusy} onChange={(value) => wf.setParams((params) => ({ ...params, [spec.key]: value }))} />)}
-        </details>
-        <div className="cd-btn-row">
-          <button type="button" className="cd-btn ghost" disabled={wf.busy || fastBusy}
-            onClick={() => wf.setParams({ ...DEFAULT_PARAMS })}>恢复默认</button>
-          <button type="button" className="cd-btn primary" disabled={wf.busy || fastBusy || !wf.selectedTemplate}
-            onClick={runFastGeneration}>{fastBusy ? "正在自动生成…" : "直接生成牙冠"}</button>
         </div>
-        <p className="cd-hint">生成顺序：患者空间整体适配 → Margin 颈缘 → 左右邻牙邻接形态 → 对颌冠高/咬合面 → 基台内冠 → Final/QC。</p>
-      </Panel>
+        : <div className="cd-template-empty-state"><div className="cd-template-empty-icon">…</div><div><b>正在读取牙库</b><p>如果长时间没有可选模板，请检查当前 FDI 是否配置了对应牙库。</p></div></div>)}
+
+      {wf.selectedTemplate && <div className="cd-selected-template-strip">
+        <span>当前模板</span><b>{wf.selectedTemplate.library}</b><small>只作为解剖胚子，生成时会按病例空间变形</small>
+      </div>}
+    </Panel>
+
+    {(fastProgress || fastMsg) && <div className="cd-order-status-card">
+      {fastProgress && <GenerationProgress value={fastProgress} />}
+      {fastMsg && <Notice tone={/失败|未完成|停止/.test(fastMsg) ? "warn" : "ok"}>{fastMsg}</Notice>}
     </div>}
+
+    <div className="cd-order-actionbar">
+      <div className="cd-order-readiness">
+        <span className={bothJaws ? "ok" : ""}>{bothJaws ? "✓" : "1"} 上下颌</span>
+        <span className={fdi ? "ok" : ""}>{fdi ? "✓" : "2"} 牙位</span>
+        <span className={supportType ? "ok" : ""}>{supportType ? "✓" : "3"} 修复类型</span>
+        {fastAbutment && <span className={wf.selectedTemplate ? "ok" : ""}>{wf.selectedTemplate ? "✓" : "4"} 牙模板</span>}
+      </div>
+      <div className="cd-order-actioncopy">
+        <b>{fastAbutment ? (fastPrepared ? "病例参考已建立" : "准备后仍停留在本页") : "天然牙进入专业复核"}</b>
+        <span>{fastAbutment ? "参数已就绪后直接生成" : "参数会随设计保存，不需要再次填写"}</span>
+      </div>
+      <button type="button" className="cd-btn primary cd-order-primary" disabled={action.disabled} onClick={action.run}>{action.label}</button>
+    </div>
   </div>;
 }
