@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 from fastapi import HTTPException
-from .design_dependencies import confirmed_inputs, dependency_digest, file_digest
+from .design_dependencies import confirmed_inputs, dependency_digest, file_digest, require_current_outer
 
 LATEST_AUTO_NEIGHBOR_SCOPE = 'AUTO_CAD1_CORONAL_MD_NEIGHBOR_V4'
 
@@ -31,10 +31,6 @@ def eligibility(d):
         item=neighbors.get(side,{})
         valid=bool(frame and item.get('frame_revision_id')==frame['revision_id'])
         scope=str(item.get('scope') or '')
-        # Automatic references are algorithm-versioned geometry artifacts.  A
-        # previously CONFIRMED V2/V3 patch is not safe to reuse after the V4
-        # contact-wall/halo change: direct /workflow/generate must never silently
-        # consume it simply because the frontend refresh step was skipped.
         if (
             d.get('support_type')=='abutment'
             and scope.startswith('AUTO_CAD1_CORONAL_MD_NEIGHBOR_')
@@ -105,14 +101,31 @@ def generate_candidate(d,kind):
     if diagnostics['codes']:
         raise HTTPException(422,{'message':'预备体组件或边界不满足构冠要求，请检查边缘或上传独立预备体',
             'geometry':diagnostics,'repair_stage':'PREP'})
-    placement,baseline=initialize_draft_outer(d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
+
+    # 第一轮从用户选择的牙库胚子开始；自动纠正后的后续轮次必须从“上一轮已采纳的
+    # 患者化外冠”继续，而不是重新把同一颗模板放回去再算一遍。这样 retry 才是真正
+    # 的收敛迭代，同时省掉重复的模板放置/粗冠高求解。
+    placement={}
+    if kind=='AUTO' and d.get('outer_path'):
+        require_current_outer(d)
+        baseline=Path(d['outer_path'])
+        placement={
+            'template_source':None,
+            'template_source_warning':None,
+            'frame_source':'CONFIRMED_FRAME',
+            'placement_path':'CURRENT_PATIENT_OUTER_REFINEMENT',
+        }
+    else:
+        placement,baseline=initialize_draft_outer(
+            d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
+
     if kind=='AUTO':
         # AUTO candidate阶段只求外冠。昂贵的内冠 Boolean、厚度/制造 QC 只在
         # candidate 被采纳且三项空间约束收敛后由 /finalize 执行一次。
-        # 这样自动纠正 2~3 轮时不会重复构建 Final Crown。
         frame,ref=frame_from(d);_,report,artifacts=propose(
             d,frame,ref,state['automatic_mode'],baseline_path=baseline,run_w3_preflight=False)
         artifacts['baseline']=str(baseline);report['candidate_kind']='AUTO_FIT_CANDIDATE'
+        report['baseline_source']=placement.get('placement_path') or 'TEMPLATE_INITIALIZATION'
     else:
         report={'type':'template_draft','candidate_kind':'TEMPLATE_ONLY_DRAFT','status':'TEMPLATE_REVIEW_REQUIRED',
             'stages':[{'stage':'TEMPLATE','status':'PLACED'},{'stage':'PROXIMAL','status':'NOT_ASSESSED'},
@@ -125,12 +138,12 @@ def generate_candidate(d,kind):
         review_required_stages=['CANDIDATE','FINAL_QC'],manufacturing_status='NOT_PRODUCTION_APPROVED',
         candidate_outer_sha256=file_digest(artifacts['outer']),
         artifact_sha256={k:file_digest(v) for k,v in artifacts.items()})
-    report['template_source']=placement.get('template_source')
-    report['template_source_warning']=placement.get('template_source_warning')
-    report['frame_source']=placement.get('frame_source')
+    report['template_source']=placement.get('template_source') or report.get('template_source')
+    report['template_source_warning']=placement.get('template_source_warning') or report.get('template_source_warning')
+    report['frame_source']=placement.get('frame_source') or report.get('frame_source')
     report['patient_frame']={'revision_id':(json.loads(d.get('autofit_frame_json') or 'null') or {}).get('revision_id'),
                              'source':'CONFIRMED'}
-    report['placement_path']=placement.get('placement_path')
+    report['placement_path']=placement.get('placement_path') or report.get('placement_path')
     report['baseline_sha256']=file_digest(artifacts['baseline'])
     from .contact_measurement import measure_confirmed_inputs, serializable_measurement
     from fastapi import HTTPException as _HTTPException
