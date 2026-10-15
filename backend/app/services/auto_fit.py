@@ -1,13 +1,12 @@
 """Patient-driven CAD-1 proposals, functional remeasurement and W3 preflight.
 
-Outer-crown geometry is now built in this order:
+Outer-crown geometry is built as a spatially constrained embryo morph:
 
-    library placement -> patient prefit -> cervical/Margin fit -> proximal envelope
-    -> antagonist height prefit -> occlusal refinement -> intaglio/final.
+    library embryo -> support/material envelope -> independent proximal side fit
+    -> Margin fit -> proximal contact envelope -> antagonist height envelope
+    -> occlusal refinement -> intaglio/final.
 
-Engineering QC records warnings but never silently restores the template/baseline.
-Only unusable numeric/input data (missing files, NaN/Inf, impossible references)
-remain hard failures.
+The library supplies topology/anatomical character; patient geometry supplies size.
 """
 import json
 from pathlib import Path
@@ -22,7 +21,9 @@ from ..geometry.io import load_mesh, save_mesh
 from ..geometry.nonplanar_crown import fitting_support_above_margin, MarginBuildError
 from ..geometry.crown_outer.collar_body_outer import _boundary_loops
 from ..geometry.crown_outer.auto_fit_adapter import FitSurface, fit_stage, fit_domains, measure, surface_crossings
-from ..geometry.crown_outer.patient_adaptation import global_patient_prefit, cervical_fit_to_margin
+from ..geometry.crown_outer.patient_adaptation import cervical_fit_to_margin
+from ..geometry.crown_outer.space_morph import space_driven_embryo_prefit
+from ..geometry.crown_outer.space_contact import fit_proximal_envelopes, build_proximal_domains
 from ..geometry.crown_outer.thickness import input_qc
 from .design_dependencies import file_digest, require_current_outer
 from .pipeline import finalize_crown
@@ -81,11 +82,12 @@ def audit_final_context(d, outer_path, final_path, qc):
 
     target = parameters.get('proximal_target_mm')
     if patches and target is not None:
-        domains = fit_domains(outer, frame, margin, patches, 'PROXIMAL')[0]
+        domains, _locked, domain_quality = build_proximal_domains(outer, frame, margin, patches)
         for side, surface in patches.items():
             sides[side] = {
                 **measure(outer.vertices, domains[side], surface, target, kind='PROXIMAL', side=side)[0],
                 'neighbor_revision_id': neighbors[side]['revision_id'],
+                'domain_quality': domain_quality.get(side),
                 'material_collision': _intersection_volume(final, surface.mesh),
                 'triangle_crossings': surface_crossings(outer, surface, domains[side]),
             }
@@ -95,7 +97,7 @@ def audit_final_context(d, outer_path, final_path, qc):
     qc['ContactQC'] = {
         'status': 'MEASURED_ENGINEERING' if patches and target is not None else 'NOT_ASSESSED',
         'per_side': sides,
-        'scope': 'frozen_final_outer_vertex_domains_not_continuous_certification',
+        'scope': 'space_driven_final_outer_domains_not_continuous_certification',
         'geometry_frame_revision_id': ref['revision_id'],
         'final_sha256': file_digest(final_path),
     }
@@ -158,7 +160,7 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
         'stages': [],
         'warnings': [],
         'per_side': {},
-        'solver_version': 'patient_prefit+cervical_fit+local_band/2.0',
+        'solver_version': 'space-driven-embryo+local-envelope/3.0',
         'material_process_status': 'NOT_ASSESSED',
         'manufacturing_status': 'NOT_PRODUCTION_APPROVED',
         'geometry_frame_revision_id': frame_ref['revision_id'],
@@ -179,6 +181,7 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     resolved = resolve_template_source(d)
     report['template_sha256'] = resolved.sha256
     report['template_source'] = resolved.as_report()
+    report['template_role'] = 'ANATOMY_EMBRYO_NOT_PATIENT_SIZE_TRUTH'
     if not resolved.is_user_selected:
         report['template_source_warning'] = '未找到人工确认的牙库；本次使用回退模板，验收前请确认牙库'
 
@@ -203,8 +206,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
         cropped_boundary_loops=len(provenance.get('cropped_boundary_loops_world', [])),
     )
 
-    # Prep/Margin topology findings no longer suppress outer adaptation.  They are
-    # carried as warnings and may still prevent the later intaglio/final operation.
     final_construction_risk = bool(provenance['codes'])
     try:
         _fitting, domain = fitting_support_above_margin(
@@ -262,10 +263,15 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     preserve_target, preserve_source = profile.value('proximal.target_distance_mm')
     proximal_target = parameters.get('proximal_target_mm')
     occlusal_target = parameters.get('occlusal_target_mm')
+    min_thickness = profile.get('thickness.minimum_thickness_mm')
+    cement_gap = profile.get('intaglio.cement_gap_mm')
 
-    # P0-A: fit body width to actual mesial/distal space before local contact work.
-    mesh, prefit_report = global_patient_prefit(
+    # Space first: support/material envelope + independent mesial/distal dimensions.
+    mesh, prefit_report = space_driven_embryo_prefit(
         mesh, frame, margin,
+        support_mesh=support,
+        minimum_thickness_mm=min_thickness,
+        cement_gap_mm=cement_gap,
         proximal_surfaces=patches,
         proximal_target_mm=proximal_target,
     )
@@ -273,14 +279,13 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     prefit_path = prefix.with_name(prefix.name + '_prefit.stl')
     save_mesh(mesh, prefit_path)
 
-    # P0-B: Margin is an active geometry boundary, not merely a locked zone.
+    # Margin remains the hard cervical truth after body morphing.
     mesh, cervical_report = cervical_fit_to_margin(mesh, frame, margin)
     report['stages'].append(cervical_report)
     cervical_path = prefix.with_name(prefix.name + '_cervical.stl')
     save_mesh(mesh, cervical_path)
 
-    # Domains are frozen only after patient-space prefit and cervical adaptation.
-    domains = fit_domains(mesh, frame, margin, patches, 'PROXIMAL')[0] if patches else {}
+    domains = build_proximal_domains(mesh, frame, margin, patches)[0] if patches else {}
 
     def _joint(vertices, side, surface):
         if preserve_source == SOURCE_MISSING:
@@ -291,7 +296,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     required = []
     incomplete = False
 
-    # P0-C: local proximal morphology/contact refinement on top of the width fit.
     if mode in ('PROXIMAL_ONLY', 'BOTH'):
         if not patches:
             report['stages'].append({'stage': 'PROXIMAL', 'status': 'NOT_ASSESSED', 'reason': 'NO_CONFIRMED_NEIGHBOR'})
@@ -300,8 +304,9 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
             report['stages'].append({'stage': 'PROXIMAL', 'status': 'INPUT_UNVERIFIED', 'reason': 'PROXIMAL_TARGET_UNCONFIRMED'})
             incomplete = True
         else:
-            targets = {side: proximal_target for side in patches}
-            mesh, rep, domains = fit_stage(mesh, frame, margin, patches, targets, 'PROXIMAL', domain_mesh=mesh.copy())
+            mesh, rep, domains = fit_proximal_envelopes(
+                mesh, frame, margin, patches, float(proximal_target),
+            )
             _ensure_finite_mesh(mesh, '近远中适配结果')
             before_joint = rep['before']
             report['stages'].append(rep)
@@ -315,7 +320,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     occl_mask = None
     occl_before = None
 
-    # P0-D: establish whole-crown height from antagonist, then locally refine relief.
     if mode in ('OCCLUSAL_ONLY', 'BOTH'):
         bite = json.loads(d.get('bite_json') or '{}')
         report['bite_revision_id'] = bite.get('revision_id')
@@ -347,13 +351,17 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
                 raise ValueError('对颌工程预算为 200000 面，请先处理扫描并重新确认')
             occlusal = FitSurface(ant, (-frame.z).tolist())
 
-            mesh, height_report = global_patient_prefit(
+            # Re-run the space morph with antagonist + support so height growth can
+            # never shrink back through the material envelope.
+            mesh, height_report = space_driven_embryo_prefit(
                 mesh, frame, margin,
+                support_mesh=support,
+                minimum_thickness_mm=min_thickness,
+                cement_gap_mm=cement_gap,
                 antagonist_surface=occlusal,
                 occlusal_target_mm=occlusal_target,
             )
             report['stages'].append({**height_report, 'stage': 'OCCLUSAL_HEIGHT_PREFIT'})
-            # Reassert the Margin after global body-height scaling.
             mesh, cervical_after_height = cervical_fit_to_margin(mesh, frame, margin)
             report['stages'].append({**cervical_after_height, 'stage': 'CERVICAL_REFIT_AFTER_HEIGHT'})
             height_path = prefix.with_name(prefix.name + '_height_prefit.stl')
@@ -386,8 +394,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
                 domain_reference.vertices, occl_mask, occlusal, occlusal_target, kind='OCCLUSAL'
             )[0]
 
-            # P1 policy: preserve the actual generated geometry.  Contact/crossing
-            # regressions are warnings for review, never implicit rollback to the template.
             nonworse = True
             for side, surface in patches.items():
                 if side not in domains:
@@ -406,7 +412,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
             occlusal_path = prefix.with_name(prefix.name + '_occlusal.stl')
             save_mesh(mesh, occlusal_path)
 
-    # P1 QC: measure, never mutate/rollback the candidate.
     from ..geometry.crown_outer.deform_gate import deformation_gate
     from ..geometry.nonplanar_crown import MarginCurtain
     audited = {side: (surface, domains[side]) for side, surface in patches.items() if side in domains}
@@ -439,7 +444,7 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     moved = np.linalg.norm(mesh.vertices - baseline.vertices, axis=1) > 1e-9
     cumulative = deformation_gate(
         baseline.vertices, mesh.vertices, mesh.faces, scale_mm=.1, locked_ids=locked,
-        focus_faces=np.flatnonzero(np.any(moved[mesh.faces], axis=1)),
+        focus_faces=np.flatnonzero(np.any(moved[mesh.faces] > 1e-9, axis=1)),
     )
     flips = int((np.einsum('ij,ij->i', baseline.face_normals, mesh.face_normals) <= 0).sum())
     report['cumulative_geometry_gate'] = {**cumulative.as_dict(), 'all_flips': flips}
@@ -478,7 +483,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     save_mesh(mesh, outer_path)
     _ensure_finite_mesh(load_mesh(outer_path), '候选 STL')
 
-    # Audit actual persisted vertex correspondence after STL quantization.
     from scipy.spatial import cKDTree
     persisted = load_mesh(outer_path)
     error, ids = cKDTree(persisted.vertices).query(mesh.vertices)
@@ -518,8 +522,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     if 'occlusal_path' in locals():
         artifacts['occlusal'] = str(occlusal_path)
 
-    # P1 intaglio/final: best effort.  Failure is visible but never replaces the
-    # already generated patient-specific outer crown.
     final_path = prefix.with_name(prefix.name + '_w3_final.stl')
     cutter_path = prefix.with_name(prefix.name + '_w3_cutter.stl')
     try:
