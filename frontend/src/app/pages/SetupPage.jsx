@@ -61,8 +61,8 @@ export default function SetupPage({ wf }) {
           已生成参考牙型预览（<b>{wf.templateCandidate.id.slice(0, 8)}</b>）。检查后点“选定参考牙型”，再运行自动设计。
         </Notice>}
         {wf.selectedTemplate && !wf.templateCandidate && <Notice tone="ok">已选定牙库：{wf.selectedTemplate.library}。模板只提供起始解剖形态。</Notice>}
-        {wf.generatedCandidate?.id && <Notice tone="ok">
-          已生成自动候选（<b>{wf.generatedCandidate.id.slice(0, 8)}</b>）。
+        {wf.generatedCandidate?.id && <Notice tone={wf.generatedCandidate.payload?.status === "PASS_ENGINEERING" ? "ok" : "warn"}>
+          已生成{wf.generatedCandidate.payload?.status === "PASS_ENGINEERING" ? "自动" : "粗糙"}候选（<b>{wf.generatedCandidate.id.slice(0, 8)}</b>）。
           <button type="button" className="cd-link" disabled={wf.busy} onClick={wf.acceptGenerated}>采纳候选</button>
         </Notice>}
         {!wf.frameConfirmed && <Notice tone="warn">请先在第 3 页确认近中/颊侧方向：模板就位必须绑定已确认坐标帧。</Notice>}

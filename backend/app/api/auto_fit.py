@@ -329,7 +329,7 @@ def accept(design_id:str,proposal_id:str,p:AcceptInput):
     d=checked(design_id,p.expected_input_digest,natural_only=False);r=candidate(design_id,proposal_id)
     if r.payload['input_digest']!=p.expected_input_digest or r.payload['design_revision']!=d['design_revision']:
         raise HTTPException(409,'候选已过期，不能采纳')
-    if r.payload['status']!='PASS_ENGINEERING' and not (r.payload.get('type') in ('template_placement','template_draft') and p.confirmed_template_anatomy and r.payload['status']=='TEMPLATE_REVIEW_REQUIRED'):
+    if r.payload['status']!='PASS_ENGINEERING' and not (r.payload.get('candidate_kind')=='AUTO_FIT_CANDIDATE' and r.artifacts.get('outer')) and not (r.payload.get('type') in ('template_placement','template_draft') and p.confirmed_template_anatomy and r.payload['status']=='TEMPLATE_REVIEW_REQUIRED'):
         raise HTTPException(409,'部分完成、冲突或未验证候选不能自动采纳；模板初稿须明确确认冠形')
     with db() as c:
         if c.execute("SELECT 1 FROM design_revisions WHERE design_id=? AND kind=? AND json_extract(payload_json,'$.proposal_id')=?",(design_id,RevisionKind.AUTOFIT_REJECTED.value,proposal_id)).fetchone():

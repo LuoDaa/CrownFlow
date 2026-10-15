@@ -16,6 +16,7 @@ async function req(url,opt={}){
     try{const j=await r.json();
       if(j&&j.detail&&typeof j.detail==="object"){payload=j.detail;m=j.detail.message||m}
       else if(j&&j.detail)m=j.detail}catch{}
+    if(Array.isArray(payload))m=payload.map(x=>`${(x.loc||[]).join(".")}: ${x.msg}`).join("；");
     const e=new Error(m);e.status=r.status;e.payload=payload;throw e}
   const ct=r.headers.get("content-type")||"";
   return ct.includes("application/json")?r.json():r;

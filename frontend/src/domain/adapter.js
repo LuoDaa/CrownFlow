@@ -188,7 +188,7 @@ export const adapter = {
       throw new Error("尚无可执行的自动适配：请先确认咬合位姿或邻牙参考及目标间隙");
     }
     const candidate = await api.generationCandidate(designId, {
-      kind, expected_input_digest: eligibility.input_digest,
+      kind, expected_input_digest: eligibility.input_digest, confirmed: true,
     });
     return candidate;
   },

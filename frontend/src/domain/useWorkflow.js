@@ -478,13 +478,10 @@ export default function useWorkflow() {
     setBusyLabel("正在生成牙冠候选（可能需要 10–60 秒）…");
     await adapter.saveProfile(design.id, params);
     const candidate = await adapter.generateInitialCrown(design.id, { kind });
-    if (kind === "AUTO" && candidate.payload?.status !== "PASS_ENGINEERING") {
-      setGeneratedCandidate(null);
-      const failed = (candidate.payload?.stages || []).filter((stage) => stage.status !== "PASS_ENGINEERING");
-      throw new Error(`自动设计未完成：${failed.map((stage) => `${stage.stage} ${stage.reason || stage.status}`).join("；") || candidate.payload?.status || "几何检查未通过"}`);
-    }
     setGeneratedCandidate(candidate);
-    setMsg("已生成牙冠候选，请在 3D 中检查后点“采纳候选”");
+    setMsg(candidate.payload?.status === "PASS_ENGINEERING"
+      ? "已生成牙冠候选，请在 3D 中检查后点“采纳候选”"
+      : `已生成粗糙候选，可继续设计；工程检查提示：${candidate.payload?.w3_preflight?.reason || candidate.payload?.status || "待检查"}`);
     return candidate;
   }, undefined, "牙冠候选生成失败");
   const acceptGenerated = () => work(async () => {
