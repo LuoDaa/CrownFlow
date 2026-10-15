@@ -56,7 +56,7 @@ def test_bilateral_neighbors_define_width_and_both_contact_cores_reach_zero():
         crown, _frame(), _margin(), surfaces, 0.0,
     )
 
-    assert report["solver"] == "SPACE_DRIVEN_PROXIMAL_ENVELOPE_V3_PATIENT_VECTOR"
+    assert report["solver"] == "SPACE_DRIVEN_PROXIMAL_HARD_CONSTRAINT_V4"
     assert report["status"] == "PASS_ENGINEERING"
     assert np.ptp(np.asarray(fitted.vertices)[:, 0]) > np.ptp(before[:, 0]) + 1.0
     for side in ("mesial", "distal"):
@@ -64,6 +64,7 @@ def test_bilateral_neighbors_define_width_and_both_contact_cores_reach_zero():
         assert int(domains[side].sum()) >= 48
         assert state["target_reached"] is True
         assert state["contact_vertex_count"] >= state["required_contact_vertices"]
+        assert state["largest_connected_contact_vertices"] >= state["required_connected_contact_vertices"]
         # The contact is intentionally a compact core.  The rest of the proximal
         # wall must remain convex/transitioning instead of becoming a flat copy of
         # the adjacent tooth.
@@ -89,6 +90,7 @@ def test_negative_proximal_target_creates_small_compressive_contact_not_a_gap():
         state = report["physical_after"][side]
         assert state["target_reached"] is True
         assert state["contact_vertex_count"] >= state["required_contact_vertices"]
+        assert state["largest_connected_contact_vertices"] >= state["required_connected_contact_vertices"]
         # At least part of the continuous core must be at/beyond the zero surface.
         assert state["signed_min_mm"] <= 0.01
 
