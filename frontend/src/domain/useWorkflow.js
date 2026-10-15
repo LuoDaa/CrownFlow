@@ -21,8 +21,8 @@ export const DEFAULT_PARAMS = {
   enforce_minimum_thickness: false,
   machine_axes: 5,
   cement_gap_start_mm: 0,
-  proximal_target_mm: 0.05,
-  occlusal_target_mm: 0.05,
+  proximal_target_mm: -0.02,
+  occlusal_target_mm: 0.02,
 };
 
 /** 第 4 页暴露给用户的 5 个核心参数（其余走"更多参数"）。 */
@@ -30,8 +30,8 @@ export const CORE_PARAMS = [
   { key: "cement_gap_mm", label: "Cement Gap", hint: "粘接间隙", step: 0.005, min: 0, max: 0.3 },
   { key: "margin_gap_mm", label: "Margin Gap", hint: "边缘区域（当前版本固定）", step: 0.005, min: 0, max: 0.2, fixed: true },
   { key: "minimum_thickness_mm", label: "Minimum Thickness", hint: "最小壁厚", step: 0.05, min: 0.3, max: 2.5 },
-  { key: "proximal_target_mm", label: "Proximal Contact", hint: "邻牙接触目标", step: 0.01, min: 0, max: 0.5, optional: true },
-  { key: "occlusal_target_mm", label: "Occlusal Clearance", hint: "对颌间隙目标", step: 0.01, min: 0, max: 0.5, optional: true },
+  { key: "proximal_target_mm", label: "Proximal Contact", hint: "邻牙接触：0=刚好接触，负值=轻微压接", step: 0.01, min: -0.1, max: 0.5 },
+  { key: "occlusal_target_mm", label: "Occlusal Clearance", hint: "静态对颌目标间隙，默认近接触", step: 0.01, min: 0, max: 0.5 },
 ];
 
 export const ADVANCED_PARAMS = [
