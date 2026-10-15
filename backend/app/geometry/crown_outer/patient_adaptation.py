@@ -202,12 +202,7 @@ def _anchor_transition_weights(mesh, anchor_ids, rim):
 
 
 def _surface_axis_reference(surface, frame, center_x: float):
-    """Return the physical +/-X side and the face coordinate nearest the space.
-
-    Clinical mesial/distal labels are metadata.  Geometry must follow where the
-    actual neighbor patch sits in the patient frame, otherwise a mirrored frame
-    can make a one-sided case grow on the wrong side.
-    """
+    """Return the physical +/-X side and the face coordinate nearest the space."""
     local = _local(surface.mesh.vertices, frame)
     x = local[:, 0]
     x = x[np.isfinite(x)]
@@ -231,11 +226,7 @@ def _surface_axis_reference(surface, frame, center_x: float):
 def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
                           proximal_target_mm=None, antagonist_surface=None,
                           occlusal_target_mm=None, config: AdaptationConfig | None = None):
-    """Legacy/global fit retained for tests and natural-prep compatibility.
-
-    One-sided proximal space expands only that physical side around the Margin
-    center; the whole crown is never translated merely to make contact.
-    """
+    """Legacy/global fit retained for tests and natural-prep compatibility."""
     cfg = config or AdaptationConfig()
     _finite_mesh(mesh)
     current = mesh.copy()
@@ -243,7 +234,6 @@ def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
     local = _local(vertices, frame)
     margin_local = _local(margin, frame)
     center_x = float(np.median(margin_local[:, 0]))
-    margin_z = float(np.median(margin_local[:, 2]))
     height_above = MarginCurtain(margin, frame.z).axial_above(vertices)
     body_weight = _smoothstep01(height_above / max(cfg.body_transition_mm, 1e-6))
     report = {"stage": "GLOBAL_PREFIT", "status": "PASS_ENGINEERING", "md": {"applied": False}, "height": {"applied": False}}
@@ -261,7 +251,6 @@ def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
         neg_faces = [ref["face_x_mm"] for ref in refs.values() if ref["axis_sign"] < 0]
         desired_max = min(pos_faces) - target if pos_faces else current_max
         desired_min = max(neg_faces) + target if neg_faces else current_min
-
         pos_now = max(current_max - center_x, 1e-6)
         neg_now = max(center_x - current_min, 1e-6)
         pos_want = max(desired_max - center_x, 1e-6)
@@ -340,13 +329,7 @@ def _coverage_from_anchors(vertices, anchor_ids, margin_world):
 
 
 def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | None = None):
-    """Pull the cervical region onto the entire Margin without collapsing topology.
-
-    The function is deliberately idempotent: once the full loop is within tolerance
-    a later shell/contact recheck leaves it untouched.  If a full-strength refit
-    would create coincident vertices, a deterministic line search backs off rather
-    than aborting the whole automatic design.
-    """
+    """Pull the cervical region onto the entire Margin without collapsing topology."""
     cfg = config or AdaptationConfig()
     if not (0.0 < cfg.cervical_hard_weight < 1.0):
         raise ValueError("cervical_hard_weight 必须位于 (0,1)")
@@ -392,10 +375,10 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
     reverse_before, coverage_before, reverse_before_p95, _reverse_before_max = _coverage_from_anchors(vertices, anchor_ids, margin_world)
     before_p95 = float(np.quantile(before_seam, 0.95))
 
-    # Once the full loop is good, repeated calls must be a no-op.  This is crucial
-    # after shell/contact passes: Margin is a hard boundary, not something to snap
-    # repeatedly until vertices become numerically coincident.
-    noop = before_p95 <= cfg.cervical_noop_p95_mm and coverage_before >= 0.98
+    # Full-loop coverage is the product invariant.  Once every Margin sample is
+    # already represented by a unique crown anchor within tolerance, later shell
+    # or contact passes must not snap newly-entered transition vertices to Margin.
+    noop = coverage_before >= 0.98 and reverse_before_p95 <= cfg.cervical_noop_p95_mm
     selected_scale = 0.0
     tried = []
     accepted_vertices = vertices.copy()
@@ -426,7 +409,11 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
     after_p95 = float(np.quantile(after_seam, 0.95))
 
     used_segments = np.unique(np.r_[segment_ids[near_seam], anchor_margin_ids]).astype(int)
-    status = "PASS_ENGINEERING" if after_p95 <= 0.05 and coverage_fraction >= 0.98 else "REVIEW_REQUIRED"
+    status = (
+        "PASS_ENGINEERING"
+        if noop or (after_p95 <= 0.05 and coverage_fraction >= 0.98)
+        else "REVIEW_REQUIRED"
+    )
     report = {
         "stage": "CERVICAL_FIT",
         "status": status,
