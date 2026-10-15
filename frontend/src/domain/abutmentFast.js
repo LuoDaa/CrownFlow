@@ -87,16 +87,11 @@ export async function selectAbutmentTemplate({ designId, library, params }) {
   return candidate;
 }
 
-function stageFailure(candidate) {
-  const stages = candidate?.payload?.stages || [];
-  return stages.find((stage) => ["CONSTRAINT_CONFLICT", "BLOCKED", "INPUT_UNVERIFIED"].includes(stage.status));
-}
-
 async function ensureAutomaticReferences(designId) {
   let eligibility = await api.generationEligibility(designId);
   if (referencesReady(eligibility)) return eligibility;
 
-  // Resumed/older cases can have stale frame/bite/neighbor revisions.  Rebuild
+  // Resumed/older cases can have stale frame/bite/neighbor revisions. Rebuild
   // them automatically instead of asking the user to click confirmation pages.
   const design = await api.design(designId);
   await prepareAbutmentOrder({
@@ -112,13 +107,13 @@ export async function generateAbutmentOrder({ designId, params }) {
   if (!designId) throw new Error("请先创建基台订单");
 
   // Reference preparation comes first because a rebuilt Margin/Axis revision may
-  // invalidate downstream digests.  Save the user's profile only after geometry
+  // invalidate downstream digests. Save the user's profile only after geometry
   // references are current.
   let eligibility = await ensureAutomaticReferences(designId);
   await adapter.saveProfile(designId, params);
   eligibility = await api.generationEligibility(designId);
 
-  // One last automatic neighbor retry after profile persistence.  No user click.
+  // One last automatic neighbor retry after profile persistence. No user click.
   let states = neighborStates(eligibility);
   if (states.length !== 2 || !states.every((state) => ["CONFIRMED", "ABSENT"].includes(state))) {
     await autoFitRequest(designId, "auto-neighbors", "POST", {
@@ -141,6 +136,9 @@ export async function generateAbutmentOrder({ designId, params }) {
     eligibility = await api.generationEligibility(designId);
   }
 
+  // Input/reference failures remain hard failures because the solver has nothing
+  // meaningful to operate on. Geometry-quality gates after a candidate exists are
+  // deliberately non-blocking in the current engineering test flow.
   if (states.length !== 2 || !states.every((state) => ["CONFIRMED", "ABSENT"].includes(state))) {
     const text = Object.entries(eligibility?.neighbors || {})
       .map(([side, state]) => `${side}:${state}`)
@@ -154,13 +152,31 @@ export async function generateAbutmentOrder({ designId, params }) {
   }
 
   const candidate = await adapter.generateInitialCrown(designId, { kind: "AUTO" });
-  const failed = stageFailure(candidate);
-  if (failed) throw new Error(`${failed.stage || "自动设计"} 未通过：${failed.reason || failed.status}`);
-  if (candidate?.payload?.status !== "PASS_ENGINEERING") {
-    throw new Error(`自动牙冠未达到可自动采纳状态：${candidate?.payload?.status || "UNKNOWN"}`);
+
+  // Engineering test mode: once an AUTO candidate artifact exists, publish it as
+  // the current outer even when PROXIMAL/OCCLUSAL reports CONSTRAINT_CONFLICT.
+  // The reports are preserved for diagnostics; they no longer stop the user from
+  // entering the 3D page and visually inspecting the actual geometry.
+  await adapter.confirmCrownCandidate(designId, candidate.id);
+
+  let final = null;
+  let finalizeWarning = null;
+  try {
+    final = await adapter.finalize(designId, { preserveCervical: true });
+  } catch (error) {
+    // Final/intaglio/QC is best-effort while geometry is under active development.
+    // Keep the accepted outer available in 3D instead of turning a downstream
+    // quality gate into a dead end for the whole CAD test flow.
+    finalizeWarning = error?.message || "最终内冠/QC 尚未完成";
   }
 
-  await adapter.confirmCrownCandidate(designId, candidate.id);
-  const final = await adapter.finalize(designId, { preserveCervical: true });
-  return { candidate, final, eligibility };
+  const stageWarnings = (candidate?.payload?.stages || [])
+    .filter((stage) => stage?.status && stage.status !== "PASS_ENGINEERING" && stage.status !== "PLACED")
+    .map((stage) => `${stage.stage || "阶段"}:${stage.reason || stage.status}`);
+  if (candidate?.payload?.status && candidate.payload.status !== "PASS_ENGINEERING") {
+    stageWarnings.push(`candidate:${candidate.payload.status}`);
+  }
+  if (finalizeWarning) stageWarnings.push(`finalize:${finalizeWarning}`);
+
+  return { candidate, final, eligibility, warnings: stageWarnings };
 }
