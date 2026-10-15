@@ -1,16 +1,12 @@
 """Space-driven deterministic crown morphing.
 
-The library tooth is only an *embryo*: topology/anatomical character may come from
-it, but patient dimensions never do.  The outer crown is first expanded into the
-feasible patient space, then local Laplacian stages create proximal/occlusal detail.
+The library tooth is only an embryo.  Patient geometry owns dimensions:
 
-Spatial truth, in order of authority:
-
-* confirmed Margin = cervical boundary;
-* actual intaglio preview (blockout + gap) + minimum thickness = inner no-go shell;
-* mesial/distal neighbor surfaces = independent side contact envelopes;
+* Margin = cervical boundary;
+* actual intaglio preview + minimum thickness = inner no-go shell;
+* adjacent teeth = independent physical +/-MD envelopes;
 * antagonist = coronal height/clearance envelope;
-* library embryo = soft shape prior only.
+* library = topology/anatomical character only.
 """
 from __future__ import annotations
 
@@ -34,6 +30,9 @@ class SpaceMorphConfig:
     height_scale_max: float = 1.65
     max_height_delta_mm: float = 3.5
     contact_quantile: float = 0.18
+    height_iterations: int = 5
+    height_max_step_mm: float = 1.25
+    height_target_band_mm: float = 0.03
     envelope_iterations: int = 4
     envelope_max_push_per_pass_mm: float = 0.90
     shell_audit_sample_limit: int = 4096
@@ -74,24 +73,9 @@ def _finite_mesh(mesh, label="冠形"):
         raise ValueError(f"{label}没有三角面")
 
 
-def _neighbor_contact_x(surface, frame, side, center_x):
-    """Estimate the neighbor face that actually points into the edentulous space."""
-    local = _local(surface.mesh.vertices, frame)
-    x = local[:, 0]
-    x = x[np.isfinite(x)]
-    if not len(x):
-        return None
-    if side == "mesial":
-        values = x[x > center_x]
-        if len(values) < 8:
-            values = x
-        return float(np.quantile(values, 0.06))
-    if side == "distal":
-        values = x[x < center_x]
-        if len(values) < 8:
-            values = x
-        return float(np.quantile(values, 0.94))
-    raise ValueError(f"未知邻接侧: {side}")
+def _body_weight(mesh, frame, margin, transition_mm):
+    height = MarginCurtain(margin, frame.z).axial_above(mesh.vertices)
+    return _smoothstep01(height / max(float(transition_mm), 1e-6)), height
 
 
 def _side_scale(current_extent, desired_extent, center, positive, lo, hi):
@@ -105,7 +89,7 @@ def _side_scale(current_extent, desired_extent, center, positive, lo, hi):
 
 
 def _apply_asymmetric_axis_warp(local, axis, center, negative_scale, positive_scale, weight):
-    values = local[:, axis]
+    values = local[:, axis].copy()
     delta = values - float(center)
     target = values.copy()
     positive = delta >= 0.0
@@ -116,27 +100,45 @@ def _apply_asymmetric_axis_warp(local, axis, center, negative_scale, positive_sc
 
 def _envelope_window_local(envelope_mesh, frame, margin_z, crown_top):
     local = _local(envelope_mesh.vertices, frame)
-    finite = np.isfinite(local).all(axis=1)
-    local = local[finite]
+    local = local[np.isfinite(local).all(axis=1)]
     if not len(local):
         return local
     mask = (local[:, 2] >= margin_z - 0.50) & (local[:, 2] <= crown_top + 1.50)
     return local[mask] if np.any(mask) else local
 
 
-def _body_weight(mesh, frame, margin, transition_mm):
-    h = MarginCurtain(margin, frame.z).axial_above(mesh.vertices)
-    return _smoothstep01(h / max(float(transition_mm), 1e-6)), h
+def _neighbor_reference(surface, frame, center_x):
+    """Describe where a neighbor patch physically lies in the frame.
+
+    Clinical mesial/distal names are deliberately not used to choose +X/-X.  The
+    scan itself decides the physical side, which keeps mirrored/right-left cases
+    from growing the embryo on the wrong side.
+    """
+    local = _local(surface.mesh.vertices, frame)
+    x = local[:, 0]
+    x = x[np.isfinite(x)]
+    if not len(x):
+        return None
+    median = float(np.median(x))
+    sign = 1.0 if median >= center_x else -1.0
+    if sign > 0:
+        side_values = x[x > center_x]
+        if len(side_values) < 8:
+            side_values = x
+        face_x = float(np.quantile(side_values, 0.06))
+        axis_side = "POSITIVE_X"
+    else:
+        side_values = x[x < center_x]
+        if len(side_values) < 8:
+            side_values = x
+        face_x = float(np.quantile(side_values, 0.94))
+        axis_side = "NEGATIVE_X"
+    return {"axis_sign": sign, "axis_side": axis_side, "face_x_mm": face_x, "median_x_mm": median}
 
 
 def audit_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, required_mm,
                                    *, config: SpaceMorphConfig | None = None):
-    """Read-only outer-vs-intaglio body clearance audit.
-
-    This is an engineering shell metric, not a substitute for final ray thickness.
-    It exists to stop the old failure mode where the intaglio visibly protruded
-    through an undersized embryo before finalization.
-    """
+    """Read-only outer-vs-intaglio body clearance audit."""
     cfg = config or SpaceMorphConfig()
     if inner_envelope_mesh is None or required_mm is None or float(required_mm) <= 0:
         return {"status": "NOT_ASSESSED", "reason": "INNER_ENVELOPE_OR_THICKNESS_MISSING"}
@@ -147,24 +149,20 @@ def audit_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, req
     vertices = np.asarray(mesh.vertices)[ids]
     _cp, dist, _ = closest_point(inner_envelope_mesh, vertices)
     dist = np.asarray(dist, float)
-    finite = np.isfinite(dist)
-    values = dist[finite]
+    values = dist[np.isfinite(dist)]
     if not len(values):
         return {"status": "NOT_ASSESSED", "reason": "NO_FINITE_CLEARANCE"}
     deficit = np.maximum(float(required_mm) - values, 0.0)
-
     inside_fraction = None
     try:
         inner_vertices = np.asarray(inner_envelope_mesh.vertices, float)
         if len(inner_vertices) > cfg.shell_audit_sample_limit:
-            sample = np.linspace(0, len(inner_vertices) - 1,
-                                 cfg.shell_audit_sample_limit, dtype=int)
+            sample = np.linspace(0, len(inner_vertices) - 1, cfg.shell_audit_sample_limit, dtype=int)
             inner_vertices = inner_vertices[sample]
         if bool(mesh.is_watertight and mesh.is_winding_consistent):
             inside_fraction = float(np.mean(mesh.contains(inner_vertices)))
-    except Exception:  # noqa: BLE001 - audit must never crash generation
+    except Exception:  # audit must never crash generation
         inside_fraction = None
-
     return {
         "status": "PASS_ENGINEERING" if float(np.quantile(deficit, .95)) <= 0.02 else "REVIEW_REQUIRED",
         "method": "OUTER_VERTEX_TO_ACTUAL_INTAGLIO_DISTANCE",
@@ -181,20 +179,10 @@ def audit_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, req
 
 def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, required_mm,
                                      *, config: SpaceMorphConfig | None = None):
-    """Expand only the outer body until it clears the authoritative intaglio shell.
-
-    Correction direction is a blend of closest-point separation and patient-radial
-    expansion.  The radial component prevents an embryo that starts *inside* the
-    abutment/intaglio from being pushed through the wrong side.  Near the insertion
-    axis the fallback direction is coronal (+Z), which also protects occlusal shell
-    thickness above a broad abutment top.
-    """
+    """Expand only the outer body until it clears the authoritative intaglio shell."""
     cfg = config or SpaceMorphConfig()
     if inner_envelope_mesh is None or required_mm is None or float(required_mm) <= 0:
-        return mesh.copy(), {
-            "status": "NOT_ASSESSED",
-            "reason": "INNER_ENVELOPE_OR_THICKNESS_MISSING",
-        }
+        return mesh.copy(), {"status": "NOT_ASSESSED", "reason": "INNER_ENVELOPE_OR_THICKNESS_MISSING"}
 
     current = mesh.copy()
     margin_local = _local(margin, frame)
@@ -227,7 +215,6 @@ def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, r
         chosen = active[bad]
         local_vertices = (vertices[chosen] - origin) @ matrix
         local_delta = (vertices[chosen] - cp[bad]) @ matrix
-
         radial = np.c_[local_vertices[:, :2] - center_xy, np.zeros(len(chosen))]
         radial_norm = np.linalg.norm(radial, axis=1)
         near_axis = radial_norm < 0.35
@@ -239,16 +226,15 @@ def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, r
         good = dnorm > 1e-8
         sep[good] = local_delta[good] / dnorm[good, None]
         sep[~good] = radial[~good]
-
-        # On the occlusal half of the crown we allow an additional +Z component;
-        # on side walls radial growth dominates.  This is deterministic and keeps
-        # the actual intaglio immutable.
         coronal = np.c_[np.zeros(len(chosen)), np.zeros(len(chosen)), np.ones(len(chosen))]
-        z_fraction = np.clip(height[chosen] / max(float(np.quantile(height[height > 0], .9))
-                                                  if np.any(height > 0) else 1.0, 1e-6), 0.0, 1.0)
+        positive_h = height[height > 0]
+        h90 = float(np.quantile(positive_h, .9)) if len(positive_h) else 1.0
+        z_fraction = np.clip(height[chosen] / max(h90, 1e-6), 0.0, 1.0)
         desired = 0.55 * sep + 0.35 * radial + 0.10 * z_fraction[:, None] * coronal
         inward = np.einsum("ij,ij->i", desired, radial) < -0.05
-        desired[inward] -= 2.0 * np.einsum("ij,ij->i", desired[inward], radial[inward])[:, None] * radial[inward]
+        if np.any(inward):
+            dots = np.einsum("ij,ij->i", desired[inward], radial[inward])
+            desired[inward] -= 2.0 * dots[:, None] * radial[inward]
         norm = np.linalg.norm(desired, axis=1)
         desired /= np.maximum(norm[:, None], 1e-12)
 
@@ -266,9 +252,7 @@ def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, r
             "max_push_mm": float(push.max(initial=0.0)),
         })
 
-    audit = audit_inner_envelope_clearance(
-        current, inner_envelope_mesh, frame, margin, required_mm, config=cfg,
-    )
+    audit = audit_inner_envelope_clearance(current, inner_envelope_mesh, frame, margin, required_mm, config=cfg)
     return current, {
         "status": "APPLIED" if total_moved else "NO_CORRECTION_NEEDED",
         "method": "ACTUAL_INTAGLIO_CLOSEST_POINT_PLUS_PATIENT_RADIAL_CORONAL_ENVELOPE",
@@ -277,6 +261,113 @@ def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, r
         "max_push_per_pass_mm": float(max_push),
         "passes": passes,
         "audit_after": audit,
+    }
+
+
+def _occlusal_contact_metric(values, target, quantile):
+    values = np.asarray(values, float)
+    err = values - float(target)
+    positive = np.maximum(err, 0.0)
+    penetration = np.maximum(-err, 0.0)
+    return {
+        "gap_quantile_mm": float(np.quantile(positive, min(max(float(quantile), .05), .5))),
+        "penetration_p95_mm": float(np.quantile(penetration, .95)),
+        "penetration_max_mm": float(np.max(penetration)),
+        "signed_min_mm": float(np.min(values)),
+        "signed_median_mm": float(np.median(values)),
+    }
+
+
+def _fit_antagonist_height(current, frame, margin, antagonist_surface, target, cfg):
+    """Monotone closed-loop crown-height seek along patient +Z.
+
+    Height is solved before local cusp/fossa relief.  Each accepted step is
+    remeasured against the actual antagonist; a step that worsens penetration or
+    fails to reduce the contact-quantile gap is rejected/backtracked.
+    """
+    target = float(target)
+    passes = []
+    ever = False
+    for iteration in range(max(1, int(cfg.height_iterations))):
+        zones = build_crown_zones(current, frame, margin)
+        ids = np.flatnonzero(zones.occlusal)
+        if not len(ids):
+            return current, {"applied": ever, "reason": "NO_OCCLUSAL_ZONE", "passes": passes}
+        _cp, _faces, signed, _distance, valid = antagonist_surface.query(np.asarray(current.vertices)[ids])
+        signed = np.asarray(signed, float)
+        valid = np.asarray(valid, bool) & np.isfinite(signed)
+        if not np.any(valid):
+            return current, {"applied": ever, "reason": "NO_VALID_ANTAGONIST_SAMPLES", "passes": passes}
+        values = signed[valid]
+        before = _occlusal_contact_metric(values, target, cfg.contact_quantile)
+        if before["penetration_p95_mm"] > 0.02:
+            return current, {
+                "applied": ever,
+                "reason": "PENETRATION_PRESENT_LOCAL_REFINEMENT_REQUIRED",
+                "passes": passes,
+                "final": before,
+            }
+        if before["gap_quantile_mm"] <= cfg.height_target_band_mm:
+            return current, {"applied": ever, "reason": "HEIGHT_ON_TARGET", "passes": passes, "final": before}
+
+        errors = np.sort((values - target)[values > target + cfg.height_target_band_mm])
+        if not len(errors):
+            return current, {"applied": ever, "reason": "HEIGHT_ON_TARGET", "passes": passes, "final": before}
+        take = max(1, int(np.ceil(len(errors) * float(cfg.contact_quantile))))
+        requested = float(np.median(errors[:take]))
+        requested = float(np.clip(requested, 0.0, cfg.height_max_step_mm))
+        if requested <= 1e-5:
+            break
+
+        weight, _height = _body_weight(current, frame, margin, cfg.body_transition_mm)
+        local0 = _local(current.vertices, frame)
+        accepted = None
+        for alpha in (1.0, 0.65, 0.40, 0.25, 0.125):
+            trial_local = local0.copy()
+            trial_local[:, 2] += weight * requested * float(alpha)
+            trial = current.copy()
+            trial.vertices = _world(trial_local, frame)
+            _finite_mesh(trial)
+            _cp2, _f2, signed2, _d2, valid2 = antagonist_surface.query(np.asarray(trial.vertices)[ids])
+            signed2 = np.asarray(signed2, float)
+            valid2 = np.asarray(valid2, bool) & np.isfinite(signed2)
+            if not np.any(valid2):
+                continue
+            after = _occlusal_contact_metric(signed2[valid2], target, cfg.contact_quantile)
+            improves = after["gap_quantile_mm"] < before["gap_quantile_mm"] - 1e-4
+            safe_pen = after["penetration_p95_mm"] <= max(0.02, before["penetration_p95_mm"] + 0.003)
+            passes.append({
+                "iteration": iteration + 1,
+                "alpha": float(alpha),
+                "requested_step_mm": requested,
+                "applied_step_mm": requested * float(alpha),
+                "before": before,
+                "after": after,
+                "accepted": bool(improves and safe_pen),
+            })
+            if improves and safe_pen:
+                accepted = trial
+                break
+        if accepted is None:
+            return current, {"applied": ever, "reason": "HEIGHT_LINE_SEARCH_CONFLICT", "passes": passes, "final": before}
+        current = accepted
+        ever = True
+
+    zones = build_crown_zones(current, frame, margin)
+    ids = np.flatnonzero(zones.occlusal)
+    final = None
+    if len(ids):
+        _cp, _faces, signed, _distance, valid = antagonist_surface.query(np.asarray(current.vertices)[ids])
+        signed = np.asarray(signed, float)
+        valid = np.asarray(valid, bool) & np.isfinite(signed)
+        if np.any(valid):
+            final = _occlusal_contact_metric(signed[valid], target, cfg.contact_quantile)
+    return current, {
+        "applied": ever,
+        "mode": "MONOTONE_CLOSED_LOOP_ANTAGONIST_HEIGHT_SEEK",
+        "passes": passes,
+        "final": final,
+        "target_clearance_mm": target,
     }
 
 
@@ -295,13 +386,7 @@ def space_driven_embryo_prefit(
     occlusal_target_mm=None,
     config: SpaceMorphConfig | None = None,
 ):
-    """Fit the embryo to patient space before local contact/occlusal refinement.
-
-    A one-sided neighbor grows only that side; the whole crown is never translated
-    merely to make contact.  If the actual intaglio preview is available, it is the
-    authoritative inner shell.  Otherwise support + cement gap is a conservative
-    fallback lower bound.
-    """
+    """Fit the embryo to patient space before local contact/occlusal refinement."""
     cfg = config or SpaceMorphConfig()
     _finite_mesh(mesh)
     current = mesh.copy()
@@ -319,7 +404,7 @@ def space_driven_embryo_prefit(
     report = {
         "stage": "GLOBAL_PREFIT",
         "status": "PASS_ENGINEERING",
-        "algorithm": "SPACE_DRIVEN_EMBRYO_MORPH_V2",
+        "algorithm": "SPACE_DRIVEN_EMBRYO_MORPH_V3",
         "template_role": "TOPOLOGY_AND_ANATOMY_EMBRYO_NOT_SIZE_TRUTH",
         "md": {"applied": False},
         "bl": {"applied": False},
@@ -365,42 +450,40 @@ def space_driven_embryo_prefit(
 
     surfaces = proximal_surfaces or {}
     target = None if proximal_target_mm is None else float(proximal_target_mm)
-    mesial_face = _neighbor_contact_x(surfaces["mesial"], frame, "mesial", center_x) if "mesial" in surfaces else None
-    distal_face = _neighbor_contact_x(surfaces["distal"], frame, "distal", center_x) if "distal" in surfaces else None
-    mesial_contact = (mesial_face - target) if mesial_face is not None and target is not None else None
-    distal_contact = (distal_face + target) if distal_face is not None and target is not None else None
+    refs = {label: _neighbor_reference(surface, frame, center_x) for label, surface in surfaces.items()}
+    refs = {label: ref for label, ref in refs.items() if ref is not None}
+    positive_faces = [ref["face_x_mm"] for ref in refs.values() if ref["axis_sign"] > 0]
+    negative_faces = [ref["face_x_mm"] for ref in refs.values() if ref["axis_sign"] < 0]
+    positive_contact = (min(positive_faces) - target) if positive_faces and target is not None else None
+    negative_contact = (max(negative_faces) + target) if negative_faces and target is not None else None
 
     floor_max_x = None if env_max_x is None or shell_required is None else env_max_x + shell_required
     floor_min_x = None if env_min_x is None or shell_required is None else env_min_x - shell_required
-
-    desired_max_x = mesial_contact if mesial_contact is not None else current_max_x
-    desired_min_x = distal_contact if distal_contact is not None else current_min_x
+    desired_max_x = positive_contact if positive_contact is not None else current_max_x
+    desired_min_x = negative_contact if negative_contact is not None else current_min_x
     if floor_max_x is not None:
         desired_max_x = max(desired_max_x, floor_max_x)
     if floor_min_x is not None:
         desired_min_x = min(desired_min_x, floor_min_x)
 
     if desired_min_x < desired_max_x - 0.20:
-        mesial_scale = _side_scale(current_max_x, desired_max_x, center_x, True,
-                                    cfg.md_scale_min, cfg.md_scale_max)
-        distal_scale = _side_scale(current_min_x, desired_min_x, center_x, False,
-                                    cfg.md_scale_min, cfg.md_scale_max)
-        _apply_asymmetric_axis_warp(local, 0, center_x, distal_scale, mesial_scale, body_weight)
+        positive_scale = _side_scale(current_max_x, desired_max_x, center_x, True, cfg.md_scale_min, cfg.md_scale_max)
+        negative_scale = _side_scale(current_min_x, desired_min_x, center_x, False, cfg.md_scale_min, cfg.md_scale_max)
+        _apply_asymmetric_axis_warp(local, 0, center_x, negative_scale, positive_scale, body_weight)
         report["md"] = {
-            "applied": bool(abs(mesial_scale - 1.0) > 1e-6 or abs(distal_scale - 1.0) > 1e-6),
-            "mode": "INDEPENDENT_MESIAL_DISTAL_SCALE_ABOUT_MARGIN_CENTER",
+            "applied": bool(abs(positive_scale - 1.0) > 1e-6 or abs(negative_scale - 1.0) > 1e-6),
+            "mode": "PHYSICAL_SIDE_INDEPENDENT_SCALE_ABOUT_MARGIN_CENTER",
             "center_x_mm": center_x,
-            "mesial_scale": mesial_scale,
-            "distal_scale": distal_scale,
+            "positive_x_scale": positive_scale,
+            "negative_x_scale": negative_scale,
             "current_min_x_mm": current_min_x,
             "current_max_x_mm": current_max_x,
             "desired_min_x_mm": float(desired_min_x),
             "desired_max_x_mm": float(desired_max_x),
-            "mesial_neighbor_face_x_mm": mesial_face,
-            "distal_neighbor_face_x_mm": distal_face,
             "inner_floor_min_x_mm": floor_min_x,
             "inner_floor_max_x_mm": floor_max_x,
             "whole_crown_translation_mm": 0.0,
+            "neighbor_reference_mapping": refs,
         }
     else:
         report["md"] = {
@@ -409,6 +492,7 @@ def space_driven_embryo_prefit(
             "reason": "INNER_SHELL_EXCEEDS_PROXIMAL_SPACE",
             "desired_min_x_mm": float(desired_min_x),
             "desired_max_x_mm": float(desired_max_x),
+            "neighbor_reference_mapping": refs,
         }
         report["status"] = "REVIEW_REQUIRED"
 
@@ -417,10 +501,8 @@ def space_driven_embryo_prefit(
     if shell_required is not None and env_min_y is not None and env_max_y is not None:
         desired_min_y = min(desired_min_y, env_min_y - shell_required)
         desired_max_y = max(desired_max_y, env_max_y + shell_required)
-    buccal_scale = _side_scale(current_max_y, desired_max_y, center_y, True,
-                                cfg.bl_scale_min, cfg.bl_scale_max)
-    lingual_scale = _side_scale(current_min_y, desired_min_y, center_y, False,
-                                 cfg.bl_scale_min, cfg.bl_scale_max)
+    buccal_scale = _side_scale(current_max_y, desired_max_y, center_y, True, cfg.bl_scale_min, cfg.bl_scale_max)
+    lingual_scale = _side_scale(current_min_y, desired_min_y, center_y, False, cfg.bl_scale_min, cfg.bl_scale_max)
     _apply_asymmetric_axis_warp(local, 1, center_y, lingual_scale, buccal_scale, body_weight)
     report["bl"] = {
         "applied": bool(abs(buccal_scale - 1.0) > 1e-6 or abs(lingual_scale - 1.0) > 1e-6),
@@ -431,9 +513,6 @@ def space_driven_embryo_prefit(
         "desired_max_y_mm": float(desired_max_y),
     }
 
-    # Ensure enough vertical material above the actual intaglio before antagonist
-    # fitting.  This was missing in the old path and produced the characteristic
-    # OUTER×INTAGLIO ring around the abutment top.
     current_top = float(np.quantile(local[body, 2], .98))
     desired_top = current_top
     if env_top is not None and shell_required is not None:
@@ -441,8 +520,7 @@ def space_driven_embryo_prefit(
     if desired_top > current_top + 1e-6:
         height_now = max(current_top - margin_z, 0.5)
         height_desired = max(desired_top - margin_z, 0.5)
-        top_scale = float(np.clip(height_desired / height_now,
-                                  cfg.height_scale_min, cfg.height_scale_max))
+        top_scale = float(np.clip(height_desired / height_now, cfg.height_scale_min, cfg.height_scale_max))
         full_z = margin_z + (local[:, 2] - margin_z) * top_scale
         local[:, 2] += body_weight * (full_z - local[:, 2])
         report["height_floor"] = {
@@ -457,10 +535,7 @@ def space_driven_embryo_prefit(
 
     current.vertices = _world(local, frame)
     _finite_mesh(current)
-
-    current, shell_report = enforce_inner_envelope_clearance(
-        current, envelope_mesh, frame, margin, shell_required, config=cfg,
-    )
+    current, shell_report = enforce_inner_envelope_clearance(current, envelope_mesh, frame, margin, shell_required, config=cfg)
     report["inner_shell"] = {
         **shell_report,
         "source": envelope_source,
@@ -470,42 +545,8 @@ def space_driven_embryo_prefit(
     }
 
     if antagonist_surface is not None and occlusal_target_mm is not None:
-        local = _local(current.vertices, frame)
-        zones = build_crown_zones(current, frame, margin)
-        ids = np.flatnonzero(zones.occlusal)
-        if len(ids):
-            _cp, _faces, signed, _distance, valid = antagonist_surface.query(np.asarray(current.vertices)[ids])
-            signed = np.asarray(signed, float)
-            valid = np.asarray(valid, bool) & np.isfinite(signed)
-            if np.any(valid):
-                errors = signed[valid] - float(occlusal_target_mm)
-                ordered = np.sort(errors)
-                take = max(1, int(np.ceil(len(ordered) * float(cfg.contact_quantile))))
-                delta = float(np.median(ordered[:take]))
-                delta = float(np.clip(delta, -cfg.max_height_delta_mm, cfg.max_height_delta_mm))
-                occ_z = local[ids, 2]
-                top = float(np.quantile(occ_z, 0.90))
-                crown_height = max(top - margin_z, 0.5)
-                scale = float(np.clip((crown_height + delta) / crown_height,
-                                      cfg.height_scale_min, cfg.height_scale_max))
-                weight, _height = _body_weight(current, frame, margin, cfg.body_transition_mm)
-                full_z = margin_z + (local[:, 2] - margin_z) * scale
-                local[:, 2] += weight * (full_z - local[:, 2])
-                current.vertices = _world(local, frame)
-                _finite_mesh(current)
-                report["height"] = {
-                    "applied": bool(abs(scale - 1.0) > 1e-6),
-                    "mode": "ANTAGONIST_CONTACT_QUANTILE_HEIGHT_ENVELOPE",
-                    "scale": scale,
-                    "requested_delta_mm": delta,
-                    "reference_height_mm": crown_height,
-                    "sample_count": int(valid.sum()),
-                    "target_clearance_mm": float(occlusal_target_mm),
-                }
-            else:
-                report["height"] = {"applied": False, "reason": "NO_VALID_ANTAGONIST_SAMPLES"}
-        else:
-            report["height"] = {"applied": False, "reason": "NO_OCCLUSAL_ZONE"}
+        current, height_report = _fit_antagonist_height(current, frame, margin, antagonist_surface, occlusal_target_mm, cfg)
+        report["height"] = height_report
 
     _finite_mesh(current)
     return current, report
