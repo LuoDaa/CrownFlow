@@ -119,17 +119,18 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   await adapter.saveProfile(designId, params);
   eligibility = await api.generationEligibility(designId);
 
+  // Always refresh automatic neighbor references before AUTO generation.  V3
+  // stores a broad connected reference halo around the compact contact core; old
+  // V2 cases may still be CONFIRMED but have an edge-bound patch that produces
+  // zero valid signed samples.  Manual HUMAN_* references are preserved server-side.
+  emit(onProgress, "NEIGHBORS", "刷新邻牙参考面", 14, "扩展接触核心周围安全参考面");
+  await autoFitRequest(designId, "auto-neighbors", "POST", {
+    expected_input_digest: await inputDigest(designId),
+    confirmed: true,
+    patch_radius_mm: 5.0,
+  });
+  eligibility = await api.generationEligibility(designId);
   let states = neighborStates(eligibility);
-  if (states.length !== 2 || !states.every((state) => ["CONFIRMED", "ABSENT"].includes(state))) {
-    emit(onProgress, "NEIGHBORS", "重新建立邻牙参考", 14);
-    await autoFitRequest(designId, "auto-neighbors", "POST", {
-      expected_input_digest: await inputDigest(designId),
-      confirmed: true,
-      patch_radius_mm: 5.0,
-    });
-    eligibility = await api.generationEligibility(designId);
-    states = neighborStates(eligibility);
-  }
 
   if (!eligibility?.bite_confirmed) {
     emit(onProgress, "BITE", "重新确认静态咬合", 18);
@@ -141,6 +142,7 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
       units: "mm",
     });
     eligibility = await api.generationEligibility(designId);
+    states = neighborStates(eligibility);
   }
 
   if (states.length !== 2 || !states.every((state) => ["CONFIRMED", "ABSENT"].includes(state))) {
@@ -155,7 +157,7 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     throw new Error(blockers || "自动参考已建立，但当前参数没有形成可执行的邻接/对颌约束");
   }
 
-  // The backend candidate call now performs the actual patient-driven CAD chain:
+  // The backend candidate call performs the patient-driven CAD chain:
   // patient-space prefit -> Margin cervical fit -> proximal envelope -> antagonist
   // height/occlusal refinement -> intaglio preflight.
   emit(onProgress, "PREFIT", "患者空间整体适配", 28, "按邻牙宽度与咬合空间调整模板整体尺寸");
