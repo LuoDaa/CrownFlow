@@ -1,15 +1,8 @@
 """Patient-driven CAD-1 outer-crown adaptation.
 
-This module owns the *global* patient-space adaptation that must happen before
-local contact refinement:
-
-1. keep the Margin/cervical region authoritative;
-2. fit mesiodistal body width to available proximal space;
-3. fit overall crown height to the antagonist while preserving template relief;
-4. explicitly pull the cervical rim onto the patient Margin with a smooth band.
-
-The tooth library remains the anatomy prior.  Surrounding scans provide envelopes
-and dimensions, not replacement surfaces.
+The library tooth is an anatomy prior, not patient-size truth.  This module keeps
+legacy/global pre-fit helpers plus the authoritative full-loop cervical fit used
+throughout the current CAD-1 pipeline.
 """
 from __future__ import annotations
 
@@ -27,9 +20,9 @@ from .zones import build_crown_zones
 class AdaptationConfig:
     cervical_band_mm: float = 1.20
     cervical_hard_band_mm: float = 0.22
-    # Keep a tiny source contribution so coincident projections cannot collapse
-    # distinct topology.  0.995 leaves only 0.5% of the original seam error.
     cervical_hard_weight: float = 0.995
+    cervical_noop_p95_mm: float = 0.020
+    cervical_line_search: tuple[float, ...] = (1.0, 0.75, 0.50, 0.25, 0.125, 0.0625)
     body_transition_mm: float = 1.60
     md_scale_min: float = 0.72
     md_scale_max: float = 1.32
@@ -80,12 +73,7 @@ def _duplicate_pair_count(points, tolerance=1e-8) -> int:
 
 
 def _polyline_distances_3d(points, loop) -> np.ndarray:
-    """Exact point-to-closed-polyline distance in 3D.
-
-    Margin is a curve, not a cloud of samples.  Measuring with a KD-tree over
-    Margin vertices over-reports error whenever the confirmed Margin is sparse:
-    a point can lie exactly on a segment yet be far from both sampled endpoints.
-    """
+    """Exact point-to-closed-polyline distance in 3D."""
     points = np.asarray(points, dtype=float)
     loop = np.asarray(loop, dtype=float)
     if points.ndim != 2 or points.shape[1] != 3:
@@ -116,7 +104,7 @@ def _polyline_distances_3d(points, loop) -> np.ndarray:
 
 
 def _closest_points_on_margin_curve(points_local, margin_local):
-    """Continuous closest points on the *segments* of the closed Margin loop."""
+    """Continuous closest points on segments of the closed Margin loop."""
     points = np.asarray(points_local, dtype=float)
     loop = np.asarray(margin_local, dtype=float)
     if points.ndim != 2 or points.shape[1] != 3:
@@ -134,7 +122,6 @@ def _closest_points_on_margin_curve(points_local, margin_local):
     valid_segments = denom > 1e-18
     if not np.any(valid_segments):
         raise ValueError("Margin 全部由退化线段组成")
-
     safe = np.where(valid_segments, denom, 1.0)
     targets = np.empty_like(points)
     segment_ids = np.empty(len(points), dtype=int)
@@ -154,47 +141,34 @@ def _closest_points_on_margin_curve(points_local, margin_local):
         targets[start:stop] = a[ids] + chosen_t[:, None] * delta[ids]
         segment_ids[start:stop] = ids
         parameters[start:stop] = chosen_t
-
     if not np.isfinite(targets).all():
         raise ValueError("Margin 曲线投影产生非有限目标")
     return targets, segment_ids, parameters
 
 
 def _full_loop_margin_anchors(local, margin_local, rim, height):
-    """Choose unique rim vertices that cover the *whole* confirmed Margin loop.
-
-    The previous hard seam was selected only by ``height <= 0.22``.  If the
-    library cervical geometry sat 0.3--1.2 mm above one arc of the Margin, that
-    arc had no seam vertex at all even though the reported seam p95 looked tiny.
-    Here every Margin sample receives a unique rim anchor whenever the mesh has
-    enough rim vertices.  A global assignment with XY/angular/height cost keeps
-    the correspondence anatomically ordered instead of snapping many vertices to
-    one sample.
-    """
+    """Choose unique rim vertices that cover the whole confirmed Margin loop."""
     rim_ids = np.flatnonzero(np.asarray(rim, bool))
     loop = np.asarray(margin_local, float)
     if len(rim_ids) < 8 or len(loop) < 3:
         return np.zeros(0, int), np.zeros(0, int)
-
     count = min(len(loop), len(rim_ids))
-    if count == len(loop):
-        margin_ids = np.arange(len(loop), dtype=int)
-    else:
-        margin_ids = np.floor(np.linspace(0, len(loop), count, endpoint=False)).astype(int)
-
+    margin_ids = (
+        np.arange(len(loop), dtype=int)
+        if count == len(loop)
+        else np.floor(np.linspace(0, len(loop), count, endpoint=False)).astype(int)
+    )
     candidates = np.asarray(local, float)[rim_ids]
     targets = loop[margin_ids]
     dxy = np.linalg.norm(targets[:, None, :2] - candidates[None, :, :2], axis=2)
     dz = np.abs(targets[:, None, 2] - candidates[None, :, 2])
-
     center = np.mean(loop[:, :2], axis=0)
-    target_angle = np.arctan2(targets[:, 1] - center[1], targets[:, 0] - center[0])
-    candidate_angle = np.arctan2(candidates[:, 1] - center[1], candidates[:, 0] - center[0])
-    delta_angle = target_angle[:, None] - candidate_angle[None, :]
-    angular = np.abs(np.arctan2(np.sin(delta_angle), np.cos(delta_angle)))
+    ta = np.arctan2(targets[:, 1] - center[1], targets[:, 0] - center[0])
+    ca = np.arctan2(candidates[:, 1] - center[1], candidates[:, 0] - center[0])
+    da = ta[:, None] - ca[None, :]
+    angular = np.abs(np.arctan2(np.sin(da), np.cos(da)))
     radius_scale = max(float(np.median(np.linalg.norm(loop[:, :2] - center, axis=1))), 0.5)
     hpenalty = np.maximum(np.asarray(height, float)[rim_ids], 0.0)[None, :]
-
     cost = dxy + 0.25 * dz + 0.35 * radius_scale * angular + 0.15 * hpenalty
     rows, cols = linear_sum_assignment(cost)
     anchor_ids = rim_ids[cols]
@@ -204,7 +178,6 @@ def _full_loop_margin_anchors(local, margin_local, rim, height):
 
 
 def _anchor_transition_weights(mesh, anchor_ids, rim):
-    """Diffuse full-loop seam anchors through a few topological rings."""
     anchor_ids = np.asarray(anchor_ids, int)
     rim = np.asarray(rim, bool)
     influence = np.zeros(len(mesh.vertices), float)
@@ -218,10 +191,7 @@ def _anchor_transition_weights(mesh, anchor_ids, rim):
     seen = set(map(int, anchor_ids))
     front = set(seen)
     for value in (0.80, 0.55, 0.30):
-        nxt = {
-            v for u in front for v in adjacency[u]
-            if v not in seen and rim[v]
-        }
+        nxt = {v for u in front for v in adjacency[u] if v not in seen and rim[v]}
         if not nxt:
             break
         ids = np.asarray(sorted(nxt), int)
@@ -231,129 +201,152 @@ def _anchor_transition_weights(mesh, anchor_ids, rim):
     return influence
 
 
-def _neighbor_face_x(surface, frame, side: str) -> float | None:
-    """Return the neighbor X coordinate facing the target tooth."""
+def _surface_axis_reference(surface, frame, center_x: float):
+    """Return the physical +/-X side and the face coordinate nearest the space.
+
+    Clinical mesial/distal labels are metadata.  Geometry must follow where the
+    actual neighbor patch sits in the patient frame, otherwise a mirrored frame
+    can make a one-sided case grow on the wrong side.
+    """
     local = _local(surface.mesh.vertices, frame)
     x = local[:, 0]
     x = x[np.isfinite(x)]
     if not len(x):
         return None
-    if side == "mesial":
-        positive = x[x > 0]
-        values = positive if len(positive) >= max(8, len(x) // 10) else x
-        return float(np.quantile(values, 0.08))
-    if side == "distal":
-        negative = x[x < 0]
-        values = negative if len(negative) >= max(8, len(x) // 10) else x
-        return float(np.quantile(values, 0.92))
-    raise ValueError(f"未知邻接侧: {side}")
+    median = float(np.median(x))
+    sign = 1.0 if median >= center_x else -1.0
+    if sign > 0:
+        values = x[x > center_x]
+        if len(values) < 8:
+            values = x
+        face_x = float(np.quantile(values, 0.06))
+    else:
+        values = x[x < center_x]
+        if len(values) < 8:
+            values = x
+        face_x = float(np.quantile(values, 0.94))
+    return {"axis_sign": sign, "face_x_mm": face_x, "median_x_mm": median}
 
 
 def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
                           proximal_target_mm=None, antagonist_surface=None,
                           occlusal_target_mm=None, config: AdaptationConfig | None = None):
-    """Fit whole-crown width/height before local Laplacian contact refinement."""
+    """Legacy/global fit retained for tests and natural-prep compatibility.
+
+    One-sided proximal space expands only that physical side around the Margin
+    center; the whole crown is never translated merely to make contact.
+    """
     cfg = config or AdaptationConfig()
     _finite_mesh(mesh)
     current = mesh.copy()
     vertices = np.asarray(current.vertices, dtype=float)
     local = _local(vertices, frame)
     margin_local = _local(margin, frame)
+    center_x = float(np.median(margin_local[:, 0]))
     margin_z = float(np.median(margin_local[:, 2]))
     height_above = MarginCurtain(margin, frame.z).axial_above(vertices)
     body_weight = _smoothstep01(height_above / max(cfg.body_transition_mm, 1e-6))
-
-    report = {
-        "stage": "GLOBAL_PREFIT",
-        "status": "PASS_ENGINEERING",
-        "md": {"applied": False},
-        "height": {"applied": False},
-    }
+    report = {"stage": "GLOBAL_PREFIT", "status": "PASS_ENGINEERING", "md": {"applied": False}, "height": {"applied": False}}
 
     surfaces = proximal_surfaces or {}
     target = None if proximal_target_mm is None else float(proximal_target_mm)
     if surfaces and target is not None:
-        crown_non_cervical = height_above > cfg.cervical_hard_band_mm
-        crown_x = local[crown_non_cervical, 0] if np.any(crown_non_cervical) else local[:, 0]
+        non_cervical = height_above > cfg.cervical_hard_band_mm
+        crown_x = local[non_cervical, 0] if np.any(non_cervical) else local[:, 0]
         current_min = float(np.quantile(crown_x, 0.03))
         current_max = float(np.quantile(crown_x, 0.97))
-        current_center = 0.5 * (current_min + current_max)
-        current_span = max(current_max - current_min, 1e-6)
+        refs = {name: _surface_axis_reference(surface, frame, center_x) for name, surface in surfaces.items()}
+        refs = {name: ref for name, ref in refs.items() if ref is not None}
+        pos_faces = [ref["face_x_mm"] for ref in refs.values() if ref["axis_sign"] > 0]
+        neg_faces = [ref["face_x_mm"] for ref in refs.values() if ref["axis_sign"] < 0]
+        desired_max = min(pos_faces) - target if pos_faces else current_max
+        desired_min = max(neg_faces) + target if neg_faces else current_min
 
-        mesial_x = _neighbor_face_x(surfaces["mesial"], frame, "mesial") if "mesial" in surfaces else None
-        distal_x = _neighbor_face_x(surfaces["distal"], frame, "distal") if "distal" in surfaces else None
-        desired_max = mesial_x - target if mesial_x is not None else None
-        desired_min = distal_x + target if distal_x is not None else None
-
-        if desired_min is not None and desired_max is not None and desired_max > desired_min + 0.5:
-            desired_center = 0.5 * (desired_min + desired_max)
-            desired_span = desired_max - desired_min
-            scale = float(np.clip(desired_span / current_span, cfg.md_scale_min, cfg.md_scale_max))
-            translation = desired_center - current_center
-        elif desired_max is not None:
-            scale = 1.0
-            translation = desired_max - current_max
-        elif desired_min is not None:
-            scale = 1.0
-            translation = desired_min - current_min
-        else:
-            scale = 1.0
-            translation = 0.0
-
-        full_x = (local[:, 0] - current_center) * scale + current_center + translation
-        local[:, 0] += body_weight * (full_x - local[:, 0])
+        pos_now = max(current_max - center_x, 1e-6)
+        neg_now = max(center_x - current_min, 1e-6)
+        pos_want = max(desired_max - center_x, 1e-6)
+        neg_want = max(center_x - desired_min, 1e-6)
+        pos_scale = float(np.clip(pos_want / pos_now, cfg.md_scale_min, cfg.md_scale_max))
+        neg_scale = float(np.clip(neg_want / neg_now, cfg.md_scale_min, cfg.md_scale_max))
+        x = local[:, 0].copy()
+        delta = x - center_x
+        target_x = x.copy()
+        positive = delta >= 0
+        target_x[positive] = center_x + delta[positive] * pos_scale
+        target_x[~positive] = center_x + delta[~positive] * neg_scale
+        local[:, 0] += body_weight * (target_x - x)
         report["md"] = {
-            "applied": bool(abs(scale - 1.0) > 1e-6 or abs(translation) > 1e-6),
-            "scale": scale,
-            "translation_mm": float(translation),
-            "current_span_mm": current_span,
+            "applied": bool(abs(pos_scale - 1.0) > 1e-6 or abs(neg_scale - 1.0) > 1e-6),
+            "mode": "PHYSICAL_SIDE_ASYMMETRIC_SCALE_ABOUT_MARGIN_CENTER",
+            "positive_scale": pos_scale,
+            "negative_scale": neg_scale,
+            "whole_crown_translation_mm": 0.0,
             "desired_min_x_mm": desired_min,
             "desired_max_x_mm": desired_max,
-            "mesial_face_x_mm": mesial_x,
-            "distal_face_x_mm": distal_x,
+            "reference_mapping": refs,
         }
 
     if antagonist_surface is not None and occlusal_target_mm is not None:
-        temp = current.copy()
-        temp.vertices = _world(local, frame)
-        zones = build_crown_zones(temp, frame, margin)
-        ids = np.flatnonzero(zones.occlusal)
-        if len(ids):
+        for iteration in range(4):
+            temp = current.copy()
+            temp.vertices = _world(local, frame)
+            zones = build_crown_zones(temp, frame, margin)
+            ids = np.flatnonzero(zones.occlusal)
+            if not len(ids):
+                report["height"] = {"applied": False, "reason": "NO_OCCLUSAL_ZONE"}
+                break
             _cp, _faces, signed, _distance, valid = antagonist_surface.query(np.asarray(temp.vertices)[ids])
+            signed = np.asarray(signed, float)
             valid = np.asarray(valid, bool) & np.isfinite(signed)
-            if np.any(valid):
-                errors = np.asarray(signed[valid], float) - float(occlusal_target_mm)
-                ordered = np.sort(errors)
-                take = max(1, int(np.ceil(len(ordered) * cfg.contact_quantile)))
-                delta = float(np.median(ordered[:take]))
-                delta = float(np.clip(delta, -cfg.max_height_delta_mm, cfg.max_height_delta_mm))
-                occ_z = local[ids, 2]
-                top = float(np.quantile(occ_z, 0.90))
-                crown_height = max(top - margin_z, 0.5)
-                scale = float(np.clip((crown_height + delta) / crown_height,
-                                      cfg.height_scale_min, cfg.height_scale_max))
-                full_z = margin_z + (local[:, 2] - margin_z) * scale
-                local[:, 2] += body_weight * (full_z - local[:, 2])
-                report["height"] = {
-                    "applied": bool(abs(scale - 1.0) > 1e-6),
-                    "scale": scale,
-                    "requested_delta_mm": delta,
-                    "reference_height_mm": crown_height,
-                    "sample_count": int(valid.sum()),
-                    "target_clearance_mm": float(occlusal_target_mm),
-                }
-            else:
+            if not np.any(valid):
                 report["height"] = {"applied": False, "reason": "NO_VALID_ANTAGONIST_SAMPLES"}
-        else:
-            report["height"] = {"applied": False, "reason": "NO_OCCLUSAL_ZONE"}
+                break
+            values = signed[valid]
+            target_clearance = float(occlusal_target_mm)
+            penetration = np.maximum(target_clearance - values, 0.0)
+            if float(np.quantile(penetration, 0.95)) > 0.02:
+                report["height"] = {"applied": iteration > 0, "reason": "PENETRATION_PRESENT_LOCAL_REFINEMENT_REQUIRED", "iterations": iteration}
+                break
+            positive_error = values - target_clearance
+            positive_error = positive_error[positive_error > 0.03]
+            if not len(positive_error):
+                report["height"] = {"applied": iteration > 0, "reason": "HEIGHT_ON_TARGET", "iterations": iteration}
+                break
+            ordered = np.sort(positive_error)
+            take = max(1, int(np.ceil(len(ordered) * cfg.contact_quantile)))
+            step = float(np.clip(np.median(ordered[:take]), 0.0, min(cfg.max_height_delta_mm, 1.25)))
+            if step <= 1e-5:
+                break
+            local[:, 2] += body_weight * step
+            report["height"] = {
+                "applied": True,
+                "mode": "ITERATIVE_ANTAGONIST_AXIAL_HEIGHT_SEEK",
+                "last_step_mm": step,
+                "iterations": iteration + 1,
+                "target_clearance_mm": target_clearance,
+            }
 
     current.vertices = _world(local, frame)
     _finite_mesh(current)
     return current, report
 
 
+def _coverage_from_anchors(vertices, anchor_ids, margin_world):
+    if len(anchor_ids):
+        reverse = cKDTree(np.asarray(vertices)[anchor_ids]).query(margin_world, k=1)[0]
+        return reverse, float(np.mean(reverse <= 0.05)), float(np.quantile(reverse, 0.95)), float(np.max(reverse))
+    reverse = np.full(len(margin_world), np.inf)
+    return reverse, 0.0, float("inf"), float("inf")
+
+
 def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | None = None):
-    """Pull the template cervical region onto the *entire* confirmed Margin loop."""
+    """Pull the cervical region onto the entire Margin without collapsing topology.
+
+    The function is deliberately idempotent: once the full loop is within tolerance
+    a later shell/contact recheck leaves it untouched.  If a full-strength refit
+    would create coincident vertices, a deterministic line search backs off rather
+    than aborting the whole automatic design.
+    """
     cfg = config or AdaptationConfig()
     if not (0.0 < cfg.cervical_hard_weight < 1.0):
         raise ValueError("cervical_hard_weight 必须位于 (0,1)")
@@ -368,7 +361,6 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
     band = np.asarray((height >= -0.15) & (height <= cfg.cervical_band_mm), bool)
     vxy = local[:, :2] - center
     vradius = np.linalg.norm(vxy, axis=1)
-
     target_local, segment_ids, segment_t = _closest_points_on_margin_curve(local, margin_local)
     target_radius = np.linalg.norm(target_local[:, :2] - center, axis=1)
     rim = band & (vradius >= np.maximum(0.40 * target_radius, target_radius - 2.0))
@@ -397,37 +389,44 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
     before_seam = _polyline_distances_3d(vertices[seam], margin_world)
     before_band = _polyline_distances_3d(vertices[rim], margin_world)
     duplicates_before = _duplicate_pair_count(vertices)
+    reverse_before, coverage_before, reverse_before_p95, _reverse_before_max = _coverage_from_anchors(vertices, anchor_ids, margin_world)
+    before_p95 = float(np.quantile(before_seam, 0.95))
 
-    local += weight[:, None] * (target_local - local)
-    current.vertices = _world(local, frame)
+    # Once the full loop is good, repeated calls must be a no-op.  This is crucial
+    # after shell/contact passes: Margin is a hard boundary, not something to snap
+    # repeatedly until vertices become numerically coincident.
+    noop = before_p95 <= cfg.cervical_noop_p95_mm and coverage_before >= 0.98
+    selected_scale = 0.0
+    tried = []
+    accepted_vertices = vertices.copy()
+    duplicates_after = duplicates_before
+
+    if not noop:
+        base_delta = weight[:, None] * (target_local - local)
+        for scale in cfg.cervical_line_search:
+            trial_local = local + float(scale) * base_delta
+            trial_vertices = _world(trial_local, frame)
+            if not np.isfinite(trial_vertices).all():
+                tried.append({"scale": float(scale), "finite": False})
+                continue
+            duplicate_count = _duplicate_pair_count(trial_vertices)
+            tried.append({"scale": float(scale), "finite": True, "duplicate_pairs": duplicate_count})
+            if duplicate_count <= duplicates_before:
+                accepted_vertices = trial_vertices
+                selected_scale = float(scale)
+                duplicates_after = duplicate_count
+                break
+
+    current.vertices = accepted_vertices
     _finite_mesh(current)
-
-    duplicates_after = _duplicate_pair_count(current.vertices)
-    if duplicates_after > duplicates_before:
-        raise ValueError(
-            f"CERVICAL_FIT 产生新的重合顶点（{duplicates_before} → {duplicates_after}），已中止"
-        )
-
     after_vertices = np.asarray(current.vertices)
     after_seam = _polyline_distances_3d(after_vertices[seam], margin_world)
     after_band = _polyline_distances_3d(after_vertices[rim], margin_world)
-    if len(anchor_ids):
-        reverse = cKDTree(after_vertices[anchor_ids]).query(margin_world, k=1)[0]
-        coverage_fraction = float(np.mean(reverse <= 0.05))
-        reverse_p95 = float(np.quantile(reverse, 0.95))
-        reverse_max = float(np.max(reverse))
-    else:
-        reverse = np.full(len(margin_world), np.inf)
-        coverage_fraction = 0.0
-        reverse_p95 = float("inf")
-        reverse_max = float("inf")
+    reverse, coverage_fraction, reverse_p95, reverse_max = _coverage_from_anchors(after_vertices, anchor_ids, margin_world)
+    after_p95 = float(np.quantile(after_seam, 0.95))
 
     used_segments = np.unique(np.r_[segment_ids[near_seam], anchor_margin_ids]).astype(int)
-    status = (
-        "PASS_ENGINEERING"
-        if float(np.quantile(after_seam, 0.95)) <= 0.05 and coverage_fraction >= 0.98
-        else "REVIEW_REQUIRED"
-    )
+    status = "PASS_ENGINEERING" if after_p95 <= 0.05 and coverage_fraction >= 0.98 else "REVIEW_REQUIRED"
     report = {
         "stage": "CERVICAL_FIT",
         "status": status,
@@ -441,15 +440,19 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
         "distance_metric": "exact_point_to_closed_margin_polyline_3d",
         "segment_count_used": int(len(used_segments)),
         "segment_t_range": [float(np.min(segment_t[seam])), float(np.max(segment_t[seam]))],
-        "before_mm": {
-            "median": float(np.median(before_seam)),
-            "p95": float(np.quantile(before_seam, 0.95)),
-            "max": float(np.max(before_seam)),
+        "idempotent_noop": bool(noop),
+        "duplicate_guard": {
+            "policy": "BACKTRACK_INSTEAD_OF_ABORT",
+            "selected_scale": float(selected_scale),
+            "backed_off": bool(selected_scale not in (0.0, 1.0)),
+            "trials": tried,
         },
-        "after_mm": {
-            "median": float(np.median(after_seam)),
-            "p95": float(np.quantile(after_seam, 0.95)),
-            "max": float(np.max(after_seam)),
+        "before_mm": {"median": float(np.median(before_seam)), "p95": before_p95, "max": float(np.max(before_seam))},
+        "after_mm": {"median": float(np.median(after_seam)), "p95": after_p95, "max": float(np.max(after_seam))},
+        "full_loop_coverage_before": {
+            "within_0_05mm_fraction": coverage_before,
+            "reverse_p95_mm": reverse_before_p95,
+            "covered_samples": int(np.sum(reverse_before <= 0.05)),
         },
         "full_loop_coverage": {
             "within_0_05mm_fraction": coverage_fraction,
@@ -464,4 +467,6 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
             "after_p95": float(np.quantile(after_band, 0.95)),
         },
     }
+    if not noop and selected_scale == 0.0 and status != "PASS_ENGINEERING":
+        report["reason"] = "DUPLICATE_SAFE_MARGIN_BACKTRACK_EXHAUSTED"
     return current, report
