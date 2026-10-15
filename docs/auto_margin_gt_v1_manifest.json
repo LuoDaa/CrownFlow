@@ -1,0 +1,129 @@
+{
+ "name": "AutoMarginGTSet",
+ "version": "v1",
+ "frozen_at": "2026-09-30",
+ "unit": "face-level binary labels on the die mesh (Class1=crown side above margin, Class0=cervical side below margin)",
+ "n_rows": 122,
+ "n_cases": 44,
+ "rows_per_case": {
+  "2": 13,
+  "4": 6,
+  "3": 10,
+  "5": 1,
+  "1": 11,
+  "6": 2,
+  "14": 1
+ },
+ "split": {
+  "unit": "group_id (= case_uuid)",
+  "seed": 20260929,
+  "counts": {
+   "train": 27,
+   "val": 8,
+   "test": 9
+  },
+  "assign": {
+   "cf_1357b22dbe38ae50": "train",
+   "cf_14611ff0f46877f3": "val",
+   "cf_2fe2d22e05fd2976": "train",
+   "cf_31018f8cba509483": "train",
+   "cf_35b097bd9296b6c4": "train",
+   "cf_35d32e1b7a731ad0": "train",
+   "cf_3a6764a963913900": "test",
+   "cf_3e3bf04cc11b75a3": "train",
+   "cf_3e9478dd4181472c": "train",
+   "cf_4811961eeb688dd9": "val",
+   "cf_4d79e992850c65a7": "train",
+   "cf_4dff5b30f37a71cf": "val",
+   "cf_4f36174cfb42fd92": "test",
+   "cf_521d8c8f9c1ee0c7": "train",
+   "cf_5b36e2666be6d3ce": "val",
+   "cf_614e7440c60a92bb": "train",
+   "cf_637255ed37cb5989": "val",
+   "cf_66abde0466f48cd3": "val",
+   "cf_66e0035caf72f9fa": "train",
+   "cf_6923bed5fd9cf44f": "train",
+   "cf_6cb1b648d21c2978": "train",
+   "cf_6e26c34f7525b796": "train",
+   "cf_6fc88119791c22ed": "test",
+   "cf_7709f2cab4e4e08e": "train",
+   "cf_7c20c211af6d9c59": "train",
+   "cf_813609a295707193": "test",
+   "cf_8be39f199d7d7af5": "test",
+   "cf_9022f0f3d7ca92d5": "train",
+   "cf_918e4e9948fc232e": "test",
+   "cf_9e45cb360d8409b4": "test",
+   "cf_9f00b703f599307d": "train",
+   "cf_a5d988422fb99d48": "val",
+   "cf_b1e30086277b0b09": "train",
+   "cf_b71e6f7def991fa9": "train",
+   "cf_be0da476093cd752": "train",
+   "cf_c0e8e57cafbce9ef": "val",
+   "cf_c533f356eb4cef0c": "train",
+   "cf_c7b4cf71cd2b3664": "test",
+   "cf_cec582d237dbbacd": "train",
+   "cf_d395c71af2675aa6": "train",
+   "cf_d5cdd15dfb61cbfa": "train",
+   "cf_e8e4383fffa31889": "test",
+   "cf_fa09aca7fbf66fe9": "train",
+   "cf_feb68b92d55ceb5f": "train"
+  }
+ },
+ "asset": {
+  "source": "exocad *-modeldie.stl (positively selected)",
+  "selection_method": "GEOMETRIC_MARGIN_PROJECTION",
+  "explanation": "对同病例所有候选 *modeldie* 按内容哈希去重后，把该牙位 Margin 分别投影过去，取投影误差 p95 最小者；p95 <= 0.20mm 才算命中",
+  "n_candidates_pool_rows": 329,
+  "n_candidates_pool_cases": 139,
+  "n_selected_rows": 130,
+  "selected_err_p95_mm": {
+   "p50": 0.0,
+   "p90": 0.0,
+   "max": 0.0273
+  }
+ },
+ "projection_thresholds_mm": {
+  "max_proj_p95": 0.2,
+  "max_proj_max": 0.6,
+  "note": "粗差门控；分布双峰（96.9% 精确为 0，坏例直接 2~10mm），0.05~0.5 之间无灰区"
+ },
+ "qc": {
+  "asset_kind": {
+   "DIE_LIKE": 122
+  },
+  "side_method": {
+   "ABOVE_FRAC": 122
+  },
+  "proj_p95_mm": {
+   "p50": 0.0,
+   "p90": 0.0,
+   "max": 0.0
+  },
+  "proj_max_mm_max": 0.0,
+  "fragment_ratio": {
+   "p50": 0.1035,
+   "p90": 0.1402,
+   "max": 0.1798
+  },
+  "n_faces_total": 2966204,
+  "n_class1_faces_total": 2272341,
+  "n_class0_faces_total": 468998,
+  "n_unlabeled_faces_total": 224865
+ },
+ "independent_label_checks": {
+  "1_above_frac": "Class1 的 above_frac 中位 0.928 vs Class0 0.011",
+  "2_area": "Class1 面积/Class0 面积 中位 0.38；116/116 行 Class1 更小，符合「预备体表面 < 代型外壁」的解剖关系",
+  "3_base_top_extremes": "沿轴最低点（代型基座）60/60 在 Class0；沿轴最高点 60/60 在 Class1",
+  "visual": "40 例渲染（qa_render/sheet_*.png），绿线 Margin 精确落在红蓝交界上"
+ },
+ "margin_source_breakdown": {
+  "MODEL_INFO": 122
+ },
+ "provenance": {
+  "design_snapshot": "constructionInfo 优先，modelInfo 兜底",
+  "labels_include_cut_band": false,
+  "n_faces_unlabeled_explained": "cut band (margin 所在面 + 其顶点 incident faces) 与碎片分量，均写 255 不参与训练",
+  "phi": "manifest 只含 case_uuid 哈希与计数，无姓名/原文件名/内网路径",
+  "margin_source_note": "v1 的 Margin 全部来自 .modelInfo（模型坐标系）——与代型同帧由几何证据（p95 = 0.0000mm）直接证明。若按旧政策只认 constructionInfo，本集合将为空；接受与否是需要拍板的政策决定。"
+ }
+}

@@ -1,0 +1,10 @@
+# 可选依赖。
+#
+# 注意：manifold3d 与 mapbox-earcut 曾列在本文件里，现**已移入 requirements.txt**。
+# 它们不是可选的 —— 缺失会产出错误的几何结果（实测：13% 体积的碎冠）。
+#
+# 本文件保留给真正可选的重量级依赖。
+
+# PyTorch：只有启用 AI Generator 时才需要。
+# 未安装时 AI 模式自动关闭，Template CAD 路径完全不受影响。
+torch>=2.4

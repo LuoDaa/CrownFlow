@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {shortcutAction} from '../src/viewShortcuts.js';
+const e=(key,overrides={})=>({key,...overrides});
+assert.equal(shortcutAction(e('F')),'fit');
+assert.equal(shortcutAction(e('z',{ctrlKey:true})),'undo');
+assert.equal(shortcutAction(e('z',{ctrlKey:true,shiftKey:true})),'redo');
+assert.equal(shortcutAction(e('s',{metaKey:true})),'save');
+assert.equal(shortcutAction(e('f',{repeat:true})),null);
+assert.equal(shortcutAction(e('f',{isComposing:true})),null);
+assert.equal(shortcutAction(e('f',{altKey:true})),null);
+assert.equal(shortcutAction(e('f',{target:{closest:()=>({})}})),null);
+assert.equal(shortcutAction(e('s',{ctrlKey:true,altKey:true})),null);
+assert.equal(shortcutAction(e('q')),null);
+console.log('Shortcut checks passed');

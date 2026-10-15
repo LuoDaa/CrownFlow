@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {canConfirmMargin} from '../src/marginReview.js';
+const ring=Array.from({length:12},(_,i)=>[Math.cos(i*Math.PI/6),Math.sin(i*Math.PI/6),0]);
+assert.equal(canConfirmMargin(ring.slice(0,3),true),false);
+assert.equal(canConfirmMargin(ring.slice(0,8),true),false);
+assert.equal(canConfirmMargin(ring,false),false);
+assert.equal(canConfirmMargin(Array(12).fill([1,2,3]),true),false);
+assert.equal(canConfirmMargin([...ring.slice(0,11),[NaN,1,2]],true),false);
+assert.equal(canConfirmMargin(Array.from({length:12},(_,i)=>[i,0,0]),true),false);
+assert.equal(canConfirmMargin(ring,true),true);

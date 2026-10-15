@@ -1,0 +1,32 @@
+# CrownFlow 后端依赖。
+#
+# 版本全部固定（==）。理由：几何结果必须可复现 —— 实测 trimesh 的体素/形态学 API
+# 在 4.x → 5.0 之间发生过变化，开发机与服务器版本不一致会让几何判定产生
+# 不可解释的差异。另外旧约束 `trimesh>=4.5,<5` 与实际安装的 5.0.0 不符。
+
+fastapi==0.140.0
+uvicorn[standard]==0.51.0
+python-multipart==0.0.24
+pydantic==2.10.3
+
+numpy==2.3.5
+scipy==1.17.1
+scikit-image==0.26.0
+trimesh==5.0.0
+
+# ---- 功能依赖，不是可选依赖 -------------------------------------------------
+# manifold3d    精确网格布尔。缺失时体素降级会在没有任何裁减的情况下
+#               把牙冠体积放大 10%、引入 0.089 mm 中位 / 0.424 mm 最大表面误差。
+manifold3d==3.5.3
+# mapbox-earcut 裁切面三角化。缺失时 slice_mesh_plane(cap=True) 抛异常，
+#               Margin 裁切无法生成盖片，牙冠以非水密状态进入布尔，
+#               实测产出真值 13% 体积的碎冠。
+mapbox-earcut==2.1.0
+# rtree         trimesh.ray / triangles_tree 依赖它。
+#               Mesh 射线（可见性、厚度、包含性判定）没有它不可用。
+rtree==1.4.1
+
+hpsdecode==1.0.0
+
+pytest==9.0.2
+httpx==0.28.1

@@ -1,0 +1,63 @@
+{
+ "n_cases": 18,
+ "n_ok": 18,
+ "config": {
+  "cervical_band_mm": 2.0,
+  "occlusal_anchor_percentile": 75.0,
+  "orientation_band_percentile": 5.0,
+  "qc_flipped_faces_ratio": 0.01,
+  "qc_margin_p95_mm": 0.3,
+  "qc_occlusal_motion_ratio": 0.5,
+  "resample_n": 256,
+  "weight_margin": -1.0,
+  "weight_occlusal_anchor": 0.3,
+  "weight_root_anchor": -1.0,
+  "_provisional": true
+ },
+ "template": {
+  "fdi": 46,
+  "library": "\u70bc\u91d1\u738b",
+  "n_vertices": 8738,
+  "n_faces": 17392,
+  "n_margin_loop": 146,
+  "margin_perimeter_mm": 33.926,
+  "margin_extent_mm": 9.964,
+  "margin_loop_bit": [
+   "0x800"
+  ],
+  "margin_source": "LABEL_LOOP",
+  "n_crown_vertices": 5875,
+  "n_root_vertices": 2717,
+  "crown_height_mm": 7.428,
+  "crown_span_xy_mm": [
+   10.541,
+   11.352
+  ],
+  "occlusal_direction": [
+   -0.1506,
+   -0.1507,
+   0.977
+  ],
+  "n_components_after_seam": 2,
+  "n_other_components": 0,
+  "n_other_vertices": 0,
+  "oz_radius_lo5": 4.015,
+  "oz_radius_hi5": 4.657,
+  "margin_loop_n": 146,
+  "margin_axial_fraction": 0.432
+ },
+ "chamfer_median": 0.6341,
+ "hausdorff_median": 2.506,
+ "margin_p95_median": 0.0198,
+ "signed_overall_median_of_medians": 0.096,
+ "signed_by_region_median_of_medians": {
+  "cervical": -0.2052,
+  "mesial": -0.4123,
+  "distal": 0.1936,
+  "buccal": 0.6118,
+  "lingual": -0.2949,
+  "occlusal": 0.7819
+ },
+ "failed": [],
+ "elapsed_total_s": 205.6
+}

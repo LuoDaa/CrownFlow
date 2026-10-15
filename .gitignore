@@ -1,0 +1,68 @@
+# ============================================================================
+# 患者数据一律禁止入库。
+#
+# 实测：工作区上级目录（D:\code\牙冠自动生成\数据\、32牙位基础解剖模板库\）里
+# 包含真实患者姓名、扫描件、exocad 工程。本仓库刻意只初始化在
+# CrownFlow_Complete\ 这一层，使那些目录在仓库之外；下面的规则是第二道防线。
+# ============================================================================
+
+# 运行时数据目录（病例 STL、DCM、sqlite）
+data/*
+!data/.gitkeep
+
+# 脱敏映射表含 PHI
+*deid_mapping*
+_deid_mapping*
+
+# 明确的患者数据目录名（防止有人从上级目录复制进来）
+数据/
+病例/
+patient_data/
+cases/
+raw/
+
+# 专有 CAD 工程与加密扫描容器
+*.dentalCAD
+*.dentalProject
+*.constructionInfo
+*.modelInfo
+*.matrix4
+*.3ox
+*.3OX
+*.DCM
+*.dcm
+
+# Python
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+**/.pytest_cache/
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# AI 权重不进仓库（避免误提交来源不明的权重）
+ml/checkpoints/
+*.ts
+*.pt
+
+# 环境与系统
+.env
+.DS_Store
+Thumbs.db
+
+# 本地探索用的临时渲染产物
+_scratch_*.png
+
+# 一次性补丁脚本
+backend/_patch*.py
+backend/_fix_test.py
+backend/_dsrc2.py
+backend/_reflect.py
+backend/_v3.py
+
+# 端到端验收产物（含真实例运行结果，本地保留）
+backend/tools/e2e_result.json

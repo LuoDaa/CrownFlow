@@ -1,0 +1,539 @@
+{
+ "case_uuid": "cf_b1b73bae221211b1",
+ "trust_region_mm": 0.35,
+ "target_gap_mm": 0.05,
+ "occlusal_table_normal_dot": 0.6,
+ "v2_status": "REVIEW_REQUIRED",
+ "sides": {
+  "mesial": {
+   "side": "mesial",
+   "penetrating_vertex_count": 2296,
+   "penetration_median_mm": 0.5929,
+   "penetration_p95_mm": 1.8171,
+   "penetration_max_mm": 1.9496,
+   "required_max_mm": 2.0496,
+   "required_over_trust_max": 5.86,
+   "penetration_by_region": {
+    "PROXIMAL_EDITABLE": {
+     "count": 1568,
+     "pen_sum_mm": 838.9599,
+     "pen_max_mm": 1.9478,
+     "required_max_mm": 2.0478,
+     "required_over_trust_p50": 0.82,
+     "required_over_trust_p90": 4.52
+    },
+    "OCCLUSAL_LOCKED": {
+     "count": 663,
+     "pen_sum_mm": 729.3886,
+     "pen_max_mm": 1.9496,
+     "required_max_mm": 2.0496,
+     "required_over_trust_p50": 4.3,
+     "required_over_trust_p90": 5.49
+    },
+    "CERVICAL_LOCKED": {
+     "count": 65,
+     "pen_sum_mm": 35.6315,
+     "pen_max_mm": 1.9403,
+     "required_max_mm": 2.0403,
+     "required_over_trust_p50": 0.73,
+     "required_over_trust_p90": 4.37
+    },
+    "OTHER": {
+     "count": 0,
+     "pen_sum_mm": 0.0,
+     "pen_max_mm": 0.0,
+     "required_max_mm": 0.0,
+     "required_over_trust_p50": null,
+     "required_over_trust_p90": null
+    }
+   },
+   "deepest_20": [
+    {
+     "xyz": [
+      -16.21,
+      2.691,
+      5.355
+     ],
+     "penetration_mm": 1.9496,
+     "required_mm": 2.0496,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 2.0
+    },
+    {
+     "xyz": [
+      -15.172,
+      -0.431,
+      4.961
+     ],
+     "penetration_mm": 1.9481,
+     "required_mm": 2.0481,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.998
+    },
+    {
+     "xyz": [
+      -18.92,
+      -1.877,
+      -1.998
+     ],
+     "penetration_mm": 1.9478,
+     "required_mm": 2.0478,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.998
+    },
+    {
+     "xyz": [
+      -20.729,
+      0.109,
+      -1.996
+     ],
+     "penetration_mm": 1.9457,
+     "required_mm": 2.0457,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.996
+    },
+    {
+     "xyz": [
+      -14.44,
+      0.538,
+      5.361
+     ],
+     "penetration_mm": 1.9442,
+     "required_mm": 2.0442,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.994
+    },
+    {
+     "xyz": [
+      -16.406,
+      2.419,
+      5.363
+     ],
+     "penetration_mm": 1.9424,
+     "required_mm": 2.0424,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.992
+    },
+    {
+     "xyz": [
+      -19.481,
+      -1.673,
+      -1.99
+     ],
+     "penetration_mm": 1.9403,
+     "required_mm": 2.0403,
+     "region": "CERVICAL_LOCKED",
+     "patch_dist_mm": 1.99
+    },
+    {
+     "xyz": [
+      -16.634,
+      2.295,
+      5.199
+     ],
+     "penetration_mm": 1.9399,
+     "required_mm": 2.0399,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.99
+    },
+    {
+     "xyz": [
+      -18.025,
+      5.4,
+      3.386
+     ],
+     "penetration_mm": 1.9386,
+     "required_mm": 2.0386,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.989
+    },
+    {
+     "xyz": [
+      -15.377,
+      3.322,
+      5.367
+     ],
+     "penetration_mm": 1.9381,
+     "required_mm": 2.0381,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.999
+    },
+    {
+     "xyz": [
+      -16.578,
+      2.164,
+      5.322
+     ],
+     "penetration_mm": 1.9372,
+     "required_mm": 2.0372,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.987
+    },
+    {
+     "xyz": [
+      -21.873,
+      2.072,
+      -1.986
+     ],
+     "penetration_mm": 1.936,
+     "required_mm": 2.036,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.986
+    },
+    {
+     "xyz": [
+      -17.429,
+      4.066,
+      3.721
+     ],
+     "penetration_mm": 1.9353,
+     "required_mm": 2.0353,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.985
+    },
+    {
+     "xyz": [
+      -17.245,
+      3.648,
+      4.11
+     ],
+     "penetration_mm": 1.9331,
+     "required_mm": 2.0331,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.983
+    },
+    {
+     "xyz": [
+      -21.754,
+      1.658,
+      -1.983
+     ],
+     "penetration_mm": 1.9329,
+     "required_mm": 2.0329,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.983
+    },
+    {
+     "xyz": [
+      -17.024,
+      3.147,
+      4.446
+     ],
+     "penetration_mm": 1.9312,
+     "required_mm": 2.0312,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.981
+    },
+    {
+     "xyz": [
+      -14.865,
+      0.185,
+      5.374
+     ],
+     "penetration_mm": 1.9309,
+     "required_mm": 2.0309,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.981
+    },
+    {
+     "xyz": [
+      -17.822,
+      4.931,
+      3.866
+     ],
+     "penetration_mm": 1.9305,
+     "required_mm": 2.0305,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.98
+    },
+    {
+     "xyz": [
+      -17.379,
+      3.931,
+      3.572
+     ],
+     "penetration_mm": 1.9261,
+     "required_mm": 2.0261,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.976
+    },
+    {
+     "xyz": [
+      -15.904,
+      2.948,
+      5.38
+     ],
+     "penetration_mm": 1.9246,
+     "required_mm": 2.0246,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.975
+    }
+   ]
+  },
+  "distal": {
+   "side": "distal",
+   "penetrating_vertex_count": 2214,
+   "penetration_median_mm": 0.3182,
+   "penetration_p95_mm": 1.7194,
+   "penetration_max_mm": 1.9497,
+   "required_max_mm": 2.0497,
+   "required_over_trust_max": 5.86,
+   "penetration_by_region": {
+    "PROXIMAL_EDITABLE": {
+     "count": 1845,
+     "pen_sum_mm": 1060.4907,
+     "pen_max_mm": 1.9497,
+     "required_max_mm": 2.0497,
+     "required_over_trust_p50": 1.04,
+     "required_over_trust_p90": 4.66
+    },
+    "OCCLUSAL_LOCKED": {
+     "count": 329,
+     "pen_sum_mm": 214.3214,
+     "pen_max_mm": 1.9312,
+     "required_max_mm": 2.0312,
+     "required_over_trust_p50": 1.74,
+     "required_over_trust_p90": 4.71
+    },
+    "CERVICAL_LOCKED": {
+     "count": 40,
+     "pen_sum_mm": 8.6561,
+     "pen_max_mm": 1.1882,
+     "required_max_mm": 1.2882,
+     "required_over_trust_p50": 0.29,
+     "required_over_trust_p90": 2.71
+    },
+    "OTHER": {
+     "count": 0,
+     "pen_sum_mm": 0.0,
+     "pen_max_mm": 0.0,
+     "required_max_mm": 0.0,
+     "required_over_trust_p50": null,
+     "required_over_trust_p90": null
+    }
+   },
+   "deepest_20": [
+    {
+     "xyz": [
+      -18.235,
+      5.886,
+      3.042
+     ],
+     "penetration_mm": 1.9497,
+     "required_mm": 2.0497,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 2.0
+    },
+    {
+     "xyz": [
+      -18.361,
+      6.16,
+      3.269
+     ],
+     "penetration_mm": 1.9491,
+     "required_mm": 2.0491,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.999
+    },
+    {
+     "xyz": [
+      -19.463,
+      8.467,
+      2.254
+     ],
+     "penetration_mm": 1.9484,
+     "required_mm": 2.0484,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.998
+    },
+    {
+     "xyz": [
+      -20.729,
+      0.109,
+      -1.996
+     ],
+     "penetration_mm": 1.9457,
+     "required_mm": 2.0457,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.996
+    },
+    {
+     "xyz": [
+      -19.189,
+      7.891,
+      2.629
+     ],
+     "penetration_mm": 1.944,
+     "required_mm": 2.044,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.994
+    },
+    {
+     "xyz": [
+      -18.025,
+      5.4,
+      3.386
+     ],
+     "penetration_mm": 1.9386,
+     "required_mm": 2.0386,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.989
+    },
+    {
+     "xyz": [
+      -21.873,
+      2.072,
+      -1.986
+     ],
+     "penetration_mm": 1.936,
+     "required_mm": 2.036,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.986
+    },
+    {
+     "xyz": [
+      -17.429,
+      4.066,
+      3.721
+     ],
+     "penetration_mm": 1.9353,
+     "required_mm": 2.0353,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.985
+    },
+    {
+     "xyz": [
+      -17.245,
+      3.648,
+      4.11
+     ],
+     "penetration_mm": 1.9331,
+     "required_mm": 2.0331,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.983
+    },
+    {
+     "xyz": [
+      -21.754,
+      1.658,
+      -1.983
+     ],
+     "penetration_mm": 1.9329,
+     "required_mm": 2.0329,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.983
+    },
+    {
+     "xyz": [
+      -17.024,
+      3.147,
+      4.446
+     ],
+     "penetration_mm": 1.9312,
+     "required_mm": 2.0312,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.981
+    },
+    {
+     "xyz": [
+      -17.822,
+      4.931,
+      3.866
+     ],
+     "penetration_mm": 1.9305,
+     "required_mm": 2.0305,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.98
+    },
+    {
+     "xyz": [
+      -17.379,
+      3.931,
+      3.572
+     ],
+     "penetration_mm": 1.9261,
+     "required_mm": 2.0261,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.976
+    },
+    {
+     "xyz": [
+      -19.357,
+      8.196,
+      2.462
+     ],
+     "penetration_mm": 1.9257,
+     "required_mm": 2.0257,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.976
+    },
+    {
+     "xyz": [
+      -21.794,
+      5.743,
+      -1.972
+     ],
+     "penetration_mm": 1.9218,
+     "required_mm": 2.0218,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.972
+    },
+    {
+     "xyz": [
+      -17.71,
+      4.658,
+      3.98
+     ],
+     "penetration_mm": 1.9206,
+     "required_mm": 2.0206,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.971
+    },
+    {
+     "xyz": [
+      -22.059,
+      2.965,
+      -1.967
+     ],
+     "penetration_mm": 1.9169,
+     "required_mm": 2.0169,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.976
+    },
+    {
+     "xyz": [
+      -21.752,
+      1.596,
+      -1.959
+     ],
+     "penetration_mm": 1.9086,
+     "required_mm": 2.0086,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.959
+    },
+    {
+     "xyz": [
+      -19.949,
+      7.208,
+      -1.959
+     ],
+     "penetration_mm": 1.9085,
+     "required_mm": 2.0085,
+     "region": "PROXIMAL_EDITABLE",
+     "patch_dist_mm": 1.959
+    },
+    {
+     "xyz": [
+      -16.997,
+      3.031,
+      4.468
+     ],
+     "penetration_mm": 1.9085,
+     "required_mm": 2.0085,
+     "region": "OCCLUSAL_LOCKED",
+     "patch_dist_mm": 1.958
+    }
+   ]
+  }
+ }
+}

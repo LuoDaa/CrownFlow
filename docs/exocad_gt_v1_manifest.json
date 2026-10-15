@@ -1,0 +1,118 @@
+{
+  "dataset_version": "exocad_gt_v1",
+  "generated_from": {
+    "index_csv": "/tmp/gt_index_v3/tooth_index.csv",
+    "audit_csv": "/tmp/gt_audit_v2/arch_asset_audit.csv"
+  },
+  "n_findex_rows": 6132,
+  "n_cases": 2136,
+  "n_case_groups": 2133,
+  "set_counts": {
+    "MarginGTSet": 3498,
+    "AxisGTSet": 3498,
+    "LocalizationGTSet": 4,
+    "SupportGTSet": 2028,
+    "OuterCrownGTSet": 686,
+    "SingleAnatomicCrownGTSet": 177,
+    "EndToEndGTSet": 0
+  },
+  "set_case_counts": {
+    "MarginGTSet": 1863,
+    "AxisGTSet": 1863,
+    "LocalizationGTSet": 4,
+    "SupportGTSet": 1406,
+    "OuterCrownGTSet": 385,
+    "SingleAnatomicCrownGTSet": 163,
+    "EndToEndGTSet": 0
+  },
+  "localization_admitted_class": "FULL_ARCH_WITH_TARGET",
+  "localization_route_status": "TERMINATED_GEOMETRY_SELF_DATA",
+  "localization_route_evidence": "docs/LOCALIZATION_QA2.md",
+  "localization_requires_human_prep": true,
+  "human_label_summary": {
+    "QA1": {
+      "A": 3,
+      "B": 4,
+      "C": 19,
+      "U": 5
+    },
+    "QA2": {
+      "A": 7,
+      "B": 2,
+      "C": 42,
+      "U": 4
+    }
+  },
+  "human_label_conflicts": [],
+  "human_prep_positive_rows": 10,
+  "qa2_confusion": {
+    "rule": "peak1_in_polygon",
+    "TP": 4,
+    "FP": 14,
+    "FN": 3,
+    "TN": 33,
+    "in_poly_rows_in_sample": 18,
+    "precision": 0.222,
+    "recall_on_sample": 0.571,
+    "raw_top_peak_fires": 55,
+    "raw_top_peak_TP": 7,
+    "raw_precision": 0.127,
+    "in_poly_precision": 0.222
+  },
+  "qa2_strata": {
+    "A_high": [
+      10,
+      1
+    ],
+    "in_poly": [
+      12,
+      4
+    ],
+    "border": [
+      12,
+      2
+    ],
+    "mid": [
+      11,
+      0
+    ],
+    "miss_strong": [
+      1,
+      0
+    ],
+    "unk_strong": [
+      9,
+      0
+    ]
+  },
+  "localization_exclusion_reasons": {
+    "excluded_not_margin_gt": 2239,
+    "excluded_no_arch_candidate": 2181,
+    "excluded_unknown": 635,
+    "excluded_target_missing": 461,
+    "excluded_not_geometric_gt_source": 395,
+    "excluded_no_human_verdict": 151,
+    "excluded_partial_arch": 37,
+    "excluded_human_label_C": 20,
+    "excluded_antagonist": 4,
+    "admitted": 4,
+    "excluded_human_label_U": 3,
+    "excluded_human_label_B": 2
+  },
+  "arch_asset_class_counts": {
+    "UNKNOWN": 5160,
+    "FULL_ARCH_TARGET_MISSING": 521,
+    "FULL_ARCH_WITH_TARGET": 391,
+    "PARTIAL_ARCH": 45,
+    "FULL_ARCH_ANTAGONIST": 15
+  },
+  "reconstruction_type_counts": {
+    "AnatomicCrown": 2536,
+    "Coping": 1373,
+    "Antagonist": 1152,
+    "AnatomicPontic": 383,
+    "Unknown": 315,
+    "ReducedPontic": 235,
+    "HealthyTooth": 138
+  }
+}

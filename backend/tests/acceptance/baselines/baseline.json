@@ -1,0 +1,516 @@
+{
+  "schema_version": 3,
+  "pipeline_version": "v4_nonplanar_shared_seam",
+  "pipeline_components": {
+    "insertion_axis": "v2_cone_search_area_weighted_undercut",
+    "margin": "v2_gt_cervical_seam",
+    "blockout": "v3_directional_shadow_volume",
+    "cement_gap": "v3_variable_gap_field",
+    "thickness": "audit_only（不做自动补厚；薄区由 audit_manufacturing 报告并阻断放行）",
+    "boolean": "manifold3d_exact",
+    "cervical": "v4_nonplanar_shared_seam_stitch（三维颈缘缝，非平面允许）"
+  },
+  "producer_commit": "c3de942bd85071a827f12d68d381d42a8ab1b0d6",
+  "generated_at": "2026-09-24T05:55:53.917100+00:00",
+  "case": "FDI36 / 1629-王煜",
+  "note": "measurements 是当前实测值（用于 diff 追踪）；targets 是验收阈值（测试断言它）。KNOWN_DEFECTS 里的项当前应失败并被 xfail(strict=True) 标记，修好后必须移除标记。metric_versions 记录每个度量的定义版本 —— **跨版本比较无效**。",
+  "metric_versions": {
+    "_margin_source": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "_margin_quality": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "boolean_backend": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "insertion_axis": {
+      "version": "v2_gt_cervical_seam",
+      "definition": "就位方向求解以新 Margin 为输入（用于初始轴与可见率评分）。"
+    },
+    "margin_band_clearance_median_mm": {
+      "version": "v2_gt_cervical_seam",
+      "definition": "按 Margin 高度分层的内腔间隙中位。Margin 来源从'最低 0.4 mm 带'（16/24 方位角残弧）改为'intaglio↔exterior 真实交界缝'（24/24 闭环，周长 21.76 mm）。"
+    },
+    "supra_margin_clearance_median_mm": {
+      "version": "v2_gt_cervical_seam",
+      "definition": "同上。"
+    },
+    "supra_margin_clearance_p95_mm": {
+      "version": "v2_gt_cervical_seam",
+      "definition": "同上，配合面（边缘带以上）间隙的 p95。"
+    },
+    "supra_margin_clearance_max_mm": {
+      "version": "v2_gt_cervical_seam",
+      "definition": "同上。"
+    },
+    "_margin_z_reference_mm": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "_blockout_quality": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "clearance_distributions": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "input_hashes": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "boolean_roundtrip_deviation_p95_mm": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "boolean_roundtrip_detail": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "isolated_chain": {
+      "version": "v2_gt_cervical_seam",
+      "definition": "隔离链路（真值冠作完美外冠输入）的偏差与体积比。Margin 裁切平面随之改变。"
+    },
+    "isolated_chain_outer_deviation_p95_mm": {
+      "version": "v4_live_nonplanar_chain",
+      "definition": "同 live_chain：外冠形态改写量取自 build_nonplanar_crown 的 body_to_original_outer_p95_mm，输入改为 synthetic_prep 夹具。"
+    },
+    "isolated_chain_volume_ratio": {
+      "version": "v2_gt_cervical_seam",
+      "definition": "同上。"
+    },
+    "final_watertight": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "final_components": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "_evidence_dataset": {
+      "version": "v1",
+      "definition": "未变更"
+    },
+    "live_chain": {
+      "version": "v4_live_nonplanar_chain",
+      "definition": "由 trim_outer_at_margin + enforce_clearance + 体素布尔（退役链路）改为 fitting_support_above_margin → build_blockout → apply_gap_field → build_nonplanar_crown，并新增共享颈缘缝（导出重读后）与质量守恒断言。"
+    },
+    "margin_trim_watertight": {
+      "version": "v4_live_nonplanar_chain",
+      "definition": "改为在**平面 Margin**（合成）上断言平面裁切水密；真值非平面 Margin 上改为断言守卫拒绝。"
+    }
+  },
+  "retracted_expectations": {
+    "insertion_axis_reports_review_when_undercut_remains": "曾期望该病例就位方向必须报 REVIEW_REQUIRED，理由是『该基台有轴对称外扩 emergence profile，相对任何轴都是倒凹，OK 是错答案』。**该结论已被推翻。** 它建立在错误的 Margin 真值上：旧的『最低 0.4 mm 带』给出一个几乎水平的面（偏离 +Z 0.80°），而真实颈缘缝的平面偏离 +Z 11.67° —— 与基台自身拟合轴（12.9°）一致，因为边缘平面本就垂直于基台轴线。用错平面切分『就位面』把倒凹统计的作用域放错了位置，虚高了倒凹比。",
+    "isolated_chain_outer_deviation_p95_mm": "曾期望『以真值冠为输入的隔离链路，其表面偏差 p95 < 0.05 mm』但长期不达标（实测 0.865 mm），并作为已知缺陷 xfail。**该缺陷的载体是退役链路的 `outer.enforce_clearance`**（用顶点到 cutter 的距离当壁厚，外推 37% 顶点最多 1.63 mm）。live 非平面链路不做自动补厚（薄区由 audit_manufacturing 报告并阻断放行），同一断言实测 1.13e-7 mm 通过。因此缺陷随退役链路一并撤销，**不是放宽阈值**。",
+    "isolated_chain_volume_ratio": "曾期望『隔离链路体积比 ∈ [0.90, 1.10]』。该区间隐含假设输入外冠是薄壳冠；换到 sanctioned 链路的合成预备体输入后，比值由『外冠/内腔几何』决定而非链路质量，故不再作为守门指标，改用 live_chain_mass_balance_relative_error。",
+    "fdi36_plane_clip_chain": "曾期望在 FDI36 上直接断言『平面裁切后的网格水密 + 隔离链路体积比』。2026-10-12 查明：该断言只可能由**已禁止的平面裁切链路**满足（本病例真值 Margin 平面偏离 0.0433 mm，非平面 ⇒ 守卫必拒），而 sanctioned 非平面链路在现有真实数据上被**正确拒绝**（FDI36 基台 Margin 以上有螺丝通道开口；FDI46 病例包 prep.stl 开放边界跨 Margin、die.stl 同因）。因此这三项改为：平面裁切在平面 Margin 上断言 + 守卫在真值 Margin 上被钉住 + 链路不变量在 synthetic_prep 输入上断言。真实病例的链路验收需要一个满足契约的输入（待补）。"
+  },
+  "legacy_measurement": {
+    "_note": "这些数值的度量定义已过期（Margin 真值提取方式变更）。禁止把它们与 measurements 直接比较 —— 差异里混了度量定义变更，不能归因给几何算法改善。要比较必须用同一 metric_version 重跑。",
+    "_legacy_margin_definition": "真值冠最低 0.4 mm 带（16/24 方位角，残弧；spacing_cv 1.89）",
+    "margin_band_clearance_median_mm": 0.515,
+    "supra_margin_clearance_p95_mm": 0.965,
+    "isolated_chain_outer_deviation_p95_mm": 0.976
+  },
+  "measurements": {
+    "_margin_source": "gt_cervical_seam_v2",
+    "_margin_quality": {
+      "status": "OK",
+      "is_closed": true,
+      "is_simple": true,
+      "azimuth_coverage": 1.0,
+      "n_points": 102,
+      "perimeter_mm": 21.7583,
+      "spacing_cv": 0.127493,
+      "n_self_intersections": 0,
+      "best_fit_plane_residual_max_mm": 0.043315,
+      "best_fit_plane_tilt_vs_plus_z_deg": 11.6681,
+      "n_candidate_loops": 2,
+      "genus": 1,
+      "confidence": 0.9899
+    },
+    "boolean_backend": "manifold3d",
+    "insertion_axis": {
+      "axis": [
+        0.0587,
+        -0.234711,
+        0.970291
+      ],
+      "initial_axis": [
+        -0.023774,
+        -0.207334,
+        0.977981
+      ],
+      "status": "OK",
+      "confidence": 0.852,
+      "score": 0.179531,
+      "undercut_area_ratio": 0.117031,
+      "undercut_area_mm2": 13.6706,
+      "max_undercut_depth_mm": 0.0,
+      "mean_undercut_depth_mm": 0.0,
+      "margin_visibility_ratio": 1.0,
+      "deviation_deg": 5.0,
+      "objective_is_flat": false,
+      "reasons": [],
+      "error_vs_plus_z_deg_DIAGNOSTIC_ONLY": 14.0011,
+      "fitted_wall_axis": [
+        0.021378,
+        -0.222133,
+        0.974782
+      ],
+      "fitted_wall_axis_quality": 0.105042,
+      "fitted_wall_axis_faces": 7322,
+      "fitted_wall_axis_deviation_vs_plus_z_deg": 12.8947,
+      "axis_vs_fitted_wall_axis_deg": 2.2713,
+      "initial_axis_sources": {
+        "margin_plane_normal": [
+          -0.057850566573259564,
+          -0.19581877652500235,
+          0.9789322339709752
+        ],
+        "wall_fit_axis": [
+          0.021362240567260278,
+          -0.22215728798761433,
+          0.9747767919231226
+        ],
+        "wall_fit_quality": 0.10508844895121815,
+        "wall_faces": 7323,
+        "wall_fit_converged": true,
+        "disagreement_deg": 4.790189002150956
+      },
+      "search": {
+        "n_candidates": 110,
+        "score_min": 0.17953077134159615,
+        "score_max": 0.8626391916722703,
+        "score_spread": 0.6831084203306742,
+        "flatness_threshold": 0.02
+      },
+      "undercut_vs_plus_z": {
+        "undercut_area_ratio_plus_z": 0.327683,
+        "undercut_area_ratio_solver": 0.117031,
+        "undercut_area_ratio_rel_change": -0.642854,
+        "max_depth_plus_z_mm": 0.0,
+        "max_depth_solver_mm": 0.0,
+        "max_depth_rel_change": 0.0
+      }
+    },
+    "margin_band_clearance_median_mm": 0.2531,
+    "supra_margin_clearance_median_mm": 0.0608,
+    "supra_margin_clearance_p95_mm": 0.5812,
+    "supra_margin_clearance_max_mm": 1.2872,
+    "_margin_z_reference_mm": 6.324,
+    "_blockout_quality": {
+      "status": "OK",
+      "watertight": true,
+      "n_components": 1,
+      "volume_mm3": 204.9058,
+      "support_undercut_area_ratio": 0.118999,
+      "blockout_undercut_area_ratio": 0.0,
+      "max_blockout_depth_mm": 4.2767,
+      "margin_protected_area_mm2": 6.371,
+      "diagnostics": {
+        "resolution_mm": 0.04,
+        "grid_shape": [
+          170,
+          168
+        ],
+        "n_covered_cells": 19500,
+        "n_cells_after_margin_protection": 19011,
+        "n_cells_protected": 489,
+        "policy": {
+          "machine_axes": 5,
+          "additional_blockout_after_gap": null,
+          "untouchable_zone_mm": 0.1,
+          "provenance": {
+            "source": "acceptance_fixture_5axis"
+          }
+        },
+        "z_bottom_local": 2.253663,
+        "axis": [
+          0.05870013533942218,
+          -0.23471082009593763,
+          0.9702912578401529
+        ],
+        "local_frame": {
+          "e1": [
+            -0.0,
+            0.9719672594930882,
+            0.23511624034399617
+          ],
+          "e2": [
+            -0.9982756603820077,
+            -0.013801355128688688,
+            0.05705460967773155
+          ]
+        },
+        "bottom_extension_mm": 1.0,
+        "diagonal_connections_before_fix": 151,
+        "diagonal_connections_after_fix": 0,
+        "conservative_rasterization": {
+          "subsamples_per_axis": 2,
+          "mask_dilation_cells": 1,
+          "note": "掠射边界用子采样取最大高度 + 掩码外扩一个 cell，避免侧壁落在 grid cell 之间。"
+        }
+      }
+    },
+    "clearance_distributions": {
+      "legacy_axis_plus_z": {
+        "cutter_watertight": true,
+        "clearance_axial": {
+          "margin_band": {
+            "p05": 0.026832,
+            "median": 0.49396,
+            "p95": 1.349207,
+            "max": 1.533764,
+            "n": 2911
+          },
+          "axial_fit": {
+            "p05": 0.01791,
+            "median": 0.03552,
+            "p95": 0.409466,
+            "max": 0.581929,
+            "n": 1361
+          },
+          "top_fit": {
+            "p05": 0.017854,
+            "median": 0.030531,
+            "p95": 0.049164,
+            "max": 0.145352,
+            "n": 968
+          }
+        },
+        "clearance_plane_relative": {
+          "margin_band": {
+            "p05": 0.022041,
+            "median": 0.041261,
+            "p95": 0.663559,
+            "max": 0.753433,
+            "n": 856
+          },
+          "axial_fit": {
+            "p05": 0.017549,
+            "median": 0.041164,
+            "p95": 0.447955,
+            "max": 0.664522,
+            "n": 1309
+          },
+          "top_fit": {
+            "p05": 0.017854,
+            "median": 0.030531,
+            "p95": 0.049164,
+            "max": 0.145352,
+            "n": 968
+          }
+        }
+      },
+      "solver_axis": {
+        "cutter_watertight": true,
+        "clearance_axial": {
+          "margin_band": {
+            "p05": 0.023817,
+            "median": 0.231507,
+            "p95": 1.168532,
+            "max": 1.574598,
+            "n": 2923
+          },
+          "axial_fit": {
+            "p05": 0.012029,
+            "median": 0.025779,
+            "p95": 0.131561,
+            "max": 0.415383,
+            "n": 1337
+          },
+          "top_fit": {
+            "p05": 0.015569,
+            "median": 0.029139,
+            "p95": 0.043587,
+            "max": 0.117159,
+            "n": 980
+          }
+        },
+        "clearance_plane_relative": {
+          "margin_band": {
+            "p05": 0.021606,
+            "median": 0.031653,
+            "p95": 0.070383,
+            "max": 0.308175,
+            "n": 856
+          },
+          "axial_fit": {
+            "p05": 0.012004,
+            "median": 0.024858,
+            "p95": 0.150509,
+            "max": 0.415383,
+            "n": 1297
+          },
+          "top_fit": {
+            "p05": 0.015569,
+            "median": 0.029139,
+            "p95": 0.043587,
+            "max": 0.117159,
+            "n": 980
+          }
+        }
+      }
+    },
+    "input_hashes": {
+      "outer_crown": "caed895499229d7a",
+      "support": "1bb5f9b18dc492b3",
+      "margin_v2": "0b0437e55303f1af",
+      "insertion_axis": "bc5f7063afc4b356"
+    },
+    "boolean_roundtrip_deviation_p95_mm": 0.0,
+    "boolean_roundtrip_detail": {
+      "backend": "manifold3d",
+      "volume_ratio": 1.0,
+      "faces": 40426,
+      "input_faces": 40426,
+      "deviation_median_mm": 0.0,
+      "deviation_p95_mm": 0.0,
+      "deviation_max_mm": 0.0
+    },
+    "_evidence_dataset": {
+      "n_case_dirs": 15,
+      "n_order_groups": 14,
+      "n_duplicate_dir_groups": 1
+    },
+    "live_chain": {
+      "chain": "fitting_support > directional_blockout > variable_gap > nonplanar_shared_seam",
+      "input": "tests/acceptance/synthetic_prep.prep_case()（闭合预备体 + 非平面双波 Margin + 真值外冠）",
+      "margin_plane_deviation_max_mm": 0.6,
+      "watertight": true,
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "components": 1,
+      "seam_shared_edges_incidence_two": true,
+      "seam_margin_to_seam_max_mm": 1.3772e-07,
+      "seam_to_margin_max_mm": 1.3766e-07,
+      "outer_deviation_p95_mm": 1.1341e-07,
+      "outer_deviation_max_mm": 1.1433e-07,
+      "volume_final_mm3": 164.303,
+      "volume_outer_mm3": 283.797,
+      "volume_cavity_mm3": 110.558,
+      "volume_ratio": 0.5789,
+      "mass_balance_relative_error": 0.0315
+    },
+    "live_chain_watertight": true,
+    "live_chain_components": 1,
+    "live_chain_outer_deviation_p95_mm": 1.1341e-07,
+    "live_chain_mass_balance_relative_error": 0.0315,
+    "margin_plane_gt_max_deviation_mm": 0.043315,
+    "margin_trim_watertight": true
+  },
+  "targets": {
+    "boolean_backend": {
+      "target": "manifold3d",
+      "why": "体素降级在无裁减情况下也会把体积放大 10%、引入 0.089 mm 中位误差。",
+      "tolerance": null
+    },
+    "margin_trim_watertight": {
+      "target": true,
+      "why": "非水密外冠进入布尔后实测产出真值 13% 体积的碎冠。裁切盖片需要 mapbox-earcut。",
+      "tolerance": null
+    },
+    "insertion_axis_vs_fitted_wall_axis_deg": {
+      "target_max": 8.0,
+      "why": "求解结果应与基台侧壁法向独立拟合出的轴一致（该拟合质量 eigenvalue ratio ≈ 0.105）。精度断言在合成几何上，这里只保证与该病例几何自洽。",
+      "tolerance": null
+    },
+    "insertion_axis_undercut_rel_improvement": {
+      "target_max": -0.25,
+      "why": "求解轴相对平凡解 +Z 的倒凹面积比必须显著改善（至少降低 25%），否则说明求解器没有带来实际收益。",
+      "tolerance": null
+    },
+    "insertion_axis_margin_visibility": {
+      "target_min": 0.9,
+      "why": "Margin 沿最优轴必须基本可见。",
+      "tolerance": null
+    },
+    "insertion_axis_status": {
+      "target": "OK",
+      "why": "用**正确的**颈缘真值（v2）后，最优轴倒凹比 0.117 < 0.15、Margin 可见率 1.0、朝向场锐利（|cos|<0.1 占 0.7%）—— 三条 REVIEW 触发条件都不成立，故应为 OK。",
+      "tolerance": null
+    },
+    "margin_band_clearance_median_mm": {
+      "target_range": [
+        0.015,
+        0.05
+      ],
+      "why": "边缘带是精度最关键区域。exocad 真实参数 margin_gap 目标为 0.025（无量取时用 cement_gap）。",
+      "tolerance": null
+    },
+    "supra_margin_clearance_p95_mm": {
+      "target_max": 0.1,
+      "why": "配合面间隙上界。exocad 真实参数 cement_gap 多为 0.02–0.03，p95 超过 0.10 说明投影柱 blockout 把内腔撑大了。",
+      "tolerance": null
+    },
+    "boolean_roundtrip_deviation_p95_mm": {
+      "target_max": 0.02,
+      "why": "精确布尔的往返误差应接近 0。体素路径在此项会显著超标。",
+      "tolerance": null
+    },
+    "isolated_chain_outer_deviation_p95_mm": {
+      "target_max": 0.05,
+      "why": "喂真值外冠给 sanctioned 非平面链路，链路对外冠形态的改写 = CAD 链路自身误差。牙冠边缘适合性预算约 50–100 µm，链路自身不应占掉其中显著份额。（定义变更 2026-10-12：旧值来自退役链路 enforce_clearance，实测 p95 0.865 mm 属已知缺陷，已随链路退役撤销。）",
+      "tolerance": null
+    },
+    "margin_plane_band_median_mm": {
+      "target_range": [
+        0.015,
+        0.05
+      ],
+      "why": "按 **Margin 平面相对距离**划分边缘带的中位间隙。v2 的轴向口径在 Margin 倾斜 11.67° 的 FDI36 上会把倾斜一侧远低于Margin 平面的区域算进边缘带，那里 blockout 必须深填，使该区被高估。平面相对口径才是 Margin 倾斜时的正确分区。",
+      "tolerance": null
+    },
+    "blockout_own_undercut_area_ratio": {
+      "target_max": 1e-06,
+      "why": "方向阴影体沿就位轴必须完全单值 —— 这是『倒凹已被封闭』的直接证据。非 0 说明阴影体构造有误或底面盖片未排除。",
+      "tolerance": null
+    },
+    "support_undercut_area_ratio": {
+      "target_max": 0.15,
+      "why": "原始 support 在就位面内的拔模负角面积比（blockout 需要处理的量）。",
+      "tolerance": null
+    },
+    "final_watertight": {
+      "target": true,
+      "why": "CAM 可用性的底线。",
+      "tolerance": null
+    },
+    "final_components": {
+      "target": 1,
+      "why": "牙冠被切成多块说明布尔或厚度修正产生了自交/断裂。",
+      "tolerance": null
+    },
+    "live_chain_components": {
+      "target": 1,
+      "why": "碎冠/碎片回归：CAM 需要单连通实体（历史 P0 是 13% 体积的碎冠）。",
+      "tolerance": null
+    },
+    "live_chain_boundary_edges": {
+      "target": 0,
+      "why": "开放边界 = 非水密，直接对应 13% 碎冠的原始 P0。",
+      "tolerance": null
+    },
+    "live_chain_seam_max_mm": {
+      "target_max": 1e-06,
+      "why": "共享颈缘缝的双向误差在**导出重读**后仍须为数值零：缝就是分割面，不是拟合量。",
+      "tolerance": null
+    },
+    "live_chain_mass_balance_relative_error": {
+      "target_max": 0.06,
+      "why": "final ≈ outer − 内腔（相对 outer 体积）。取代旧的 volume_ratio∈[0.90,1.10]：那个区间只对『外冠本身即薄壳冠』的输入成立，换输入就失效。质量守恒与形状无关，同时抓崩坏与内腔未扣减。实测 0.0315（差值来自 Margin 带以下的裁除与共享缝的量级）。",
+      "tolerance": null
+    }
+  },
+  "known_defects": {
+    "margin_band_clearance_median_mm": "P0：build_blockout_cutter 用投影柱充当内腔基面（填的是整个上部基台的投影而非局部截面），在边缘附近把内腔撑大 2–5 倍。待替换为沿就位方向的可见性 blockout。注：度量定义已升级为 v2_gt_cervical_seam，与 legacy 数值不可比。",
+    "supra_margin_clearance_p95_mm": "P0：同上。配合面间隙 p95 实测 0.983 mm。",
+    "margin_band_clearance_median_mm_definition_limited": "该指标（v2 轴向口径）在本病例上受**度量定义**限制而非算法缺陷：Margin 平面偏离 +Z 11.67°，轴向切带会把倾斜一侧远低于 Margin 平面的区域算进来，那里的 blockout 必然深填。同一实现按 Margin 平面相对口径测得的边缘带中位为 0.034 mm，已在目标 0.015–0.05 内（见 targets.margin_plane_band_median_mm）。**修好算法不改定义是修不好这个数的**；要修定义必须升 metric_version 并冻结旧值。"
+  }
+}

@@ -1,0 +1,2783 @@
+{
+ "name": "blind_generation_manifest",
+ "version": "v1",
+ "warning": "\u5582\u7ed9 Auto Margin \u7684\u552f\u4e00\u8f93\u5165\uff1b**\u4e0d\u542b\u4efb\u4f55 GT \u6d3e\u751f\u5b57\u6bb5**",
+ "input_schema_version": "blind_gen_v1",
+ "created_utc": "2026-10-01T09:31:15Z",
+ "by_source": {
+  "modeldie": [
+   {
+    "case_uuid": "cf_0005e2f198b943ae",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "735948336353a7c6",
+    "die_sha256": "735948336353a7c6",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 27880,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_05e78fabf85c5111",
+    "fdi": "15",
+    "source": "modeldie",
+    "die_asset_id": "75f419cfd258951b",
+    "die_sha256": "75f419cfd258951b",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16694,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_05e78fabf85c5111",
+    "fdi": "16",
+    "source": "modeldie",
+    "die_asset_id": "6f8aeadf79843dd6",
+    "die_sha256": "6f8aeadf79843dd6",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 22754,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_06143c10636f0ba6",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "5fe52ff619a623a2",
+    "die_sha256": "5fe52ff619a623a2",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 13080,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_06143c10636f0ba6",
+    "fdi": "12",
+    "source": "modeldie",
+    "die_asset_id": "01b522b4d2020347",
+    "die_sha256": "01b522b4d2020347",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11888,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_06143c10636f0ba6",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "5d34ac5b016f5b5c",
+    "die_sha256": "5d34ac5b016f5b5c",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14274,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_06143c10636f0ba6",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "6fe96328fd35c394",
+    "die_sha256": "6fe96328fd35c394",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11636,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_06143c10636f0ba6",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "36aff3e65105fd3d",
+    "die_sha256": "36aff3e65105fd3d",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 10436,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_06143c10636f0ba6",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "157435ef3215383b",
+    "die_sha256": "157435ef3215383b",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12308,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_06f3f368ddf98679",
+    "fdi": "36",
+    "source": "modeldie",
+    "die_asset_id": "6f3bac9ddb2c56e9",
+    "die_sha256": "6f3bac9ddb2c56e9",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 23662,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_083aad0878a367b5",
+    "fdi": "24",
+    "source": "modeldie",
+    "die_asset_id": "1b53a3ec25ff4d90",
+    "die_sha256": "1b53a3ec25ff4d90",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11802,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_0c666be9c808784c",
+    "fdi": "44",
+    "source": "modeldie",
+    "die_asset_id": "522fbe8288ab3e34",
+    "die_sha256": "522fbe8288ab3e34",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14836,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_0f8b042a97a46965",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "f4afbd53964d848f",
+    "die_sha256": "f4afbd53964d848f",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 231766,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_13337a0fca5aae59",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "1862ee336622eba3",
+    "die_sha256": "1862ee336622eba3",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 21402,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_140f21b87f352bfe",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "1a6d9bd7f461e039",
+    "die_sha256": "1a6d9bd7f461e039",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12718,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_140f21b87f352bfe",
+    "fdi": "12",
+    "source": "modeldie",
+    "die_asset_id": "5d4cb57bade30d10",
+    "die_sha256": "5d4cb57bade30d10",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 9380,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_140f21b87f352bfe",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "6670697ec3229073",
+    "die_sha256": "6670697ec3229073",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12232,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_140f21b87f352bfe",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "d33ae3eb9f38ab84",
+    "die_sha256": "d33ae3eb9f38ab84",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 8724,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_177f94fc77b927ae",
+    "fdi": "36",
+    "source": "modeldie",
+    "die_asset_id": "b289bdcd9b25f42a",
+    "die_sha256": "b289bdcd9b25f42a",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 19024,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1788bbb0e47a8ae6",
+    "fdi": "45",
+    "source": "modeldie",
+    "die_asset_id": "5a08cee4a5f3f95b",
+    "die_sha256": "5a08cee4a5f3f95b",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14560,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1c3125c4e7a9aa08",
+    "fdi": "45",
+    "source": "modeldie",
+    "die_asset_id": "588a62cc34a3002a",
+    "die_sha256": "588a62cc34a3002a",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 34072,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1c75d70deb38438c",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "6c312875af5a1e04",
+    "die_sha256": "6c312875af5a1e04",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15720,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1ec59956184d2296",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "a46a114f722f5b03",
+    "die_sha256": "a46a114f722f5b03",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 9336,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1ec59956184d2296",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "d9d767b133891b2b",
+    "die_sha256": "d9d767b133891b2b",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 8392,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1ec59956184d2296",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "fcad53896b0067d5",
+    "die_sha256": "fcad53896b0067d5",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 8248,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1ec59956184d2296",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "57ea7ad86222410f",
+    "die_sha256": "57ea7ad86222410f",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 7448,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1ec59956184d2296",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "f1b7c6d6781827a6",
+    "die_sha256": "f1b7c6d6781827a6",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 8534,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1faebb271bbb471d",
+    "fdi": "31",
+    "source": "modeldie",
+    "die_asset_id": "faa15555f7a3cc85",
+    "die_sha256": "faa15555f7a3cc85",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 7586,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1faebb271bbb471d",
+    "fdi": "41",
+    "source": "modeldie",
+    "die_asset_id": "6ff0537ea1ff5517",
+    "die_sha256": "6ff0537ea1ff5517",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 7324,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_1faebb271bbb471d",
+    "fdi": "43",
+    "source": "modeldie",
+    "die_asset_id": "bb956213198da28f",
+    "die_sha256": "bb956213198da28f",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 9674,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_22a991c276b5f1e3",
+    "fdi": "34",
+    "source": "modeldie",
+    "die_asset_id": "854c50c9651fa6fa",
+    "die_sha256": "854c50c9651fa6fa",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 207462,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_22a991c276b5f1e3",
+    "fdi": "35",
+    "source": "modeldie",
+    "die_asset_id": "854c50c9651fa6fa",
+    "die_sha256": "854c50c9651fa6fa",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 207462,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_25cd903ca02af539",
+    "fdi": "37",
+    "source": "modeldie",
+    "die_asset_id": "13e63c1a73a900b6",
+    "die_sha256": "13e63c1a73a900b6",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 24912,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_295cdc1538af3bbb",
+    "fdi": "32",
+    "source": "modeldie",
+    "die_asset_id": "bd17f9fae2d15b33",
+    "die_sha256": "bd17f9fae2d15b33",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14294,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_295cdc1538af3bbb",
+    "fdi": "43",
+    "source": "modeldie",
+    "die_asset_id": "deab8633a49ed07f",
+    "die_sha256": "deab8633a49ed07f",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16922,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_2fe820adf9b440fd",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "83dfa03f09891297",
+    "die_sha256": "83dfa03f09891297",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 18452,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3232fbe919f0cf30",
+    "fdi": "33",
+    "source": "modeldie",
+    "die_asset_id": "d0c03a4433daae5f",
+    "die_sha256": "d0c03a4433daae5f",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 13564,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3232fbe919f0cf30",
+    "fdi": "35",
+    "source": "modeldie",
+    "die_asset_id": "aab13e79bd25fc36",
+    "die_sha256": "aab13e79bd25fc36",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14530,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_357750232aa52f83",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "eaf39255f5e0138d",
+    "die_sha256": "eaf39255f5e0138d",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 169390,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3662af872bbde62f",
+    "fdi": "36",
+    "source": "modeldie",
+    "die_asset_id": "89278a8772c5eb89",
+    "die_sha256": "89278a8772c5eb89",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 33944,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_399c884cc2a966b4",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "3a014a04df54463c",
+    "die_sha256": "3a014a04df54463c",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 25462,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_399c884cc2a966b4",
+    "fdi": "14",
+    "source": "modeldie",
+    "die_asset_id": "88c14b8ea4135ffb",
+    "die_sha256": "88c14b8ea4135ffb",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 28984,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_399c884cc2a966b4",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "01f4dc4e082c6daf",
+    "die_sha256": "01f4dc4e082c6daf",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 21710,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_399c884cc2a966b4",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "4806085d0d23eb6a",
+    "die_sha256": "4806085d0d23eb6a",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 22106,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3a397c6806103525",
+    "fdi": "25",
+    "source": "modeldie",
+    "die_asset_id": "bba91f7b8c3b891a",
+    "die_sha256": "bba91f7b8c3b891a",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11370,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3a397c6806103525",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "a2f0103189064f5e",
+    "die_sha256": "a2f0103189064f5e",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15030,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3da0ae445cc3c8d7",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "5ecf0253dbebd4b0",
+    "die_sha256": "5ecf0253dbebd4b0",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 18408,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3da0ae445cc3c8d7",
+    "fdi": "47",
+    "source": "modeldie",
+    "die_asset_id": "19c0f7136ee5cb57",
+    "die_sha256": "19c0f7136ee5cb57",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 20806,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3f7dae803f49c3f1",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "0bdf46c0675b1115",
+    "die_sha256": "0bdf46c0675b1115",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 10862,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3f7dd4dee12b4406",
+    "fdi": "15",
+    "source": "modeldie",
+    "die_asset_id": "0d5290ffdc807d20",
+    "die_sha256": "0d5290ffdc807d20",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14810,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3f7dd4dee12b4406",
+    "fdi": "16",
+    "source": "modeldie",
+    "die_asset_id": "338c6254f09ba24e",
+    "die_sha256": "338c6254f09ba24e",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 20806,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3f7dd4dee12b4406",
+    "fdi": "17",
+    "source": "modeldie",
+    "die_asset_id": "499895b9d1b83f3f",
+    "die_sha256": "499895b9d1b83f3f",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 19700,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3f7dd4dee12b4406",
+    "fdi": "44",
+    "source": "modeldie",
+    "die_asset_id": "2ed57f31c90ab3d9",
+    "die_sha256": "2ed57f31c90ab3d9",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 10674,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3f7dd4dee12b4406",
+    "fdi": "45",
+    "source": "modeldie",
+    "die_asset_id": "14247dff64ed421a",
+    "die_sha256": "14247dff64ed421a",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 13268,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_3f7dd4dee12b4406",
+    "fdi": "47",
+    "source": "modeldie",
+    "die_asset_id": "ce4f7df9364cfe9c",
+    "die_sha256": "ce4f7df9364cfe9c",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 20850,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_40eed7f8a8ed78e1",
+    "fdi": "32",
+    "source": "modeldie",
+    "die_asset_id": "e2c1ef6e68503dd5",
+    "die_sha256": "e2c1ef6e68503dd5",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11608,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_40eed7f8a8ed78e1",
+    "fdi": "41",
+    "source": "modeldie",
+    "die_asset_id": "682de77f60636530",
+    "die_sha256": "682de77f60636530",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 10820,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_420ab4c79cecc18d",
+    "fdi": "45",
+    "source": "modeldie",
+    "die_asset_id": "bf4618b86433fa47",
+    "die_sha256": "bf4618b86433fa47",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 410988,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_420ab4c79cecc18d",
+    "fdi": "47",
+    "source": "modeldie",
+    "die_asset_id": "bf4618b86433fa47",
+    "die_sha256": "bf4618b86433fa47",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 410988,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_42398f6fb50a1c25",
+    "fdi": "37",
+    "source": "modeldie",
+    "die_asset_id": "8f3bf483c6384a97",
+    "die_sha256": "8f3bf483c6384a97",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 32592,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_470f1198b82e8ec4",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "aebc545a18485f63",
+    "die_sha256": "aebc545a18485f63",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 19488,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_4751da49ec72498c",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "8daca19c342b27b5",
+    "die_sha256": "8daca19c342b27b5",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 21450,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_4c8eb9554def6734",
+    "fdi": "36",
+    "source": "modeldie",
+    "die_asset_id": "b139afe9624d97d0",
+    "die_sha256": "b139afe9624d97d0",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 26460,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_4f38458144528f9a",
+    "fdi": "36",
+    "source": "modeldie",
+    "die_asset_id": "71c8c6b96a4d535b",
+    "die_sha256": "71c8c6b96a4d535b",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 243228,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_528f539db0bd43df",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "cbb0d880773f1614",
+    "die_sha256": "cbb0d880773f1614",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 352934,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_53b80b8d1d5b0ff6",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "05a680546e4f89b3",
+    "die_sha256": "05a680546e4f89b3",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15742,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_53b80b8d1d5b0ff6",
+    "fdi": "17",
+    "source": "modeldie",
+    "die_asset_id": "8a964bfc7c791ef6",
+    "die_sha256": "8a964bfc7c791ef6",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 23768,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_53b80b8d1d5b0ff6",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "f479ba1a4d7392b6",
+    "die_sha256": "f479ba1a4d7392b6",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15972,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_53b80b8d1d5b0ff6",
+    "fdi": "27",
+    "source": "modeldie",
+    "die_asset_id": "7c2b056b0fee8015",
+    "die_sha256": "7c2b056b0fee8015",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 22622,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_5630105a812b05c5",
+    "fdi": "36",
+    "source": "modeldie",
+    "die_asset_id": "e1da15b953cd91e4",
+    "die_sha256": "e1da15b953cd91e4",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 23550,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_5630105a812b05c5",
+    "fdi": "38",
+    "source": "modeldie",
+    "die_asset_id": "51c264b9117e3333",
+    "die_sha256": "51c264b9117e3333",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 33228,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_5d6691214129eadb",
+    "fdi": "41",
+    "source": "modeldie",
+    "die_asset_id": "71bafc1845a9a901",
+    "die_sha256": "71bafc1845a9a901",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 10804,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_624df226016be5c7",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "37fc886144eb95aa",
+    "die_sha256": "37fc886144eb95aa",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 487184,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_624df226016be5c7",
+    "fdi": "47",
+    "source": "modeldie",
+    "die_asset_id": "a86a3dc2374f7672",
+    "die_sha256": "a86a3dc2374f7672",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16230,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_69d8effcc801d6de",
+    "fdi": "35",
+    "source": "modeldie",
+    "die_asset_id": "d3ab594be883af85",
+    "die_sha256": "d3ab594be883af85",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14828,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_69d8effcc801d6de",
+    "fdi": "36",
+    "source": "modeldie",
+    "die_asset_id": "7a92d1755c2cbba3",
+    "die_sha256": "7a92d1755c2cbba3",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 24122,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_6f4a9bf73efc0c51",
+    "fdi": "35",
+    "source": "modeldie",
+    "die_asset_id": "b06be42c38f10203",
+    "die_sha256": "b06be42c38f10203",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 8224,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_75686026b799124a",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "5cd0b62da69c1479",
+    "die_sha256": "5cd0b62da69c1479",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14340,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_75686026b799124a",
+    "fdi": "12",
+    "source": "modeldie",
+    "die_asset_id": "8b1556274292e8af",
+    "die_sha256": "8b1556274292e8af",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 13142,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_75686026b799124a",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "fe0904f78c92bd65",
+    "die_sha256": "fe0904f78c92bd65",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14828,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_75686026b799124a",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "1bccdb965b0a2ffc",
+    "die_sha256": "1bccdb965b0a2ffc",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16370,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_75686026b799124a",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "7ae079e11a557468",
+    "die_sha256": "7ae079e11a557468",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15530,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_75686026b799124a",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "3f28e2871a6a37b7",
+    "die_sha256": "3f28e2871a6a37b7",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15096,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_765b8225e263809e",
+    "fdi": "47",
+    "source": "modeldie",
+    "die_asset_id": "2f454e49e0e7a181",
+    "die_sha256": "2f454e49e0e7a181",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 451356,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_784bc2341881f135",
+    "fdi": "15",
+    "source": "modeldie",
+    "die_asset_id": "38801cadebfb3a55",
+    "die_sha256": "38801cadebfb3a55",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 17524,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7b6485b1008ca9fb",
+    "fdi": "16",
+    "source": "modeldie",
+    "die_asset_id": "2842a4aad332cb0b",
+    "die_sha256": "2842a4aad332cb0b",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 513120,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7b6485b1008ca9fb",
+    "fdi": "17",
+    "source": "modeldie",
+    "die_asset_id": "2842a4aad332cb0b",
+    "die_sha256": "2842a4aad332cb0b",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 513120,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7b6485b1008ca9fb",
+    "fdi": "25",
+    "source": "modeldie",
+    "die_asset_id": "2842a4aad332cb0b",
+    "die_sha256": "2842a4aad332cb0b",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 513120,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7c2543217d0bc740",
+    "fdi": "17",
+    "source": "modeldie",
+    "die_asset_id": "cefafb558c0802eb",
+    "die_sha256": "cefafb558c0802eb",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 24622,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7c2543217d0bc740",
+    "fdi": "24",
+    "source": "modeldie",
+    "die_asset_id": "af34356fe35eae60",
+    "die_sha256": "af34356fe35eae60",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14646,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7c2543217d0bc740",
+    "fdi": "25",
+    "source": "modeldie",
+    "die_asset_id": "ebd3e041abf53e8c",
+    "die_sha256": "ebd3e041abf53e8c",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14692,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7c2543217d0bc740",
+    "fdi": "26",
+    "source": "modeldie",
+    "die_asset_id": "11b91d5299e75305",
+    "die_sha256": "11b91d5299e75305",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 21962,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7c2543217d0bc740",
+    "fdi": "27",
+    "source": "modeldie",
+    "die_asset_id": "7850802f0432065b",
+    "die_sha256": "7850802f0432065b",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 22988,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7c2543217d0bc740",
+    "fdi": "44",
+    "source": "modeldie",
+    "die_asset_id": "bcb0b341e8399ee0",
+    "die_sha256": "bcb0b341e8399ee0",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14804,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_7c2543217d0bc740",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "b4e474a29bf2c385",
+    "die_sha256": "b4e474a29bf2c385",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 24970,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_84470b1c47c67534",
+    "fdi": "12",
+    "source": "modeldie",
+    "die_asset_id": "5b9b0bb61f11f4ab",
+    "die_sha256": "5b9b0bb61f11f4ab",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15088,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_84470b1c47c67534",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "67a9a4f200f965ed",
+    "die_sha256": "67a9a4f200f965ed",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 357222,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_84470b1c47c67534",
+    "fdi": "14",
+    "source": "modeldie",
+    "die_asset_id": "67a9a4f200f965ed",
+    "die_sha256": "67a9a4f200f965ed",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 357222,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_84470b1c47c67534",
+    "fdi": "15",
+    "source": "modeldie",
+    "die_asset_id": "d4332411e468acbb",
+    "die_sha256": "d4332411e468acbb",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 20294,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_84470b1c47c67534",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "60dbce7d1cb6378d",
+    "die_sha256": "60dbce7d1cb6378d",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16070,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_84470b1c47c67534",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "67a9a4f200f965ed",
+    "die_sha256": "67a9a4f200f965ed",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 357222,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_84470b1c47c67534",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "67a9a4f200f965ed",
+    "die_sha256": "67a9a4f200f965ed",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 357222,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_88c300a0c67d9b16",
+    "fdi": "26",
+    "source": "modeldie",
+    "die_asset_id": "cd7fe6dcfe9e5d71",
+    "die_sha256": "cd7fe6dcfe9e5d71",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 17258,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8981728160f8697a",
+    "fdi": "31",
+    "source": "modeldie",
+    "die_asset_id": "f5b70b09951b5c1b",
+    "die_sha256": "f5b70b09951b5c1b",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 27266,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8981728160f8697a",
+    "fdi": "32",
+    "source": "modeldie",
+    "die_asset_id": "65a5282e13b16e09",
+    "die_sha256": "65a5282e13b16e09",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 38532,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8981728160f8697a",
+    "fdi": "41",
+    "source": "modeldie",
+    "die_asset_id": "99d0d0bf6b7495ef",
+    "die_sha256": "99d0d0bf6b7495ef",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 35642,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8981728160f8697a",
+    "fdi": "42",
+    "source": "modeldie",
+    "die_asset_id": "6f7e6cf7c4dc4981",
+    "die_sha256": "6f7e6cf7c4dc4981",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 44488,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_89b3064aa058c121",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "e28f20cf10d58dc6",
+    "die_sha256": "e28f20cf10d58dc6",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 28068,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_89e27fe533dcdefa",
+    "fdi": "16",
+    "source": "modeldie",
+    "die_asset_id": "6a2008d819fe3208",
+    "die_sha256": "6a2008d819fe3208",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16848,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8a418105cb4737ac",
+    "fdi": "12",
+    "source": "modeldie",
+    "die_asset_id": "f5cf9f2917972025",
+    "die_sha256": "f5cf9f2917972025",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 8178,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8a418105cb4737ac",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "df54ef2f4e6a1301",
+    "die_sha256": "df54ef2f4e6a1301",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 7258,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8a418105cb4737ac",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "b3b14a621d152ccb",
+    "die_sha256": "b3b14a621d152ccb",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 8552,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8a418105cb4737ac",
+    "fdi": "24",
+    "source": "modeldie",
+    "die_asset_id": "59158d2e9228a446",
+    "die_sha256": "59158d2e9228a446",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11098,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8a418105cb4737ac",
+    "fdi": "35",
+    "source": "modeldie",
+    "die_asset_id": "990133228e69b1ef",
+    "die_sha256": "990133228e69b1ef",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14510,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8a418105cb4737ac",
+    "fdi": "43",
+    "source": "modeldie",
+    "die_asset_id": "6c37d5b139c311a5",
+    "die_sha256": "6c37d5b139c311a5",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15306,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8a418105cb4737ac",
+    "fdi": "44",
+    "source": "modeldie",
+    "die_asset_id": "dfe3b87c3bfddf95",
+    "die_sha256": "dfe3b87c3bfddf95",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14574,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8a418105cb4737ac",
+    "fdi": "45",
+    "source": "modeldie",
+    "die_asset_id": "5a44e6d0c681fd92",
+    "die_sha256": "5a44e6d0c681fd92",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 13952,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8cfed36d0f9e030b",
+    "fdi": "24",
+    "source": "modeldie",
+    "die_asset_id": "a1c3923bb56c01ec",
+    "die_sha256": "a1c3923bb56c01ec",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 29350,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8cfed36d0f9e030b",
+    "fdi": "25",
+    "source": "modeldie",
+    "die_asset_id": "c002f30843dd3a57",
+    "die_sha256": "c002f30843dd3a57",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 33390,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8cfed36d0f9e030b",
+    "fdi": "27",
+    "source": "modeldie",
+    "die_asset_id": "1543ef01ba7a2ae9",
+    "die_sha256": "1543ef01ba7a2ae9",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 28442,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8e8768e5ceae8927",
+    "fdi": "14",
+    "source": "modeldie",
+    "die_asset_id": "22f011c4f938b8e8",
+    "die_sha256": "22f011c4f938b8e8",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 29926,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8e8768e5ceae8927",
+    "fdi": "15",
+    "source": "modeldie",
+    "die_asset_id": "63a9d46aa3f1b26e",
+    "die_sha256": "63a9d46aa3f1b26e",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 28656,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8e9554924b444c43",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "b362e6f8297de58e",
+    "die_sha256": "b362e6f8297de58e",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 18498,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8e9554924b444c43",
+    "fdi": "14",
+    "source": "modeldie",
+    "die_asset_id": "2223d6ff01e56d80",
+    "die_sha256": "2223d6ff01e56d80",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 17560,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8e9554924b444c43",
+    "fdi": "15",
+    "source": "modeldie",
+    "die_asset_id": "f44bc4cdba30434b",
+    "die_sha256": "f44bc4cdba30434b",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15390,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8e9554924b444c43",
+    "fdi": "43",
+    "source": "modeldie",
+    "die_asset_id": "0425b3d5d3883b14",
+    "die_sha256": "0425b3d5d3883b14",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16740,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_8e9554924b444c43",
+    "fdi": "44",
+    "source": "modeldie",
+    "die_asset_id": "84abaf8e0e99063b",
+    "die_sha256": "84abaf8e0e99063b",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 13576,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_901cc4f7209af8ca",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "93237e6d66d50688",
+    "die_sha256": "93237e6d66d50688",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 26016,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_9058e5f332d9a37f",
+    "fdi": "45",
+    "source": "modeldie",
+    "die_asset_id": "fc14a7bfe672f4b6",
+    "die_sha256": "fc14a7bfe672f4b6",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 9646,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_90fa16b85aa80d2b",
+    "fdi": "16",
+    "source": "modeldie",
+    "die_asset_id": "792569d286500823",
+    "die_sha256": "792569d286500823",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 19498,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_90fa16b85aa80d2b",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "997c241fe9814c25",
+    "die_sha256": "997c241fe9814c25",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 26840,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_a10ecfe7379aa477",
+    "fdi": "31",
+    "source": "modeldie",
+    "die_asset_id": "9040a4e2420a7211",
+    "die_sha256": "9040a4e2420a7211",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 13108,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_a10ecfe7379aa477",
+    "fdi": "32",
+    "source": "modeldie",
+    "die_asset_id": "f990f0bc5581a3a1",
+    "die_sha256": "f990f0bc5581a3a1",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12714,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_a10ecfe7379aa477",
+    "fdi": "33",
+    "source": "modeldie",
+    "die_asset_id": "8e0e531294bf5021",
+    "die_sha256": "8e0e531294bf5021",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15732,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_a10ecfe7379aa477",
+    "fdi": "42",
+    "source": "modeldie",
+    "die_asset_id": "943a8026a24fbc22",
+    "die_sha256": "943a8026a24fbc22",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15010,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_a10ecfe7379aa477",
+    "fdi": "43",
+    "source": "modeldie",
+    "die_asset_id": "87e116e8a368f849",
+    "die_sha256": "87e116e8a368f849",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 18236,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_a495a2ca6999b25d",
+    "fdi": "47",
+    "source": "modeldie",
+    "die_asset_id": "6e290eef4652f2e9",
+    "die_sha256": "6e290eef4652f2e9",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 18242,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_a5626734ceede361",
+    "fdi": "16",
+    "source": "modeldie",
+    "die_asset_id": "9ed47b45ae332dec",
+    "die_sha256": "9ed47b45ae332dec",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16468,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_a57e4ff51e3c93cf",
+    "fdi": "16",
+    "source": "modeldie",
+    "die_asset_id": "3d30e62de207fd22",
+    "die_sha256": "3d30e62de207fd22",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 21552,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_a70f1224c6c1867f",
+    "fdi": "16",
+    "source": "modeldie",
+    "die_asset_id": "294f21bb1e062da8",
+    "die_sha256": "294f21bb1e062da8",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14518,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_ab105bc45f442601",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "979a245f6d143919",
+    "die_sha256": "979a245f6d143919",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 18882,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_adb328883f56699b",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "89d9b8e323227925",
+    "die_sha256": "89d9b8e323227925",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 357696,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_adb328883f56699b",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "f9eb8dc493c4f779",
+    "die_sha256": "f9eb8dc493c4f779",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14792,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_adb328883f56699b",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "89d9b8e323227925",
+    "die_sha256": "89d9b8e323227925",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 357696,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_adb328883f56699b",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "89d9b8e323227925",
+    "die_sha256": "89d9b8e323227925",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 357696,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_adb328883f56699b",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "580407666088485f",
+    "die_sha256": "580407666088485f",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15284,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_adb328883f56699b",
+    "fdi": "31",
+    "source": "modeldie",
+    "die_asset_id": "90dd938f4e91eec7",
+    "die_sha256": "90dd938f4e91eec7",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 291970,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_adb328883f56699b",
+    "fdi": "42",
+    "source": "modeldie",
+    "die_asset_id": "f7a25456087e8a53",
+    "die_sha256": "f7a25456087e8a53",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11966,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_b9482b720b60ec90",
+    "fdi": "17",
+    "source": "modeldie",
+    "die_asset_id": "e9302fed38edb827",
+    "die_sha256": "e9302fed38edb827",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 40552,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_b9721ac642965a64",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "c20823ca0d3301bd",
+    "die_sha256": "c20823ca0d3301bd",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14406,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_b9721ac642965a64",
+    "fdi": "12",
+    "source": "modeldie",
+    "die_asset_id": "569401e515c75a18",
+    "die_sha256": "569401e515c75a18",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11530,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_b9721ac642965a64",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "60b285106988b5be",
+    "die_sha256": "60b285106988b5be",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11790,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_b9721ac642965a64",
+    "fdi": "14",
+    "source": "modeldie",
+    "die_asset_id": "bc7e0909db60d7f8",
+    "die_sha256": "bc7e0909db60d7f8",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 365248,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_b9721ac642965a64",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "08362f45cb2d715e",
+    "die_sha256": "08362f45cb2d715e",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15730,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_b9721ac642965a64",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "3504bd12e70c957a",
+    "die_sha256": "3504bd12e70c957a",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11940,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_b9721ac642965a64",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "f8f3a4314ed4a77f",
+    "die_sha256": "f8f3a4314ed4a77f",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12330,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_b9721ac642965a64",
+    "fdi": "24",
+    "source": "modeldie",
+    "die_asset_id": "f6a10ffbe313a15f",
+    "die_sha256": "f6a10ffbe313a15f",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12834,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_bb024256fc69a96b",
+    "fdi": "45",
+    "source": "modeldie",
+    "die_asset_id": "ef30305f6f380038",
+    "die_sha256": "ef30305f6f380038",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 14958,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_bbe222ce2fbc093b",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "09808a0e57effbb4",
+    "die_sha256": "09808a0e57effbb4",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 9858,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_c6880f9dd4f8a2ff",
+    "fdi": "42",
+    "source": "modeldie",
+    "die_asset_id": "95fe7eec7b93a5bf",
+    "die_sha256": "95fe7eec7b93a5bf",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 10014,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_c95d834cec44ed29",
+    "fdi": "47",
+    "source": "modeldie",
+    "die_asset_id": "6409e477d9672a67",
+    "die_sha256": "6409e477d9672a67",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 21826,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_cfc5c39fcf168091",
+    "fdi": "17",
+    "source": "modeldie",
+    "die_asset_id": "9fede4081749fc60",
+    "die_sha256": "9fede4081749fc60",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 29706,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d0f254ba4023b3f4",
+    "fdi": "45",
+    "source": "modeldie",
+    "die_asset_id": "0dcd973b57e0f3e3",
+    "die_sha256": "0dcd973b57e0f3e3",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 10472,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d0f254ba4023b3f4",
+    "fdi": "47",
+    "source": "modeldie",
+    "die_asset_id": "a928c7c201d9c5e8",
+    "die_sha256": "a928c7c201d9c5e8",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11698,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d2332b1e813ec61d",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "7e7e527148c4c20e",
+    "die_sha256": "7e7e527148c4c20e",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 315632,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d2332b1e813ec61d",
+    "fdi": "12",
+    "source": "modeldie",
+    "die_asset_id": "d32ca1a7ac0eaf0d",
+    "die_sha256": "d32ca1a7ac0eaf0d",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 9814,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d2332b1e813ec61d",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "168abe72eb4207a2",
+    "die_sha256": "168abe72eb4207a2",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12884,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d2332b1e813ec61d",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "45a792177e04e0df",
+    "die_sha256": "45a792177e04e0df",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 9770,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d5fbd7fe8768d742",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "8630d5a2a25aaae4",
+    "die_sha256": "8630d5a2a25aaae4",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12186,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d5fbd7fe8768d742",
+    "fdi": "12",
+    "source": "modeldie",
+    "die_asset_id": "c2bc43be6322b80c",
+    "die_sha256": "c2bc43be6322b80c",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 354404,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d5fbd7fe8768d742",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "77b8bb6d94f70228",
+    "die_sha256": "77b8bb6d94f70228",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11258,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d5fbd7fe8768d742",
+    "fdi": "22",
+    "source": "modeldie",
+    "die_asset_id": "487348e45b2f6787",
+    "die_sha256": "487348e45b2f6787",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12576,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d5fbd7fe8768d742",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "dbbd54ee1d546556",
+    "die_sha256": "dbbd54ee1d546556",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 12182,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d69849568702beeb",
+    "fdi": "23",
+    "source": "modeldie",
+    "die_asset_id": "7c45fb237d0a3829",
+    "die_sha256": "7c45fb237d0a3829",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11824,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d69849568702beeb",
+    "fdi": "25",
+    "source": "modeldie",
+    "die_asset_id": "dba6b6ff91ed3a5f",
+    "die_sha256": "dba6b6ff91ed3a5f",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 11924,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d8e66cd4fd826dc4",
+    "fdi": "35",
+    "source": "modeldie",
+    "die_asset_id": "2244418060c188f9",
+    "die_sha256": "2244418060c188f9",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 507836,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_d8e66cd4fd826dc4",
+    "fdi": "37",
+    "source": "modeldie",
+    "die_asset_id": "2244418060c188f9",
+    "die_sha256": "2244418060c188f9",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 507836,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_dc50c4ec3fa4ad85",
+    "fdi": "36",
+    "source": "modeldie",
+    "die_asset_id": "f2fd4d7d4d5e8e4f",
+    "die_sha256": "f2fd4d7d4d5e8e4f",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 23522,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_dc5631212bf17c99",
+    "fdi": "46",
+    "source": "modeldie",
+    "die_asset_id": "2e02ce8b4c767e0d",
+    "die_sha256": "2e02ce8b4c767e0d",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 21918,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_e086a2fd1a08e471",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "28aa4fb5d9c7dcee",
+    "die_sha256": "28aa4fb5d9c7dcee",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 20986,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_e28a47035ec40401",
+    "fdi": "37",
+    "source": "modeldie",
+    "die_asset_id": "1b0a00c3c2ea65b5",
+    "die_sha256": "1b0a00c3c2ea65b5",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 28692,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_e4b23b949094f9b8",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "144c388186fcd95f",
+    "die_sha256": "144c388186fcd95f",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 414876,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_e4b23b949094f9b8",
+    "fdi": "14",
+    "source": "modeldie",
+    "die_asset_id": "144c388186fcd95f",
+    "die_sha256": "144c388186fcd95f",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 414876,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_e4b23b949094f9b8",
+    "fdi": "15",
+    "source": "modeldie",
+    "die_asset_id": "144c388186fcd95f",
+    "die_sha256": "144c388186fcd95f",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 414876,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_e530207a4db6d422",
+    "fdi": "37",
+    "source": "modeldie",
+    "die_asset_id": "00cfb5c8c3bc213c",
+    "die_sha256": "00cfb5c8c3bc213c",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 27684,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_e5ee8547964b758f",
+    "fdi": "33",
+    "source": "modeldie",
+    "die_asset_id": "c302b30d784cf497",
+    "die_sha256": "c302b30d784cf497",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16388,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_e5ee8547964b758f",
+    "fdi": "42",
+    "source": "modeldie",
+    "die_asset_id": "77506f15c1307159",
+    "die_sha256": "77506f15c1307159",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 13906,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_e5ee8547964b758f",
+    "fdi": "43",
+    "source": "modeldie",
+    "die_asset_id": "6317e38b9bef0ff7",
+    "die_sha256": "6317e38b9bef0ff7",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 21132,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_ea571b2ecece6106",
+    "fdi": "37",
+    "source": "modeldie",
+    "die_asset_id": "f0bba2a2d43993cc",
+    "die_sha256": "f0bba2a2d43993cc",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 20352,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_eb1c9f41222ee591",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "e71e8c97b8d7861a",
+    "die_sha256": "e71e8c97b8d7861a",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16820,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_eb1c9f41222ee591",
+    "fdi": "12",
+    "source": "modeldie",
+    "die_asset_id": "8f369dd72d78d494",
+    "die_sha256": "8f369dd72d78d494",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15226,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_eb1c9f41222ee591",
+    "fdi": "21",
+    "source": "modeldie",
+    "die_asset_id": "f3b88f171114ddfb",
+    "die_sha256": "f3b88f171114ddfb",
+    "axis": [
+     -0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 17798,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_ee934481d9ae1938",
+    "fdi": "42",
+    "source": "modeldie",
+    "die_asset_id": "fca215711a58dff1",
+    "die_sha256": "fca215711a58dff1",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 301044,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_f8afc9f0bae775b7",
+    "fdi": "26",
+    "source": "modeldie",
+    "die_asset_id": "e9fc842e14d4b22a",
+    "die_sha256": "e9fc842e14d4b22a",
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "mesh_n_faces": 16822,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_fe5dc7334b5f3f9f",
+    "fdi": "37",
+    "source": "modeldie",
+    "die_asset_id": "d15c69493cecba1d",
+    "die_sha256": "d15c69493cecba1d",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 26182,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_fe5df3b6bbbdb140",
+    "fdi": "11",
+    "source": "modeldie",
+    "die_asset_id": "215d188d82535bd2",
+    "die_sha256": "215d188d82535bd2",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 15210,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_fe5df3b6bbbdb140",
+    "fdi": "13",
+    "source": "modeldie",
+    "die_asset_id": "fef0d26895672a3d",
+    "die_sha256": "fef0d26895672a3d",
+    "axis": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 20548,
+    "input_schema_version": "blind_gen_v1"
+   },
+   {
+    "case_uuid": "cf_fe8b1076ef871c81",
+    "fdi": "32",
+    "source": "modeldie",
+    "die_asset_id": "e3991f188c1e11d6",
+    "die_sha256": "e3991f188c1e11d6",
+    "axis": [
+     0.0,
+     -0.0,
+     1.0
+    ],
+    "mesh_n_faces": 10226,
+    "input_schema_version": "blind_gen_v1"
+   }
+  ]
+ }
+}

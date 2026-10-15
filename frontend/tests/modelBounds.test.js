@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {Scene,Mesh,BoxGeometry,Vector3} from 'three';
+import {modelBounds} from '../src/modelBounds.js';
+const scene=new Scene();
+const scan=new Mesh(new BoxGeometry(10,10,10));scan.userData.role='patient';scan.position.set(100,200,300);scene.add(scan);
+const helper=new Mesh(new BoxGeometry(100000,100000,100000));scene.add(helper);
+let box=modelBounds(scene);assert.deepEqual(box.getCenter(new Vector3()).toArray(),[100,200,300]);assert.deepEqual(box.getSize(new Vector3()).toArray(),[10,10,10]);
+assert.equal(modelBounds(scene,true).isEmpty(),true);
+const prep=new Mesh(new BoxGeometry(2,2,2));prep.userData.role='support';prep.position.set(102,202,302);scene.add(prep);
+assert.deepEqual(modelBounds(scene,true).getCenter(new Vector3()).toArray(),[102,202,302]);
+scan.visible=false;assert.deepEqual(modelBounds(scene).getSize(new Vector3()).toArray(),[2,2,2]);

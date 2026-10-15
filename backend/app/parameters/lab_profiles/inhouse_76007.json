@@ -1,0 +1,3155 @@
+{
+  "lab_id": "inhouse_76007",
+  "n_orders_basis": 14,
+  "n_tooth_records_basis": 38,
+  "notes": "derived from 15 exocad case folders, grouped by source_order_id",
+  "parameters": {
+    "AbutmentEmergenceProfileCutOffset": {
+      "name": "AbutmentEmergenceProfileCutOffset",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "RESTORATION",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "0.0": 29
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 17
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Coping": {
+          "0.0": 6
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "29 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "AbutmentEmergenceProfileHeightOnGingivaBorder": {
+      "name": "AbutmentEmergenceProfileHeightOnGingivaBorder",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "RESTORATION",
+      "n_records_with_param": 8,
+      "value_counts": {
+        "0.2": 8
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.2": 4
+        },
+        "AnatomicPontic": {
+          "0.2": 1
+        },
+        "Coping": {
+          "0.2": 3
+        }
+      },
+      "rationale": "8 条记录取值全部为 0.2。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "AbutmentEmergenceProfileSupportRadiusOffset": {
+      "name": "AbutmentEmergenceProfileSupportRadiusOffset",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "RESTORATION",
+      "n_records_with_param": 8,
+      "value_counts": {
+        "0.0": 8
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 4
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Coping": {
+          "0.0": 3
+        }
+      },
+      "rationale": "8 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "AdaptEmergenceCutDistActive": {
+      "name": "AdaptEmergenceCutDistActive",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "RESTORATION",
+      "n_records_with_param": 18,
+      "value_counts": {
+        "1.0": 18
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 12
+        },
+        "AnatomicPontic": {
+          "1.0": 2
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "18 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "AdaptToGingivaHardDirectCutMode": {
+      "name": "AdaptToGingivaHardDirectCutMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 38,
+      "value_counts": {
+        "0.0": 38
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 6
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "38 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "AdditionalBlockOutAngleAfterCementGap": {
+      "name": "AdditionalBlockOutAngleAfterCementGap",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "-1.0": 15,
+        "0.0": 10
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "-1.0": 9,
+          "0.0": 10
+        },
+        "Coping": {
+          "-1.0": 6
+        }
+      },
+      "rationale": "2 种取值（{-1.0: 15, 0.0: 10}）看似双峰，但已确认是 MillingMachineAxes 的确定性函数，不是并列的风格取值。解析链应派生而非查表。依据：实测 25 条记录：3 轴 10/10 取 0，5 轴 15/15 取 -1，相关度 100%。与 exocad 官方对 3 轴/5 轴材料区分该参数的说法一致。"
+    },
+    "AdjustToNeighborPullCutDepth": {
+      "name": "AdjustToNeighborPullCutDepth",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 31,
+      "value_counts": {
+        "-0.1": 31
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "-0.1": 19
+        },
+        "AnatomicPontic": {
+          "-0.1": 4
+        },
+        "Coping": {
+          "-0.1": 6
+        },
+        "ReducedPontic": {
+          "-0.1": 2
+        }
+      },
+      "rationale": "31 条记录取值全部为 -0.1。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "AllowSplitForSLMOptimizedBridgesAndBars": {
+      "name": "AllowSplitForSLMOptimizedBridgesAndBars",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 14,
+      "value_counts": {
+        "1.0": 14
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 8
+        },
+        "AnatomicPontic": {
+          "1.0": 2
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "14 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "AttachmentSafetyRadiusOnToothMargin": {
+      "name": "AttachmentSafetyRadiusOnToothMargin",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 11,
+      "value_counts": {
+        "0.5": 11
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.5": 7
+        },
+        "AnatomicPontic": {
+          "0.5": 2
+        },
+        "Coping": {
+          "0.5": 2
+        }
+      },
+      "rationale": "11 条记录取值全部为 0.5。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "BlockoutMode": {
+      "name": "BlockoutMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "BridgeInsertionAxisDivergenceMode": {
+      "name": "BridgeInsertionAxisDivergenceMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CementGapBorderSmoothing": {
+      "name": "CementGapBorderSmoothing",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.5": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.5": 19
+        },
+        "Coping": {
+          "0.5": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.5。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CementGapBrushMode": {
+      "name": "CementGapBrushMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 9,
+      "value_counts": {
+        "0.0": 9
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 6
+        },
+        "Coping": {
+          "0.0": 3
+        }
+      },
+      "rationale": "9 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CementGapEnd": {
+      "name": "CementGapEnd",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CementGapStart": {
+      "name": "CementGapStart",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "1.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 19
+        },
+        "Coping": {
+          "1.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CementGapThickness": {
+      "name": "CementGapThickness",
+      "class": "CASE_VARIABLE",
+      "scope": "TOOTH",
+      "n_records_with_param": 21,
+      "value_counts": {
+        "0.02": 7,
+        "0.025": 10,
+        "0.03": 2,
+        "0.08": 2
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.02": 5,
+          "0.025": 10,
+          "0.08": 2
+        },
+        "Coping": {
+          "0.02": 2,
+          "0.03": 2
+        }
+      },
+      "rationale": "4 种取值（{0.02: 7, 0.025: 10, 0.03: 2, 0.08: 2}），是真正的逐病例变量，绝不可作为默认值。"
+    },
+    "CementGapTopThickness": {
+      "name": "CementGapTopThickness",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.01": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.01": 19
+        },
+        "Coping": {
+          "0.01": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.01。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ConnectToothToToothDirectlyMode": {
+      "name": "ConnectToothToToothDirectlyMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 21,
+      "value_counts": {
+        "0.0": 21
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 13
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "21 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ConnectorArea": {
+      "name": "ConnectorArea",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "9.0": 29
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "9.0": 19
+        },
+        "AnatomicPontic": {
+          "9.0": 4
+        },
+        "Coping": {
+          "9.0": 4
+        },
+        "ReducedPontic": {
+          "9.0": 2
+        }
+      },
+      "rationale": "29 条记录取值全部为 9.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ConnectorBelowContact": {
+      "name": "ConnectorBelowContact",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "1.4": 29
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.4": 19
+        },
+        "AnatomicPontic": {
+          "1.4": 4
+        },
+        "Coping": {
+          "1.4": 4
+        },
+        "ReducedPontic": {
+          "1.4": 2
+        }
+      },
+      "rationale": "29 条记录取值全部为 1.4。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ConnectorHeight": {
+      "name": "ConnectorHeight",
+      "class": "CASE_VARIABLE",
+      "scope": "CASE",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "2.0": 24,
+        "5.2": 1,
+        "6.9": 1,
+        "7.2": 1,
+        "7.7": 1,
+        "7.8": 1
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "2.0": 18,
+          "7.7": 1
+        },
+        "AnatomicPontic": {
+          "2.0": 4
+        },
+        "Coping": {
+          "2.0": 2,
+          "5.2": 1,
+          "7.8": 1
+        },
+        "ReducedPontic": {
+          "6.9": 1,
+          "7.2": 1
+        }
+      },
+      "rationale": "6 种取值（{2.0: 24, 5.2: 1, 6.9: 1, 7.2: 1, 7.7: 1, 7.8: 1}），是真正的逐病例变量，绝不可作为默认值。"
+    },
+    "ConnectorLingualOfContactAnterior": {
+      "name": "ConnectorLingualOfContactAnterior",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "1.5": 29
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.5": 19
+        },
+        "AnatomicPontic": {
+          "1.5": 4
+        },
+        "Coping": {
+          "1.5": 4
+        },
+        "ReducedPontic": {
+          "1.5": 2
+        }
+      },
+      "rationale": "29 条记录取值全部为 1.5。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ConnectorMinimumDistanceToScanDataOnBottom": {
+      "name": "ConnectorMinimumDistanceToScanDataOnBottom",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "0.5": 29
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.5": 19
+        },
+        "AnatomicPontic": {
+          "0.5": 4
+        },
+        "Coping": {
+          "0.5": 4
+        },
+        "ReducedPontic": {
+          "0.5": 2
+        }
+      },
+      "rationale": "29 条记录取值全部为 0.5。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ConnectorMinimumDistanceToScanDataOnBottomMode": {
+      "name": "ConnectorMinimumDistanceToScanDataOnBottomMode",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "CASE",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "-1.0": 4,
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "-1.0": 3,
+          "0.0": 16
+        },
+        "AnatomicPontic": {
+          "-1.0": 1,
+          "0.0": 3
+        },
+        "Coping": {
+          "0.0": 4
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "2 种取值（{-1.0: 4, 0.0: 25}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "ConnectorPullDownToVirtualGingiva": {
+      "name": "ConnectorPullDownToVirtualGingiva",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 21,
+      "value_counts": {
+        "0.5": 21
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.5": 13
+        },
+        "AnatomicPontic": {
+          "0.5": 4
+        },
+        "Coping": {
+          "0.5": 2
+        },
+        "ReducedPontic": {
+          "0.5": 2
+        }
+      },
+      "rationale": "21 条记录取值全部为 0.5。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ConnectorShapeBulgeAvoidanceMode": {
+      "name": "ConnectorShapeBulgeAvoidanceMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "0.0": 29
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Coping": {
+          "0.0": 4
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "29 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ConnectorShapeType": {
+      "name": "ConnectorShapeType",
+      "class": "RESTORATION_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 15,
+      "value_counts": {
+        "2.0": 4,
+        "5.0": 11
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "5.0": 9
+        },
+        "AnatomicPontic": {
+          "5.0": 2
+        },
+        "Coping": {
+          "2.0": 2
+        },
+        "ReducedPontic": {
+          "2.0": 2
+        }
+      },
+      "rationale": "每个修复体类型内部一致、类型之间不同: AnatomicCrown=5.0; AnatomicPontic=5.0; Coping=2.0; ReducedPontic=2.0"
+    },
+    "ConnectorUseWidthAndHeightInsteadOfArea": {
+      "name": "ConnectorUseWidthAndHeightInsteadOfArea",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "CASE",
+      "n_records_with_param": 21,
+      "value_counts": {
+        "0.0": 16,
+        "1.0": 5
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 12,
+          "1.0": 1
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "2 种取值（{0.0: 16, 1.0: 5}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "ConnectorWidth": {
+      "name": "ConnectorWidth",
+      "class": "CASE_VARIABLE",
+      "scope": "CASE",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "2.0": 26,
+        "3.4": 1,
+        "3.6": 1,
+        "4.6": 1
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "2.0": 18,
+          "4.6": 1
+        },
+        "AnatomicPontic": {
+          "2.0": 4
+        },
+        "Coping": {
+          "2.0": 3,
+          "3.4": 1
+        },
+        "ReducedPontic": {
+          "2.0": 1,
+          "3.6": 1
+        }
+      },
+      "rationale": "4 种取值（{2.0: 26, 3.4: 1, 3.6: 1, 4.6: 1}），是真正的逐病例变量，绝不可作为默认值。"
+    },
+    "CrownAdaptationMarginForShapePreservation": {
+      "name": "CrownAdaptationMarginForShapePreservation",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.4": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.4": 19
+        },
+        "Coping": {
+          "0.4": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.4。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CrownAdaptationShapePreservation": {
+      "name": "CrownAdaptationShapePreservation",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.001": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.001": 19
+        },
+        "Coping": {
+          "0.001": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.001。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CrownAdditionalPreparationMarginExtension": {
+      "name": "CrownAdditionalPreparationMarginExtension",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CrownAdditionalSpacingX": {
+      "name": "CrownAdditionalSpacingX",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 2,
+        "0.01": 2,
+        "0.02": 21
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.01": 2,
+          "0.02": 17
+        },
+        "Coping": {
+          "0.0": 2,
+          "0.02": 4
+        }
+      },
+      "rationale": "3 种取值（{0.0: 2, 0.01: 2, 0.02: 21}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "CrownAdditionalSpacingY": {
+      "name": "CrownAdditionalSpacingY",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 2,
+        "0.01": 2,
+        "0.02": 21
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.01": 2,
+          "0.02": 17
+        },
+        "Coping": {
+          "0.0": 2,
+          "0.02": 4
+        }
+      },
+      "rationale": "3 种取值（{0.0: 2, 0.01: 2, 0.02: 21}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "CrownAdditionalSpacingZ": {
+      "name": "CrownAdditionalSpacingZ",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 2,
+        "0.01": 2,
+        "0.02": 21
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.01": 2,
+          "0.02": 17
+        },
+        "Coping": {
+          "0.0": 2,
+          "0.02": 4
+        }
+      },
+      "rationale": "3 种取值（{0.0: 2, 0.01: 2, 0.02: 21}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "CrownAdditionalSpacingZOnTop": {
+      "name": "CrownAdditionalSpacingZOnTop",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CrownAdditionalSpacingZOnTopDistance": {
+      "name": "CrownAdditionalSpacingZOnTopDistance",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "-2.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "-2.0": 19
+        },
+        "Coping": {
+          "-2.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 -2.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CrownBlockoutAngle": {
+      "name": "CrownBlockoutAngle",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CrownBorderAngle": {
+      "name": "CrownBorderAngle",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 23,
+        "60.0": 2
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 17,
+          "60.0": 2
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "2 种取值（{0.0: 23, 60.0: 2}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "CrownBorderAngledSize": {
+      "name": "CrownBorderAngledSize",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 23,
+        "0.3": 2
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 17,
+          "0.3": 2
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "2 种取值（{0.0: 23, 0.3: 2}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "CrownBorderHorizontalSize": {
+      "name": "CrownBorderHorizontalSize",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.2": 2,
+        "0.25": 23
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.2": 2,
+          "0.25": 17
+        },
+        "Coping": {
+          "0.25": 6
+        }
+      },
+      "rationale": "2 种取值（{0.2: 2, 0.25: 23}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "CrownBorderVerticalSize": {
+      "name": "CrownBorderVerticalSize",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CrownBottomInsertionAngleBetweenTeethLimit": {
+      "name": "CrownBottomInsertionAngleBetweenTeethLimit",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "20.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "20.0": 19
+        },
+        "Coping": {
+          "20.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 20.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "CrownBottomInsertionAngleToAverageLimit": {
+      "name": "CrownBottomInsertionAngleToAverageLimit",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "20.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "20.0": 19
+        },
+        "Coping": {
+          "20.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 20.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "DistanceToAntagonist": {
+      "name": "DistanceToAntagonist",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 31,
+      "value_counts": {
+        "0.1": 31
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.1": 19
+        },
+        "AnatomicPontic": {
+          "0.1": 4
+        },
+        "Coping": {
+          "0.1": 6
+        },
+        "ReducedPontic": {
+          "0.1": 2
+        }
+      },
+      "rationale": "31 条记录取值全部为 0.1。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "DistanceToGingiva": {
+      "name": "DistanceToGingiva",
+      "class": "CASE_VARIABLE",
+      "scope": "TOOTH",
+      "n_records_with_param": 33,
+      "value_counts": {
+        "-0.32": 12,
+        "-0.31": 4,
+        "-0.3": 9,
+        "0.0": 8
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "-0.32": 10,
+          "-0.3": 7,
+          "0.0": 2
+        },
+        "AnatomicPontic": {
+          "-0.32": 2,
+          "-0.3": 2
+        },
+        "Antagonist": {
+          "0.0": 1
+        },
+        "Coping": {
+          "-0.31": 2,
+          "0.0": 4
+        },
+        "HealthyTooth": {
+          "0.0": 1
+        },
+        "ReducedPontic": {
+          "-0.31": 2
+        }
+      },
+      "rationale": "4 种取值（{-0.32: 12, -0.31: 4, -0.3: 9, 0.0: 8}），是真正的逐病例变量，绝不可作为默认值。"
+    },
+    "DistanceToNeighbor": {
+      "name": "DistanceToNeighbor",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 31,
+      "value_counts": {
+        "0.0": 31
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Coping": {
+          "0.0": 6
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "31 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "FreeformBrushSize": {
+      "name": "FreeformBrushSize",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 38,
+      "value_counts": {
+        "2.0": 38
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "2.0": 19
+        },
+        "AnatomicPontic": {
+          "2.0": 4
+        },
+        "Antagonist": {
+          "2.0": 5
+        },
+        "Coping": {
+          "2.0": 6
+        },
+        "HealthyTooth": {
+          "2.0": 2
+        },
+        "ReducedPontic": {
+          "2.0": 2
+        }
+      },
+      "rationale": "38 条记录取值全部为 2.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "FreeformPaintAndPullBrushElasticSize": {
+      "name": "FreeformPaintAndPullBrushElasticSize",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 38,
+      "value_counts": {
+        "1.0": 38
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 19
+        },
+        "AnatomicPontic": {
+          "1.0": 4
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 6
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "38 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "FreeformPaintAndPullBrushSize": {
+      "name": "FreeformPaintAndPullBrushSize",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 38,
+      "value_counts": {
+        "1.0": 38
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 19
+        },
+        "AnatomicPontic": {
+          "1.0": 4
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 6
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "38 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "FreeformStrength": {
+      "name": "FreeformStrength",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 38,
+      "value_counts": {
+        "0.5": 38
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.5": 19
+        },
+        "AnatomicPontic": {
+          "0.5": 4
+        },
+        "Antagonist": {
+          "0.5": 5
+        },
+        "Coping": {
+          "0.5": 6
+        },
+        "HealthyTooth": {
+          "0.5": 2
+        },
+        "ReducedPontic": {
+          "0.5": 2
+        }
+      },
+      "rationale": "38 条记录取值全部为 0.5。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ImplantCloseHoleMode": {
+      "name": "ImplantCloseHoleMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 29,
+      "value_counts": {
+        "0.0": 29
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 17
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Coping": {
+          "0.0": 6
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "29 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "LoadBridgeModels": {
+      "name": "LoadBridgeModels",
+      "class": "UNKNOWN",
+      "scope": "TOOTH",
+      "n_records_with_param": 1,
+      "value_counts": {
+        "1.0": 1
+      },
+      "by_restoration_type": {
+        "AnatomicPontic": {
+          "1.0": 1
+        }
+      },
+      "rationale": "仅 1 条记录，证据不足"
+    },
+    "LoadToothModelForceUsingPonticMode": {
+      "name": "LoadToothModelForceUsingPonticMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "MergePartsSuitableForPrinting": {
+      "name": "MergePartsSuitableForPrinting",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 31,
+      "value_counts": {
+        "1.0": 31
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 19
+        },
+        "AnatomicPontic": {
+          "1.0": 4
+        },
+        "Coping": {
+          "1.0": 6
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "31 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "MillingDiameter": {
+      "name": "MillingDiameter",
+      "class": "CASE_VARIABLE",
+      "scope": "ORDER",
+      "n_records_with_param": 31,
+      "value_counts": {
+        "0.5": 10,
+        "0.6": 4,
+        "0.95": 3,
+        "1.0": 6,
+        "1.2": 8
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.5": 10,
+          "0.95": 3,
+          "1.0": 4,
+          "1.2": 2
+        },
+        "AnatomicPontic": {
+          "1.2": 4
+        },
+        "Coping": {
+          "0.6": 4,
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.2": 2
+        }
+      },
+      "rationale": "5 种取值（{0.5: 10, 0.6: 4, 0.95: 3, 1.0: 6, 1.2: 8}），是真正的逐病例变量，绝不可作为默认值。"
+    },
+    "MillingDiameterBullnoseToolCompensationMode": {
+      "name": "MillingDiameterBullnoseToolCompensationMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "ORDER",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "MillingDiameterFlatToolRatio": {
+      "name": "MillingDiameterFlatToolRatio",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "ORDER",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.8": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.8": 19
+        },
+        "Coping": {
+          "0.8": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.8。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "MillingMachineAxes": {
+      "name": "MillingMachineAxes",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "ORDER",
+      "n_records_with_param": 31,
+      "value_counts": {
+        "3.0": 12,
+        "5.0": 19
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "3.0": 10,
+          "5.0": 9
+        },
+        "AnatomicPontic": {
+          "3.0": 2,
+          "5.0": 2
+        },
+        "Coping": {
+          "5.0": 6
+        },
+        "ReducedPontic": {
+          "5.0": 2
+        }
+      },
+      "rationale": "2 种取值（{3.0: 12, 5.0: 19}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "MillingMode": {
+      "name": "MillingMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "ORDER",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "1.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 19
+        },
+        "Coping": {
+          "1.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "MinThickness": {
+      "name": "MinThickness",
+      "class": "RESTORATION_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 27,
+      "value_counts": {
+        "0.4": 2,
+        "0.6": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.6": 19
+        },
+        "Coping": {
+          "0.6": 6
+        },
+        "ReducedPontic": {
+          "0.4": 2
+        }
+      },
+      "rationale": "每个修复体类型内部一致、类型之间不同: AnatomicCrown=0.6; Coping=0.6; ReducedPontic=0.4"
+    },
+    "MinThicknessFullDistanceToPreparationMargin": {
+      "name": "MinThicknessFullDistanceToPreparationMargin",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.8": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.8": 19
+        },
+        "Coping": {
+          "0.8": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.8。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "MinThicknessGingivaDesign": {
+      "name": "MinThicknessGingivaDesign",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 6,
+      "value_counts": {
+        "0.4": 6
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.4": 5
+        },
+        "AnatomicPontic": {
+          "0.4": 1
+        }
+      },
+      "rationale": "6 条记录取值全部为 0.4。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "MinThicknessNearPreparationMargin": {
+      "name": "MinThicknessNearPreparationMargin",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.2": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.2": 19
+        },
+        "Coping": {
+          "0.2": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.2。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "MinThicknessOcclusalOffset": {
+      "name": "MinThicknessOcclusalOffset",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 25
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "Coping": {
+          "0.0": 6
+        }
+      },
+      "rationale": "25 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelBottomPinGrooveDepth": {
+      "name": "ModelBottomPinGrooveDepth",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.95": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.95": 5
+        },
+        "AnatomicPontic": {
+          "0.95": 1
+        },
+        "Antagonist": {
+          "0.95": 5
+        },
+        "Coping": {
+          "0.95": 2
+        },
+        "HealthyTooth": {
+          "0.95": 2
+        },
+        "ReducedPontic": {
+          "0.95": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.95。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelBottomPinGrooveWidth": {
+      "name": "ModelBottomPinGrooveWidth",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "1.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 5
+        },
+        "AnatomicPontic": {
+          "1.0": 1
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelConcavity": {
+      "name": "ModelConcavity",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "1.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 5
+        },
+        "AnatomicPontic": {
+          "1.0": 1
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelDieShaftTaperAngle": {
+      "name": "ModelDieShaftTaperAngle",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelDieShaftTaperHeightLimit": {
+      "name": "ModelDieShaftTaperHeightLimit",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "10.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "10.0": 5
+        },
+        "AnatomicPontic": {
+          "10.0": 1
+        },
+        "Antagonist": {
+          "10.0": 5
+        },
+        "Coping": {
+          "10.0": 2
+        },
+        "HealthyTooth": {
+          "10.0": 2
+        },
+        "ReducedPontic": {
+          "10.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 10.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelDieShaftVerticalChamfers": {
+      "name": "ModelDieShaftVerticalChamfers",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelDieShaftWedgeAngle": {
+      "name": "ModelDieShaftWedgeAngle",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelDitchDepthAvg": {
+      "name": "ModelDitchDepthAvg",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.14": 6,
+        "0.17": 4,
+        "0.5": 7
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.5": 5
+        },
+        "AnatomicPontic": {
+          "0.5": 1
+        },
+        "Antagonist": {
+          "0.17": 4,
+          "0.5": 1
+        },
+        "Coping": {
+          "0.14": 2
+        },
+        "HealthyTooth": {
+          "0.14": 2
+        },
+        "ReducedPontic": {
+          "0.14": 2
+        }
+      },
+      "rationale": "3 种取值（{0.14: 6, 0.17: 4, 0.5: 7}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "ModelDitchHeightAvg": {
+      "name": "ModelDitchHeightAvg",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.3": 6,
+        "0.8": 4,
+        "2.0": 7
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "2.0": 5
+        },
+        "AnatomicPontic": {
+          "2.0": 1
+        },
+        "Antagonist": {
+          "0.8": 4,
+          "2.0": 1
+        },
+        "Coping": {
+          "0.3": 2
+        },
+        "HealthyTooth": {
+          "0.3": 2
+        },
+        "ReducedPontic": {
+          "0.3": 2
+        }
+      },
+      "rationale": "3 种取值（{0.3: 6, 0.8: 4, 2.0: 7}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "ModelDitchWidth": {
+      "name": "ModelDitchWidth",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.1": 6,
+        "0.17": 10,
+        "0.5": 1
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.1": 5
+        },
+        "AnatomicPontic": {
+          "0.1": 1
+        },
+        "Antagonist": {
+          "0.17": 4,
+          "0.5": 1
+        },
+        "Coping": {
+          "0.17": 2
+        },
+        "HealthyTooth": {
+          "0.17": 2
+        },
+        "ReducedPontic": {
+          "0.17": 2
+        }
+      },
+      "rationale": "3 种取值（{0.1: 6, 0.17: 10, 0.5: 1}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "ModelFrictionPadGap": {
+      "name": "ModelFrictionPadGap",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelFrictionPadRadius": {
+      "name": "ModelFrictionPadRadius",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelGingivaMaskGapWidth": {
+      "name": "ModelGingivaMaskGapWidth",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.1": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.1": 5
+        },
+        "AnatomicPontic": {
+          "0.1": 1
+        },
+        "Antagonist": {
+          "0.1": 5
+        },
+        "Coping": {
+          "0.1": 2
+        },
+        "HealthyTooth": {
+          "0.1": 2
+        },
+        "ReducedPontic": {
+          "0.1": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.1。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelGingivaMaskImplantSupportWidth": {
+      "name": "ModelGingivaMaskImplantSupportWidth",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "1.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 5
+        },
+        "AnatomicPontic": {
+          "1.0": 1
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelGingivaMaskImplantTopOffset": {
+      "name": "ModelGingivaMaskImplantTopOffset",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelGingivaMaskMinThickness": {
+      "name": "ModelGingivaMaskMinThickness",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "1.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 5
+        },
+        "AnatomicPontic": {
+          "1.0": 1
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelGingivaMaskRetentionBallDiameter": {
+      "name": "ModelGingivaMaskRetentionBallDiameter",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelGingivaMaskRetentionBallSeparation": {
+      "name": "ModelGingivaMaskRetentionBallSeparation",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "1.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 5
+        },
+        "AnatomicPontic": {
+          "1.0": 1
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelImplantLabAnalogOffsetHorizontal": {
+      "name": "ModelImplantLabAnalogOffsetHorizontal",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.05": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.05": 5
+        },
+        "AnatomicPontic": {
+          "0.05": 1
+        },
+        "Antagonist": {
+          "0.05": 5
+        },
+        "Coping": {
+          "0.05": 2
+        },
+        "HealthyTooth": {
+          "0.05": 2
+        },
+        "ReducedPontic": {
+          "0.05": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.05。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelImplantLabAnalogOffsetVertical": {
+      "name": "ModelImplantLabAnalogOffsetVertical",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelImplantSupportBevelAngle": {
+      "name": "ModelImplantSupportBevelAngle",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "45.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "45.0": 5
+        },
+        "AnatomicPontic": {
+          "45.0": 1
+        },
+        "Antagonist": {
+          "45.0": 5
+        },
+        "Coping": {
+          "45.0": 2
+        },
+        "HealthyTooth": {
+          "45.0": 2
+        },
+        "ReducedPontic": {
+          "45.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 45.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelImplantSupportBevelRatio": {
+      "name": "ModelImplantSupportBevelRatio",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "50.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "50.0": 5
+        },
+        "AnatomicPontic": {
+          "50.0": 1
+        },
+        "Antagonist": {
+          "50.0": 5
+        },
+        "Coping": {
+          "50.0": 2
+        },
+        "HealthyTooth": {
+          "50.0": 2
+        },
+        "ReducedPontic": {
+          "50.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 50.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelImplantSupportGingivaMaskDepth": {
+      "name": "ModelImplantSupportGingivaMaskDepth",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelImplantSupportHeightOffset": {
+      "name": "ModelImplantSupportHeightOffset",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelImplantSupportWidth": {
+      "name": "ModelImplantSupportWidth",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "1.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 5
+        },
+        "AnatomicPontic": {
+          "1.0": 1
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelMillingHeadDiameter": {
+      "name": "ModelMillingHeadDiameter",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelMinimumPinCircumference": {
+      "name": "ModelMinimumPinCircumference",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 4,
+      "value_counts": {
+        "1.0": 4
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 1
+        },
+        "Antagonist": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 1
+        }
+      },
+      "rationale": "4 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelOmitDiePin": {
+      "name": "ModelOmitDiePin",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelPedestalHeightPlateless": {
+      "name": "ModelPedestalHeightPlateless",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelPinHeight": {
+      "name": "ModelPinHeight",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "1.5": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.5": 5
+        },
+        "AnatomicPontic": {
+          "1.5": 1
+        },
+        "Antagonist": {
+          "1.5": 5
+        },
+        "Coping": {
+          "1.5": 2
+        },
+        "HealthyTooth": {
+          "1.5": 2
+        },
+        "ReducedPontic": {
+          "1.5": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 1.5。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelPreparationMarginExtrusion": {
+      "name": "ModelPreparationMarginExtrusion",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.2": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.2": 5
+        },
+        "AnatomicPontic": {
+          "0.2": 1
+        },
+        "Antagonist": {
+          "0.2": 5
+        },
+        "Coping": {
+          "0.2": 2
+        },
+        "HealthyTooth": {
+          "0.2": 2
+        },
+        "ReducedPontic": {
+          "0.2": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.2。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelSeatingAreaAngle": {
+      "name": "ModelSeatingAreaAngle",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelSeatingAreaWidth": {
+      "name": "ModelSeatingAreaWidth",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.72": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.72": 5
+        },
+        "AnatomicPontic": {
+          "0.72": 1
+        },
+        "Antagonist": {
+          "0.72": 5
+        },
+        "Coping": {
+          "0.72": 2
+        },
+        "HealthyTooth": {
+          "0.72": 2
+        },
+        "ReducedPontic": {
+          "0.72": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.72。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelShaftGapHorizontal": {
+      "name": "ModelShaftGapHorizontal",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.1": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.1": 5
+        },
+        "AnatomicPontic": {
+          "0.1": 1
+        },
+        "Antagonist": {
+          "0.1": 5
+        },
+        "Coping": {
+          "0.1": 2
+        },
+        "HealthyTooth": {
+          "0.1": 2
+        },
+        "ReducedPontic": {
+          "0.1": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.1。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelShaftGapHorizontalDynamicDifference": {
+      "name": "ModelShaftGapHorizontalDynamicDifference",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelShaftGapHorizontalDynamicRangeEnd": {
+      "name": "ModelShaftGapHorizontalDynamicRangeEnd",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "10.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "10.0": 5
+        },
+        "AnatomicPontic": {
+          "10.0": 1
+        },
+        "Antagonist": {
+          "10.0": 5
+        },
+        "Coping": {
+          "10.0": 2
+        },
+        "HealthyTooth": {
+          "10.0": 2
+        },
+        "ReducedPontic": {
+          "10.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 10.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelShaftGapHorizontalDynamicRangeStart": {
+      "name": "ModelShaftGapHorizontalDynamicRangeStart",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelShaftGapVertical": {
+      "name": "ModelShaftGapVertical",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.1": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.1": 5
+        },
+        "AnatomicPontic": {
+          "0.1": 1
+        },
+        "Antagonist": {
+          "0.1": 5
+        },
+        "Coping": {
+          "0.1": 2
+        },
+        "HealthyTooth": {
+          "0.1": 2
+        },
+        "ReducedPontic": {
+          "0.1": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 0.1。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelSupportPinBulgeHeight": {
+      "name": "ModelSupportPinBulgeHeight",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "2.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "2.0": 5
+        },
+        "AnatomicPontic": {
+          "2.0": 1
+        },
+        "Antagonist": {
+          "2.0": 5
+        },
+        "Coping": {
+          "2.0": 2
+        },
+        "HealthyTooth": {
+          "2.0": 2
+        },
+        "ReducedPontic": {
+          "2.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 2.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelSupportPinDiameter": {
+      "name": "ModelSupportPinDiameter",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "5.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "5.0": 5
+        },
+        "AnatomicPontic": {
+          "5.0": 1
+        },
+        "Antagonist": {
+          "5.0": 5
+        },
+        "Coping": {
+          "5.0": 2
+        },
+        "HealthyTooth": {
+          "5.0": 2
+        },
+        "ReducedPontic": {
+          "5.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 5.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelSupportPinLedgeHeight": {
+      "name": "ModelSupportPinLedgeHeight",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "3.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "3.0": 5
+        },
+        "AnatomicPontic": {
+          "3.0": 1
+        },
+        "Antagonist": {
+          "3.0": 5
+        },
+        "Coping": {
+          "3.0": 2
+        },
+        "HealthyTooth": {
+          "3.0": 2
+        },
+        "ReducedPontic": {
+          "3.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 3.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelTiltedDieIsSkewed": {
+      "name": "ModelTiltedDieIsSkewed",
+      "class": "RESTORATION_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "0.0": 11,
+        "1.0": 6
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 1
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "每个修复体类型内部一致、类型之间不同: AnatomicCrown=0.0; AnatomicPontic=0.0; Antagonist=0.0; Coping=1.0; HealthyTooth=1.0; ReducedPontic=1.0"
+    },
+    "ModelWallBottomSill": {
+      "name": "ModelWallBottomSill",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "1.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 5
+        },
+        "AnatomicPontic": {
+          "1.0": 1
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelWallMorphologicalClosureDiameter": {
+      "name": "ModelWallMorphologicalClosureDiameter",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "1.0": 17
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 5
+        },
+        "AnatomicPontic": {
+          "1.0": 1
+        },
+        "Antagonist": {
+          "1.0": 5
+        },
+        "Coping": {
+          "1.0": 2
+        },
+        "HealthyTooth": {
+          "1.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "17 条记录取值全部为 1.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "ModelWallThickness": {
+      "name": "ModelWallThickness",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "CASE",
+      "n_records_with_param": 17,
+      "value_counts": {
+        "2.5": 7,
+        "3.0": 10
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "2.5": 5
+        },
+        "AnatomicPontic": {
+          "2.5": 1
+        },
+        "Antagonist": {
+          "2.5": 1,
+          "3.0": 4
+        },
+        "Coping": {
+          "3.0": 2
+        },
+        "HealthyTooth": {
+          "3.0": 2
+        },
+        "ReducedPontic": {
+          "3.0": 2
+        }
+      },
+      "rationale": "2 种取值（{2.5: 7, 3.0: 10}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "PreReducedToothLibraryAllowRetention": {
+      "name": "PreReducedToothLibraryAllowRetention",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 11,
+      "value_counts": {
+        "0.0": 11
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 2
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "11 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "PreReducedToothLibraryAllowThimble": {
+      "name": "PreReducedToothLibraryAllowThimble",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 11,
+      "value_counts": {
+        "0.0": 11
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 5
+        },
+        "AnatomicPontic": {
+          "0.0": 2
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "11 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "PreReducedToothLibraryEnabled": {
+      "name": "PreReducedToothLibraryEnabled",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 31,
+      "value_counts": {
+        "0.0": 31
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Coping": {
+          "0.0": 6
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "31 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "PreparationMarginIsSubgingivaMode": {
+      "name": "PreparationMarginIsSubgingivaMode",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 10,
+        "1.0": 15
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 7,
+          "1.0": 12
+        },
+        "Coping": {
+          "0.0": 3,
+          "1.0": 3
+        }
+      },
+      "rationale": "2 种取值（{0.0: 10, 1.0: 15}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "ProductionBlankRestrictionType": {
+      "name": "ProductionBlankRestrictionType",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "ORDER",
+      "n_records_with_param": 31,
+      "value_counts": {
+        "0.0": 31
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Coping": {
+          "0.0": 6
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "31 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "SegmentationCorrectionBrushSize": {
+      "name": "SegmentationCorrectionBrushSize",
+      "class": "UNKNOWN",
+      "scope": "TOOTH",
+      "n_records_with_param": 2,
+      "value_counts": {
+        "2.0": 2
+      },
+      "by_restoration_type": {
+        "Coping": {
+          "2.0": 2
+        }
+      },
+      "rationale": "仅 2 条记录，证据不足"
+    },
+    "Shrinking": {
+      "name": "Shrinking",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 8,
+      "value_counts": {
+        "0.0": 2,
+        "0.8": 6
+      },
+      "by_restoration_type": {
+        "Coping": {
+          "0.0": 2,
+          "0.8": 4
+        },
+        "ReducedPontic": {
+          "0.8": 2
+        }
+      },
+      "rationale": "2 种取值（{0.0: 2, 0.8: 6}），且并非按修复体类型分组 → 判定为并存的多套工艺风格，必须保留为可选项，不得压平成单一默认值。"
+    },
+    "ShrinkingBottom": {
+      "name": "ShrinkingBottom",
+      "class": "UNKNOWN",
+      "scope": "TOOTH",
+      "n_records_with_param": 2,
+      "value_counts": {
+        "0.2": 2
+      },
+      "by_restoration_type": {
+        "ReducedPontic": {
+          "0.2": 2
+        }
+      },
+      "rationale": "仅 2 条记录，证据不足"
+    },
+    "ShrinkingPonticMinThickness": {
+      "name": "ShrinkingPonticMinThickness",
+      "class": "UNKNOWN",
+      "scope": "TOOTH",
+      "n_records_with_param": 2,
+      "value_counts": {
+        "2.0": 2
+      },
+      "by_restoration_type": {
+        "ReducedPontic": {
+          "2.0": 2
+        }
+      },
+      "rationale": "仅 2 条记录，证据不足"
+    },
+    "ThimbleCrownDesignMode": {
+      "name": "ThimbleCrownDesignMode",
+      "class": "RESTORATION_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 33,
+      "value_counts": {
+        "0.0": 2,
+        "1.0": 31
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 19
+        },
+        "AnatomicPontic": {
+          "1.0": 4
+        },
+        "Coping": {
+          "1.0": 6
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "每个修复体类型内部一致、类型之间不同: AnatomicCrown=1.0; AnatomicPontic=1.0; Coping=1.0; HealthyTooth=0.0; ReducedPontic=1.0"
+    },
+    "UntouchableZoneNearPreparationMargin": {
+      "name": "UntouchableZoneNearPreparationMargin",
+      "class": "LAB_PRESET_VARIANT",
+      "scope": "TOOTH",
+      "n_records_with_param": 25,
+      "value_counts": {
+        "0.0": 10,
+        "0.1": 15
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 10,
+          "0.1": 9
+        },
+        "Coping": {
+          "0.1": 6
+        }
+      },
+      "rationale": "2 种取值（{0.0: 10, 0.1: 15}）看似双峰，但已确认是 MillingMachineAxes 的确定性函数，不是并列的风格取值。解析链应派生而非查表。依据：实测 25 条记录：3 轴 10/10 取 0，5 轴 15/15 取 0.1，相关度 100%。原先被分类器标为 LAB_PRESET_VARIANT（双峰），实为机轴数的函数。"
+    },
+    "VirtualExtractionOrCopyInWizardMode": {
+      "name": "VirtualExtractionOrCopyInWizardMode",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 38,
+      "value_counts": {
+        "0.0": 38
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 19
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "0.0": 6
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "38 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "VirtualGingivaBridgeConnectorDisabled": {
+      "name": "VirtualGingivaBridgeConnectorDisabled",
+      "class": "LAB_GLOBAL_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 23,
+      "value_counts": {
+        "0.0": 23
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "0.0": 15
+        },
+        "AnatomicPontic": {
+          "0.0": 4
+        },
+        "Coping": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "0.0": 2
+        }
+      },
+      "rationale": "23 条记录取值全部为 0.0。含义是该**实验室**在这批记录上取值一致，可作 Lab Profile 默认值，不是全局临床真理，不得硬编码进算法核心。"
+    },
+    "VirtualGingivaDesignMode": {
+      "name": "VirtualGingivaDesignMode",
+      "class": "RESTORATION_PRESET",
+      "scope": "TOOTH",
+      "n_records_with_param": 38,
+      "value_counts": {
+        "0.0": 7,
+        "1.0": 31
+      },
+      "by_restoration_type": {
+        "AnatomicCrown": {
+          "1.0": 19
+        },
+        "AnatomicPontic": {
+          "1.0": 4
+        },
+        "Antagonist": {
+          "0.0": 5
+        },
+        "Coping": {
+          "1.0": 6
+        },
+        "HealthyTooth": {
+          "0.0": 2
+        },
+        "ReducedPontic": {
+          "1.0": 2
+        }
+      },
+      "rationale": "每个修复体类型内部一致、类型之间不同: AnatomicCrown=1.0; AnatomicPontic=1.0; Antagonist=0.0; Coping=1.0; HealthyTooth=0.0; ReducedPontic=1.0"
+    },
+    "VirtualToothExtractionAdditionalExtractionArea": {
+      "name": "VirtualToothExtractionAdditionalExtractionArea",
+      "class": "UNKNOWN",
+      "scope": "TOOTH",
+      "n_records_with_param": 2,
+      "value_counts": {
+        "0.3": 2
+      },
+      "by_restoration_type": {
+        "Coping": {
+          "0.3": 2
+        }
+      },
+      "rationale": "仅 2 条记录，证据不足"
+    },
+    "VirtualToothExtractionGingivaCollapseStrength": {
+      "name": "VirtualToothExtractionGingivaCollapseStrength",
+      "class": "UNKNOWN",
+      "scope": "TOOTH",
+      "n_records_with_param": 2,
+      "value_counts": {
+        "2.0": 2
+      },
+      "by_restoration_type": {
+        "Coping": {
+          "2.0": 2
+        }
+      },
+      "rationale": "仅 2 条记录，证据不足"
+    }
+  }
+}

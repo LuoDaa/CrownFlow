@@ -1,0 +1,12 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports: ["3277:3277"]
+    volumes:
+      - ./data:/app/data
+      - ./ml/checkpoints:/app/models
+    environment:
+      - CROWNFLOW_DATA_DIR=/app/data
+      - CROWNFLOW_MODEL_DIR=/app/models
