@@ -38,29 +38,61 @@ def _crown():
     return trimesh.creation.revolve(profile, sections=96)
 
 
-def test_one_sided_neighbor_expands_only_that_side_without_whole_crown_translation():
+def test_one_sided_neighbor_expands_only_that_physical_side_without_whole_crown_translation():
     mesh = _crown()
     frame = _frame()
     margin = _margin()
-    mesial = trimesh.creation.box(extents=[1.0, 6.0, 8.0])
-    mesial.apply_translation([4.5, 0.0, 3.0])
+    neighbor = trimesh.creation.box(extents=[1.0, 6.0, 8.0])
+    neighbor.apply_translation([4.5, 0.0, 3.0])
 
     before = np.asarray(mesh.vertices).copy()
     result, report = space_driven_embryo_prefit(
         mesh, frame, margin,
-        proximal_surfaces={"mesial": FitSurface(mesial)},
+        proximal_surfaces={"mesial": FitSurface(neighbor)},
         proximal_target_mm=0.05,
     )
     after = np.asarray(result.vertices)
 
-    assert report["algorithm"] == "SPACE_DRIVEN_EMBRYO_MORPH_V2"
+    assert report["algorithm"] == "SPACE_DRIVEN_EMBRYO_MORPH_V3"
     assert report["template_role"] == "TOPOLOGY_AND_ANATOMY_EMBRYO_NOT_SIZE_TRUTH"
     assert report["md"]["whole_crown_translation_mm"] == 0.0
-    assert report["md"]["mesial_scale"] > 1.0
-    assert abs(report["md"]["distal_scale"] - 1.0) < 0.05
+    assert report["md"]["positive_x_scale"] > 1.0
+    assert abs(report["md"]["negative_x_scale"] - 1.0) < 0.05
+    assert report["md"]["neighbor_reference_mapping"]["mesial"]["axis_sign"] > 0
     assert np.quantile(after[:, 0], .98) > np.quantile(before[:, 0], .98) + 0.5
-    distal = before[:, 0] < np.quantile(before[:, 0], .15)
-    assert np.median(np.abs(after[distal, 0] - before[distal, 0])) < 0.15
+    opposite = before[:, 0] < np.quantile(before[:, 0], .15)
+    assert np.median(np.abs(after[opposite, 0] - before[opposite, 0])) < 0.15
+
+
+def test_mislabeled_neighbor_still_grows_the_side_where_the_patch_physically_exists():
+    mesh = _crown()
+    frame = _frame()
+    margin = _margin()
+    positive_neighbor = trimesh.creation.box(extents=[1.0, 6.0, 8.0])
+    positive_neighbor.apply_translation([4.5, 0.0, 3.0])
+    surface = FitSurface(positive_neighbor)
+
+    before = np.asarray(mesh.vertices).copy()
+    result, report = space_driven_embryo_prefit(
+        mesh, frame, margin,
+        proximal_surfaces={"distal": surface},  # deliberately wrong clinical label
+        proximal_target_mm=0.05,
+    )
+    after = np.asarray(result.vertices)
+
+    ref = report["md"]["neighbor_reference_mapping"]["distal"]
+    assert ref["axis_side"] == "POSITIVE_X"
+    assert report["md"]["positive_x_scale"] > 1.0
+    assert abs(report["md"]["negative_x_scale"] - 1.0) < 0.05
+    assert np.quantile(after[:, 0], .98) > np.quantile(before[:, 0], .98) + 0.5
+
+    masks, _locked, quality = build_proximal_domains(
+        result, frame, margin, {"distal": surface},
+    )
+    assert quality["distal"]["axis_sign"] > 0
+    ids = np.flatnonzero(masks["distal"])
+    assert len(ids) >= 40
+    assert np.median(np.asarray(result.vertices)[ids, 0]) > 0.0
 
 
 def test_support_fallback_and_material_envelope_expand_width_without_forcing_unneeded_height():
@@ -83,11 +115,9 @@ def test_support_fallback_and_material_envelope_expand_width_without_forcing_unn
     assert shell["status"] in ("APPLIED", "NO_CORRECTION_NEEDED")
     assert shell["source"] == "PREP_SUPPORT_PLUS_CEMENT_GAP_FALLBACK"
     assert abs(shell["required_outer_to_intaglio_mm"] - 0.85) < 1e-9
-    assert report["md"]["mesial_scale"] > 1.0
-    assert report["md"]["distal_scale"] > 1.0
+    assert report["md"]["positive_x_scale"] > 1.0
+    assert report["md"]["negative_x_scale"] > 1.0
     assert report["bl"]["buccal_scale"] > 1.0
-    # This fixture's support top + material floor is below the embryo top, so the
-    # correct behaviour is width growth without artificial extra crown height.
     assert report["height_floor"]["applied"] is False
     assert np.ptp(after[:, 0]) > np.ptp(before[:, 0])
     assert np.ptp(after[:, 1]) > np.ptp(before[:, 1])
@@ -139,6 +169,33 @@ def test_tall_actual_intaglio_sets_vertical_outer_floor_before_antagonist_fittin
     assert report["height_floor"]["inner_top_mm"] > 5.5
     assert report["height_floor"]["desired_top_mm"] > before_top
     assert after_top > before_top + 0.2
+
+
+def test_antagonist_height_seek_remeasures_until_the_contact_quantile_closes():
+    mesh = _crown()
+    frame = _frame()
+    margin = _margin()
+    antagonist = trimesh.creation.box(extents=[12.0, 12.0, 1.0])
+    antagonist.apply_translation([0.0, 0.0, 8.5])
+    surface = FitSurface(antagonist)
+
+    before_top = float(np.max(mesh.vertices[:, 2]))
+    result, report = space_driven_embryo_prefit(
+        mesh, frame, margin,
+        antagonist_surface=surface,
+        occlusal_target_mm=0.05,
+    )
+    after_top = float(np.max(result.vertices[:, 2]))
+
+    height = report["height"]
+    assert height["applied"] is True
+    assert after_top > before_top
+    assert height.get("passes")
+    accepted = [p for p in height["passes"] if p.get("accepted")]
+    assert accepted
+    assert accepted[-1]["after"]["gap_quantile_mm"] < accepted[0]["before"]["gap_quantile_mm"]
+    if height.get("final"):
+        assert height["final"]["penetration_p95_mm"] <= 0.02 + 1e-9
 
 
 def test_proximal_domain_is_not_allowed_to_collapse_to_a_handful_of_vertices():
