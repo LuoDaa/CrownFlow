@@ -36,11 +36,11 @@ def _crown():
 
 def test_margin_is_full_loop_hard_boundary():
     crown, report = cervical_fit_to_margin(_crown(), _frame(), _margin())
-    assert report["status"] == "PASS_ENGINEERING"
-    assert report["full_loop_coverage"]["within_0_05mm_fraction"] >= 0.98
-    assert report["full_loop_coverage"]["uncovered_samples"] == 0
-    assert report["after_mm"]["p95"] <= 0.05
-    assert report["duplicate_pairs_after"] <= report["duplicate_pairs_before"]
+    assert report["status"] == "PASS_ENGINEERING", report
+    assert report["full_loop_coverage"]["within_0_05mm_fraction"] >= 0.98, report
+    assert report["full_loop_coverage"]["uncovered_samples"] == 0, report
+    assert report["after_mm"]["p95"] <= 0.05, report
+    assert report["duplicate_pairs_after"] <= report["duplicate_pairs_before"], report
     assert np.isfinite(crown.vertices).all()
 
 
@@ -60,18 +60,17 @@ def test_patient_side_growth_reaches_continuous_negative_contact_core():
         crown, _frame(), _margin(), {"mesial": FitSurface(neighbor)}, -0.02,
     )
     state = report["physical_after"]["mesial"]
-    assert report["status"] == "PASS_ENGINEERING"
-    assert state["target_reached"] is True
-    assert state["contact_vertex_count"] >= state["required_contact_vertices"]
-    assert state["largest_connected_contact_vertices"] >= state["required_connected_contact_vertices"]
-    assert abs(state["signed_median_mm"] - (-0.02)) < 0.20
+    assert report["status"] == "PASS_ENGINEERING", report
+    assert state["target_reached"] is True, report
+    assert state["contact_vertex_count"] >= state["required_contact_vertices"], report
+    assert state["largest_connected_contact_vertices"] >= state["required_connected_contact_vertices"], report
+    assert abs(state["signed_median_mm"] - (-0.02)) < 0.20, report
     assert np.isfinite(result.vertices).all()
 
 
 def test_antagonist_height_solver_corrects_large_global_penetration():
     crown, _ = cervical_fit_to_margin(_crown(), _frame(), _margin())
     antagonist = trimesh.creation.box(extents=[12.0, 12.0, 1.0])
-    # Box lower face at z=5.75, while the embryo reaches z~6: deliberate penetration.
     antagonist.apply_translation([0.0, 0.0, 6.25])
     result, report = space_driven_embryo_prefit(
         crown, _frame(), _margin(),
@@ -79,9 +78,9 @@ def test_antagonist_height_solver_corrects_large_global_penetration():
         occlusal_target_mm=0.05,
     )
     height = report["height"]
-    assert height["applied"] is True
-    assert height["final"]["penetration_p95_mm"] <= 0.02 + 1e-9
-    assert np.max(result.vertices[:, 2]) < np.max(crown.vertices[:, 2])
+    assert height["applied"] is True, height
+    assert height["final"]["penetration_p95_mm"] <= 0.02 + 1e-9, height
+    assert np.max(result.vertices[:, 2]) < np.max(crown.vertices[:, 2]), height
 
 
 def test_inner_shell_guard_is_lateral_and_cannot_recreate_occlusal_penetration():
@@ -91,6 +90,6 @@ def test_inner_shell_guard_is_lateral_and_cannot_recreate_occlusal_penetration()
     before_z = np.asarray(crown.vertices)[:, 2].copy()
     result, report = enforce_inner_envelope_clearance(crown, inner, _frame(), _margin(), 0.80)
     after_z = np.asarray(result.vertices)[:, 2]
-    assert report["method"] == "ACTUAL_INTAGLIO_PURE_LATERAL_CLEARANCE_V3"
-    assert np.allclose(after_z, before_z, atol=1e-10)
+    assert report["method"] == "ACTUAL_INTAGLIO_PURE_LATERAL_CLEARANCE_V3", report
+    assert np.allclose(after_z, before_z, atol=1e-10), report
     assert np.isfinite(result.vertices).all()
