@@ -38,7 +38,7 @@ def _crown():
     return trimesh.creation.revolve(profile, sections=96)
 
 
-def test_one_sided_neighbor_expands_only_that_physical_side_without_whole_crown_translation():
+def test_global_prefit_delegates_neighbor_sizing_instead_of_using_global_x():
     mesh = _crown()
     frame = _frame()
     margin = _margin()
@@ -49,22 +49,23 @@ def test_one_sided_neighbor_expands_only_that_physical_side_without_whole_crown_
     result, report = space_driven_embryo_prefit(
         mesh, frame, margin,
         proximal_surfaces={"mesial": FitSurface(neighbor)},
-        proximal_target_mm=0.05,
+        proximal_target_mm=0.0,
     )
     after = np.asarray(result.vertices)
 
-    assert report["algorithm"] == "SPACE_DRIVEN_EMBRYO_MORPH_V3"
+    assert report["algorithm"] == "SPACE_DRIVEN_EMBRYO_MORPH_V4"
     assert report["template_role"] == "TOPOLOGY_AND_ANATOMY_EMBRYO_NOT_SIZE_TRUTH"
+    assert report["md"]["mode"] == "INNER_SHELL_FLOOR_ONLY_PROXIMAL_DELEGATED"
+    assert report["md"]["neighbor_constraints_delegated"] is True
+    assert report["md"]["neighbor_labels"] == ["mesial"]
     assert report["md"]["whole_crown_translation_mm"] == 0.0
-    assert report["md"]["positive_x_scale"] > 1.0
-    assert abs(report["md"]["negative_x_scale"] - 1.0) < 0.05
-    assert report["md"]["neighbor_reference_mapping"]["mesial"]["axis_sign"] > 0
-    assert np.quantile(after[:, 0], .98) > np.quantile(before[:, 0], .98) + 0.5
-    opposite = before[:, 0] < np.quantile(before[:, 0], .15)
-    assert np.median(np.abs(after[opposite, 0] - before[opposite, 0])) < 0.15
+    # No support/intaglio floor and no antagonist: global prefit must not resize
+    # the tooth just because a neighbor exists.  Patient-vector proximal fitting
+    # owns that geometry in the following stage.
+    assert np.allclose(after, before, atol=1e-10)
 
 
-def test_mislabeled_neighbor_still_grows_the_side_where_the_patch_physically_exists():
+def test_clinical_neighbor_label_does_not_control_physical_side_selection():
     mesh = _crown()
     frame = _frame()
     margin = _margin()
@@ -72,19 +73,15 @@ def test_mislabeled_neighbor_still_grows_the_side_where_the_patch_physically_exi
     positive_neighbor.apply_translation([4.5, 0.0, 3.0])
     surface = FitSurface(positive_neighbor)
 
-    before = np.asarray(mesh.vertices).copy()
     result, report = space_driven_embryo_prefit(
         mesh, frame, margin,
         proximal_surfaces={"distal": surface},  # deliberately wrong clinical label
-        proximal_target_mm=0.05,
+        proximal_target_mm=0.0,
     )
-    after = np.asarray(result.vertices)
 
-    ref = report["md"]["neighbor_reference_mapping"]["distal"]
-    assert ref["axis_side"] == "POSITIVE_X"
-    assert report["md"]["positive_x_scale"] > 1.0
-    assert abs(report["md"]["negative_x_scale"] - 1.0) < 0.05
-    assert np.quantile(after[:, 0], .98) > np.quantile(before[:, 0], .98) + 0.5
+    assert report["algorithm"] == "SPACE_DRIVEN_EMBRYO_MORPH_V4"
+    assert report["md"]["neighbor_constraints_delegated"] is True
+    assert report["md"]["neighbor_labels"] == ["distal"]
 
     masks, _locked, quality = build_proximal_domains(
         result, frame, margin, {"distal": surface},
