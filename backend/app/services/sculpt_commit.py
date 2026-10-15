@@ -10,6 +10,23 @@ from .sculpt_session import reorder_state,measure_contacts
 from .design_dependencies import file_digest,dependency_digest,publish_artifacts
 
 
+#: 提交时的前后接触是**审计记录、不是门**：全量逐顶点（6021 点）要 ≈6s，而每笔微调要跑
+#: before/after 两次 ⇒ ≈12s，就是"每笔微调卡一下"的根源。这里按固定间隔采样测量，
+#: 并在返回/payload 里写明**采样口径与覆盖率**（完整逐顶点图仍由 `outer-analysis` 端点按需提供）。
+CONTACT_AUDIT_SAMPLES=1024
+
+
+def contact_audit(design,mesh,frame,ref):
+    total=int(len(mesh.vertices))
+    ids=None if total<=CONTACT_AUDIT_SAMPLES else np.linspace(0,total-1,CONTACT_AUDIT_SAMPLES,dtype=int)
+    measured=measure_contacts(design,mesh,frame,ref,sample_ids=ids)
+    measured['audit_sampled']=ids is not None
+    measured['vertex_count']=total
+    measured['audit_sample_count']=int(len(measured.get('sample_ids') or []))
+    measured['audit_note']=('采样审计测量（每 %d 点取 1）'%max(total//CONTACT_AUDIT_SAMPLES,1)) if ids is not None else '全量逐顶点'
+    return measured
+
+
 def region_masks(mesh,weights,lock,*,fixed_weights=None):
     moving=(np.asarray(weights)>.5)&(lock>0)
     masks=np.full(len(mesh.vertices),'FIXED',dtype='<U7');masks[moving]='MOVING'
@@ -50,7 +67,7 @@ def resolve_region_weights(design,mesh,frame,ref,state,name):
 def commit_edit(d,p,mesh,frame,ref,state,expected,*,annotation_state=None):
     from ..config import CASE_DIR
     margin=json.loads(d['margin_json']);before_sha=file_digest(d['outer_path'])
-    before=measure_contacts(d,mesh,frame,ref)
+    before=contact_audit(d,mesh,frame,ref)
     metadata={};state={**state};region_source=None
     if annotation_state is not None:
         edited=mesh.copy();state=annotation_state;metadata={'affected_area_mm2':0,'max_displacement_mm':0,'p95_displacement_mm':0}
@@ -90,7 +107,7 @@ def commit_edit(d,p,mesh,frame,ref,state,expected,*,annotation_state=None):
             'failure_face_ids':[],'failure_region':'THICKNESS_PROTECTED',
             'suggested_action':'减小减材强度/半径，或先重建内冠与厚度参考后再编辑',
         }) from exc
-    after=measure_contacts(d,persisted,frame,ref)
+    after=contact_audit(d,persisted,frame,ref)
     state.update(outer_sha256=file_digest(path),frame_revision_id=ref['revision_id'])
     state_path=path.with_suffix('.sculpt.json');state_path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8')
     updates={'outer_path':str(path),'final_path':None,'cutter_path':None,'qc_json':None,'status':'outer_ready',

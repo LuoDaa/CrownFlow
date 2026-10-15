@@ -140,13 +140,18 @@ def region_map_or_error(design,mesh,frame,ref):
                      'automatic_region_names':list(OUTER_REGIONS)}
 
 
-def session_report(design,*,include_regions=False):
+def session_report(design,*,include_regions=False,light=False):
     mesh,frame,ref,state=read_session(design);lock=cervical_weights(mesh,json.loads(design['margin_json']),frame.z)
     region_map,region_error=region_map_or_error(design,mesh,frame,ref)
     from .contact_measurement import confirmed_neighbor_surfaces, neighbor_patch_diagnostics
-    neighbors,_=confirmed_neighbor_surfaces(design,ref,strict=False)
-    patch_reports=neighbor_patch_diagnostics(mesh,region_map,neighbors) if region_map is not None else {}
-    contacts=measure_contacts(design,mesh,frame,ref,sample_ids=np.linspace(0,len(mesh.vertices)-1,min(512,len(mesh.vertices)),dtype=int))
+    # light=True：跳过**画笔本身不需要**的显示类诊断（邻牙 patch 诊断 ≈1.2s、接触采样 ≈0.7s）。
+    # 微调提交后的后台刷新走轻量模式：画布只要 vertices/normals/颈缘保护/帧/state。
+    if light:
+        patch_reports={};contacts=None
+    else:
+        neighbors,_=confirmed_neighbor_surfaces(design,ref,strict=False)
+        patch_reports=neighbor_patch_diagnostics(mesh,region_map,neighbors) if region_map is not None else {}
+        contacts=measure_contacts(design,mesh,frame,ref,sample_ids=np.linspace(0,len(mesh.vertices)-1,min(512,len(mesh.vertices)),dtype=int))
     thickness_ready=bool(state.get('thickness_reference'))
     from ..geometry.crown_outer.deform_gate import nonmanifold_edges
     baseline_geometry={'vertices':int(len(mesh.vertices)),'faces':int(len(mesh.faces)),
@@ -159,13 +164,15 @@ def session_report(design,*,include_regions=False):
         'source_session_sha256':state['outer_sha256'],'input_digest':dependency_digest(design),
         'baseline_geometry':baseline_geometry,
         'edit_session':{'status':'EDITABLE','outer_sha256':state['outer_sha256'],'frame_revision_id':ref['revision_id'],
-                        'contact_status':contacts.get('status'),'thickness_reference_valid':thickness_ready},
+                        'contact_status':(contacts or {}).get('status') or ('SKIPPED_LIGHT_SESSION' if light else None),
+                        'thickness_reference_valid':thickness_ready},
         'capabilities':{'add':True,'smooth':True,'flatten':True,'transform':True,'remove':thickness_ready,
                         'remove_reason':None if thickness_ready else 'REBUILD_REQUIRED'},
         'contacts':contacts,
         # 自动语义区域：report 恒有状态；逐顶点权重只在明确要求时下发（开发态叠加用）。
         'region_map':region_map.report() if region_map is not None else region_error,
         'neighbor_patches':patch_reports,
+        'light_mode':bool(light),
         'region_weights':region_map.weights_report() if (include_regions and region_map is not None) else None,
         'region_protection':region_map.protection.tolist() if (include_regions and region_map is not None) else None,
         'semantic_region_names':REGIONS,'manual_region_names':sorted((state.get('regions') or {}).keys()),

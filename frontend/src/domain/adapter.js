@@ -195,6 +195,8 @@ export const adapter = {
 
   // ── 设计页 ──────────────────────────────────────────────────────────────
   sculptSession: (designId) => api.sculptSession(designId),
+  /** 轻量会话：跳过邻牙补丁诊断/接触采样，专供微调保存后的后台刷新（画布只要顶点与保护权重）。 */
+  sculptSessionLight: (designId) => api.sculptSessionLight(designId),
   /** 开发态叠加用：带逐顶点语义权重（正式工作流不需要）。 */
   sculptSessionRegions: (designId) => api.sculptSessionRegions(designId),
 

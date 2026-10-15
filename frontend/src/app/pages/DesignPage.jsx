@@ -167,8 +167,8 @@ export default function DesignPage({ wf }) {
             <label>边缘衰减 <b>{wf.brush.falloff.toFixed(1)}</b><input aria-label="边缘衰减" type="range" min="1" max="4" step="0.1" value={wf.brush.falloff} disabled={wf.busy} onChange={e=>wf.setBrush(b=>({...b,falloff:Number(e.target.value)}))}/></label>
           </div>
           <p className="cd-hint">D 局部拖动 · Shift 切换反向操作 · Ctrl+Shift 平滑。修饰键在落笔时确定，整笔保持一致。</p>
-          <div className="cd-btn-row"><button className="cd-btn ghost" disabled={wf.busy||!session} onClick={()=>{clearPreview();wf.undoEdit();}}>↶ 撤销</button><button className="cd-btn ghost" disabled={wf.busy||!session} onClick={()=>{clearPreview();wf.redoEdit();}}>↷ 重做</button></div>
-          <button className="cd-btn ghost full" disabled={wf.busy||!session} onClick={()=>{clearPreview();wf.resetCrown();}}>重置牙冠外形</button>
+          <div className="cd-btn-row"><button className="cd-btn ghost" disabled={wf.busy||wf.savingEdit||!session} onClick={()=>{clearPreview();wf.undoEdit();}}>↶ 撤销</button><button className="cd-btn ghost" disabled={wf.busy||wf.savingEdit||!session} onClick={()=>{clearPreview();wf.redoEdit();}}>↷ 重做</button></div>
+          <button className="cd-btn ghost full" disabled={wf.busy||wf.savingEdit||!session} onClick={()=>{clearPreview();wf.resetCrown();}}>重置牙冠外形</button>
         </Panel>
       </aside>
       {/* 有颈缘重建后的最终冠时，第 5 步直接显示它（margin-constrained crown），否则显示外形初稿 */}
@@ -176,7 +176,7 @@ export default function DesignPage({ wf }) {
         legend={showContact?<Legend target={target}/>:null}
         strip={<>{scanToggle("upper","上颌")}{scanToggle("lower","下颌")}<span className="cd-swatch on">牙冠</span>
           <label className="cd-check"><input type="checkbox" checked={wf.view.scanOpacity<.4} onChange={e=>wf.setView(v=>({...v,scanOpacity:e.target.checked?.25:.62}))}/>淡化扫描</label>
-          <span role="status">{wf.contactUpdating?"接触分析更新中…":paintVertices?"局部预览 · 松开后精确测量":wf.busy?"正在保存外形…":""}</span></>} />
+          <span role="status">{wf.contactUpdating?"接触分析更新中…":paintVertices?"局部预览 · 松开后保存":wf.savingEdit?"正在保存本次微调…":""}</span></>} />
       <aside className="cd-rail">
         <Panel title="接触分析" subtitle="负值为穿插 · 正值为间隙">
           <div className="cd-btn-row">{[["antagonist","咬合"],["neighbors","邻牙"]].map(([kind,label])=><button key={kind} className={`cd-btn ${wf.contactKind===kind?"primary":"ghost"}`} disabled={wf.busy||!wf.hasOuter} onClick={()=>{clearPreview();wf.loadContacts(kind);}}>{label}</button>)}</div>
