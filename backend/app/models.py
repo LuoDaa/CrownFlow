@@ -25,7 +25,8 @@ class DesignCreate(BaseModel):
     border_angled_mm: float = Field(default=0, ge=0, le=2)
     border_angle_deg: float = Field(default=45, gt=0, lt=90)
     border_vertical_mm: float = Field(default=0, ge=0, le=1)
-    proximal_target_mm: float | None = Field(default=None, ge=0, le=.5)
+    # 邻接允许 0（几何接触）及小负值（轻微压接）。大负值没有工程意义，故限到 -0.10mm。
+    proximal_target_mm: float | None = Field(default=None, ge=-0.10, le=.5)
     occlusal_target_mm: float | None = Field(default=None, ge=0, le=.5)
     # 加工/加工策略：缺失时由 blockout_policy_from_resolved 报 UNRESOLVED，
     # 不套用近似策略。
