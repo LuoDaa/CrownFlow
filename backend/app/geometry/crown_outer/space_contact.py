@@ -1,15 +1,8 @@
 """Space-driven proximal contact refinement for CAD-1.
 
-The previous path could report PASS from only a handful of vertices because a
-signed-distance band and a global patch-normal gate collapsed the domain.  This
-module treats the template as an embryo and the neighbor surface as the spatial
-constraint:
-
-1. start from the full mesial/distal semantic wall;
-2. select a broad boundary-safe Euclidean-distance band (sign does not choose the domain);
-3. require a minimum real sample population before the stage may pass;
-4. create a compact contact core and move it toward the locally oriented neighbor;
-5. diffuse the edit through a Laplacian transition band.
+The library crown is an embryo.  Proximal geometry is driven by the actual
+adjacent-tooth patch, not by a hard-coded assumption that a clinical label maps
+to +X/-X in every automatically constructed patient frame.
 """
 from __future__ import annotations
 
@@ -55,13 +48,26 @@ def _free_band(adj, seeds, locked, rings=8):
     return np.asarray(sorted(free), int)
 
 
-def build_proximal_domains(mesh, frame, margin, surfaces, *, protected=None, zones=None):
-    """Return broad, trustworthy mesial/distal fitting domains.
+def _physical_axis_reference(surface, frame, center_x):
+    local = (np.asarray(surface.mesh.vertices, float) - np.asarray(frame.origin, float)) @ np.asarray(frame.matrix(), float)
+    x = local[:, 0]
+    x = x[np.isfinite(x)]
+    if not len(x):
+        return None
+    median = float(np.median(x))
+    sign = 1.0 if median >= float(center_x) else -1.0
+    return {
+        "axis_sign": sign,
+        "axis_side": "POSITIVE_X" if sign > 0 else "NEGATIVE_X",
+        "median_x_mm": median,
+    }
 
-    Domain selection is intentionally **unsigned**: Euclidean distance determines
-    which part of the semantic wall faces the neighbor.  Signed distance is used
-    later only for contact direction/penetration after the local normal has been
-    established.
+
+def build_proximal_domains(mesh, frame, margin, surfaces, *, protected=None, zones=None):
+    """Return broad, trustworthy fitting domains on each *physical* MD side.
+
+    The clinical key (``mesial``/``distal``) remains provenance only.  Which side
+    of the crown is edited is inferred from the actual neighbor patch location.
     """
     vertices = np.asarray(mesh.vertices, float)
     if zones is None:
@@ -75,23 +81,39 @@ def build_proximal_domains(mesh, frame, margin, surfaces, *, protected=None, zon
             raise ValueError("保护区域与冠形顶点数不匹配")
         locked |= protected
 
+    matrix = np.asarray(frame.matrix(), float)
+    margin_local = (np.asarray(margin, float) - np.asarray(frame.origin, float)) @ matrix
+    center_x = float(np.median(margin_local[:, 0]))
+
     masks = {}
     diagnostics = {}
-    for side, surface in surfaces.items():
-        semantic = np.asarray(zones.mask_for_side(side), bool) & ~locked
-        ids = np.flatnonzero(semantic)
+    physical_sides = {}
+    for label, surface in surfaces.items():
+        ref = _physical_axis_reference(surface, frame, center_x)
+        mask = np.zeros(len(vertices), bool)
         diag = {
-            "semantic_vertex_count": int(len(ids)),
+            "clinical_label": label,
+            "semantic_vertex_count": 0,
             "domain_vertex_count": 0,
             "valid_vertex_count": 0,
             "minimum_domain_vertices": int(MIN_DOMAIN_VERTICES),
             "minimum_valid_vertices": int(MIN_VALID_VERTICES),
-            "selection": "BOUNDARY_SAFE_UNSIGNED_DISTANCE_BAND_WITH_ADAPTIVE_EXPANSION",
+            "selection": "PHYSICAL_SIDE_BOUNDARY_SAFE_UNSIGNED_DISTANCE_BAND",
         }
-        mask = np.zeros(len(vertices), bool)
+        if ref is None:
+            diagnostics[label] = {**diag, "status": "NOT_ASSESSED", "reason": "INVALID_NEIGHBOR_REFERENCE"}
+            masks[label] = mask
+            continue
+
+        sign = float(ref["axis_sign"])
+        physical_sides[label] = sign
+        semantic = np.asarray(zones.mesial if sign > 0 else zones.distal, bool) & ~locked
+        ids = np.flatnonzero(semantic)
+        diag.update(ref)
+        diag["semantic_vertex_count"] = int(len(ids))
         if not len(ids):
-            diagnostics[side] = {**diag, "status": "NOT_ASSESSED", "reason": "EMPTY_SEMANTIC_SIDE"}
-            masks[side] = mask
+            diagnostics[label] = {**diag, "status": "NOT_ASSESSED", "reason": "EMPTY_PHYSICAL_SIDE"}
+            masks[label] = mask
             continue
 
         _cp, _fids, _signed, distance, valid = surface.query(vertices[ids])
@@ -99,16 +121,13 @@ def build_proximal_domains(mesh, frame, margin, surfaces, *, protected=None, zon
         valid = np.asarray(valid, bool) & np.isfinite(distance)
         diag["valid_vertex_count"] = int(valid.sum())
         if not np.any(valid):
-            diagnostics[side] = {**diag, "status": "NOT_ASSESSED", "reason": "NO_VALID_SURFACE_SAMPLES"}
-            masks[side] = mask
+            diagnostics[label] = {**diag, "status": "NOT_ASSESSED", "reason": "NO_VALID_SURFACE_SAMPLES"}
+            masks[label] = mask
             continue
 
         valid_dist = distance[valid]
         minimum = float(np.min(valid_dist))
         keep = valid & (distance <= minimum + REFERENCE_BAND_MM)
-
-        # Do not allow a valid but tiny sliver (e.g. 5/6021 vertices) to become a
-        # green PASS.  Expand to a deterministic nearest subset when needed.
         semantic_floor = int(np.ceil(len(ids) * MIN_DOMAIN_FRACTION_OF_SEMANTIC))
         required_domain = min(int(valid.sum()), max(MIN_DOMAIN_VERTICES, semantic_floor))
         if int(keep.sum()) < required_domain:
@@ -126,8 +145,17 @@ def build_proximal_domains(mesh, frame, margin, surfaces, *, protected=None, zon
         })
         if diag["status"] != "READY":
             diag["reason"] = "INSUFFICIENT_PROXIMAL_DOMAIN"
-        diagnostics[side] = diag
-        masks[side] = mask
+        diagnostics[label] = diag
+        masks[label] = mask
+
+    # Two independently discovered neighbors must not both claim the same physical
+    # side; that indicates frame/reference ambiguity, not two valid contacts.
+    signs = [s for s in physical_sides.values()]
+    if len(signs) > 1 and len(set(signs)) != len(signs):
+        for label in diagnostics:
+            diagnostics[label]["status"] = "NOT_ASSESSED"
+            diagnostics[label]["reason"] = "NEIGHBOR_PHYSICAL_SIDE_CONFLICT"
+            masks[label][:] = False
     return masks, locked, diagnostics
 
 
@@ -176,7 +204,7 @@ def _subset_better(before, after):
     return compared and improved
 
 
-def _desired_contact(reference, mask, surface, target, side, frame):
+def _desired_contact(reference, mask, surface, target, axis_sign, frame):
     ids = np.flatnonzero(mask)
     if not len(ids):
         return np.zeros(0, int), np.zeros((0, 3), float), False
@@ -207,12 +235,9 @@ def _desired_contact(reference, mask, surface, target, side, frame):
     src = reference[ids[active]]
     delta = raw - src
 
-    direction = np.asarray(frame.x, float) * (1.0 if side == "mesial" else -1.0)
+    direction = np.asarray(frame.x, float) * float(axis_sign)
     direction /= max(float(np.linalg.norm(direction)), 1e-12)
     axial = (delta @ direction)[:, None] * direction[None, :]
-    # The template is an embryo, not the final side-wall truth.  Let 35% of the
-    # local normal residual shape contact convexity/embrasure while retaining a
-    # strong patient mesio-distal bias.
     target_points = src + axial + 0.35 * (delta - axial)
     return ids[active], target_points, False
 
@@ -241,16 +266,18 @@ def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=N
         "domain_quality": domain_quality,
         "locked_vertex_count": int(locked.sum()),
         "transition_rings": int(transition_rings),
-        "solver": "SPACE_DRIVEN_PROXIMAL_ENVELOPE_V1",
+        "solver": "SPACE_DRIVEN_PROXIMAL_ENVELOPE_V2_PHYSICAL_SIDE",
     }
 
     for side in surfaces:
         mask_count = int(domains[side].sum())
         valid_count = int((before.get(side) or {}).get("valid_count", 0))
-        if mask_count < MIN_DOMAIN_VERTICES or valid_count < MIN_VALID_VERTICES:
-            report.update(status="NOT_ASSESSED", reason="INSUFFICIENT_PROXIMAL_DOMAIN")
+        quality = domain_quality.get(side) or {}
+        if quality.get("status") != "READY" or mask_count < MIN_DOMAIN_VERTICES or valid_count < MIN_VALID_VERTICES:
+            report.update(status="NOT_ASSESSED", reason=quality.get("reason") or "INSUFFICIENT_PROXIMAL_DOMAIN")
             return current, report, domains
 
+    axis_signs = {side: float(domain_quality[side]["axis_sign"]) for side in surfaces}
     adj = _neighbors(current)
     ever_changed = False
     unreachable = False
@@ -267,7 +294,7 @@ def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=N
                 reference, domains[side], surface, target, kind="PROXIMAL", side=side,
             )[0]
             side_ids, points, no_reachable = _desired_contact(
-                reference, domains[side], surface, target, side, frame,
+                reference, domains[side], surface, target, axis_signs[side], frame,
             )
             unreachable |= no_reachable
             if len(side_ids):
@@ -341,20 +368,12 @@ def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=N
                 break
 
         if accepted is None:
-            report["passes"].append({
-                "pass": pass_no,
-                "seed_count": int(len(seed_ids)),
-                "status": "CONSTRAINT_CONFLICT",
-            })
+            report["passes"].append({"pass": pass_no, "seed_count": int(len(seed_ids)), "status": "CONSTRAINT_CONFLICT"})
             break
 
         current = accepted
         ever_changed = True
-        report["passes"].append({
-            "pass": pass_no,
-            "seed_count": int(len(seed_ids)),
-            "status": "PASS_ENGINEERING",
-        })
+        report["passes"].append({"pass": pass_no, "seed_count": int(len(seed_ids)), "status": "PASS_ENGINEERING"})
 
     final = {
         side: measure(current.vertices, domains[side], surface, target, kind="PROXIMAL", side=side)[0]
