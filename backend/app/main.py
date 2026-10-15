@@ -12,6 +12,7 @@ from .api.routes import router
 from .api.designer import router as designer_router
 from .api.design_inputs import router as inputs_router
 from .api.auto_fit import router as auto_fit_router
+from .api.abutment_fast import router as abutment_fast_router
 from .db import init_db
 
 
@@ -37,6 +38,7 @@ app.include_router(router)
 app.include_router(designer_router)
 app.include_router(inputs_router)
 app.include_router(auto_fit_router)
+app.include_router(abutment_fast_router)
 app.include_router(margin_router)
 app.include_router(importers_router)
 app.include_router(crown_router)
