@@ -27,6 +27,22 @@ function referencesReady(eligibility) {
   );
 }
 
+function stageOf(stages, name) {
+  return (stages || []).find((stage) => stage?.stage === name) || null;
+}
+
+function emitStageResult(onProgress, stage, id, okLabel, progress) {
+  if (!stage) return;
+  const ok = ["PASS_ENGINEERING", "PLACED"].includes(stage.status);
+  emit(
+    onProgress,
+    id,
+    ok ? okLabel : `${okLabel} · 需复核`,
+    progress,
+    ok ? "" : (stage.reason || stage.status || "REVIEW_REQUIRED"),
+  );
+}
+
 export async function prepareAbutmentOrder({ caseId, fdi, designId = null, onProgress = null }) {
   if (!caseId || !fdi) throw new Error("请先选择牙位并导入病例");
 
@@ -119,10 +135,8 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   await adapter.saveProfile(designId, params);
   eligibility = await api.generationEligibility(designId);
 
-  // Always refresh automatic neighbor references before AUTO generation.  V3
-  // stores a broad connected reference halo around the compact contact core; old
-  // V2 cases may still be CONFIRMED but have an edge-bound patch that produces
-  // zero valid signed samples.  Manual HUMAN_* references are preserved server-side.
+  // Refresh every automatic reference before generation so older V2 cases cannot
+  // keep a CONFIRMED-but-edge-dominated neighbor patch. HUMAN_* input is preserved.
   emit(onProgress, "NEIGHBORS", "刷新邻牙参考面", 14, "扩展接触核心周围安全参考面");
   await autoFitRequest(designId, "auto-neighbors", "POST", {
     expected_input_digest: await inputDigest(designId),
@@ -157,9 +171,6 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     throw new Error(blockers || "自动参考已建立，但当前参数没有形成可执行的邻接/对颌约束");
   }
 
-  // The backend candidate call performs the patient-driven CAD chain:
-  // patient-space prefit -> Margin cervical fit -> proximal envelope -> antagonist
-  // height/occlusal refinement -> intaglio preflight.
   emit(onProgress, "PREFIT", "患者空间整体适配", 28, "按邻牙宽度与咬合空间调整模板整体尺寸");
   emit(onProgress, "CERVICAL", "颈缘贴合 Margin", 36);
   emit(onProgress, "PROXIMAL", "生成近远中邻接形态", 48);
@@ -167,11 +178,11 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   const candidate = await adapter.generateInitialCrown(designId, { kind: "AUTO" });
 
   const payloadStages = candidate?.payload?.stages || [];
-  const stageNames = new Set(payloadStages.map((stage) => stage?.stage));
-  if (stageNames.has("GLOBAL_PREFIT")) emit(onProgress, "PREFIT_DONE", "患者空间整体适配完成", 68);
-  if (stageNames.has("CERVICAL_FIT")) emit(onProgress, "CERVICAL_DONE", "Margin 颈缘约束完成", 72);
-  if (stageNames.has("PROXIMAL")) emit(onProgress, "PROXIMAL_DONE", "邻接形态完成", 76);
-  if (stageNames.has("OCCLUSAL") || stageNames.has("OCCLUSAL_HEIGHT_PREFIT")) emit(onProgress, "OCCLUSAL_DONE", "咬合适配完成", 82);
+  emitStageResult(onProgress, stageOf(payloadStages, "GLOBAL_PREFIT"), "PREFIT_DONE", "患者空间整体适配完成", 68);
+  emitStageResult(onProgress, stageOf(payloadStages, "CERVICAL_FIT"), "CERVICAL_DONE", "Margin 颈缘约束完成", 72);
+  emitStageResult(onProgress, stageOf(payloadStages, "PROXIMAL"), "PROXIMAL_DONE", "邻接形态完成", 76);
+  const occlusalStage = stageOf(payloadStages, "OCCLUSAL") || stageOf(payloadStages, "OCCLUSAL_HEIGHT_PREFIT");
+  emitStageResult(onProgress, occlusalStage, "OCCLUSAL_DONE", "咬合适配完成", 82);
 
   emit(onProgress, "PUBLISH", "发布患者化外冠", 86);
   await adapter.confirmCrownCandidate(designId, candidate.id);
@@ -184,9 +195,10 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     emit(onProgress, "FINAL", "连接内外冠并生成最终 STL", 96);
   } catch (error) {
     finalizeWarning = error?.message || "最终内冠/QC 尚未完成";
+    emit(onProgress, "FINAL_REVIEW", "最终冠需要复核", 96, finalizeWarning);
   }
 
-  const stageWarnings = (candidate?.payload?.stages || [])
+  const stageWarnings = payloadStages
     .filter((stage) => stage?.status && stage.status !== "PASS_ENGINEERING" && stage.status !== "PLACED")
     .map((stage) => `${stage.stage || "阶段"}:${stage.reason || stage.status}`);
   (candidate?.payload?.warnings || []).forEach((warning) => {
@@ -198,8 +210,13 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   }
   if (finalizeWarning) stageWarnings.push(`finalize:${finalizeWarning}`);
 
-  emit(onProgress, "DONE", final ? "自动牙冠设计完成" : "外冠完成，可进入 3D 检查", 100,
-    stageWarnings.length ? `${stageWarnings.length} 项工程提示` : "");
+  emit(
+    onProgress,
+    "DONE",
+    final ? "自动牙冠设计完成" : "患者化外冠完成，可进入 3D 检查",
+    100,
+    stageWarnings.length ? `${stageWarnings.length} 项工程提示` : "",
+  );
 
   return { candidate, final, eligibility, warnings: stageWarnings };
 }
