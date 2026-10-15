@@ -12,8 +12,14 @@ CROWN_CASES_DIR = Path(os.environ.get(
 CROWN_RUNS_DIR = Path(os.environ.get(
     "CROWNFLOW_CROWN_RUNS_DIR", DATA_DIR / "crown_runs")).resolve()
 TEMPLATE_DIR = DATA_DIR / "templates"
-ANATOMY_DIR = Path(os.environ.get("CROWNFLOW_ANATOMY_DIR", ROOT.parents[1] / "32牙位基础解剖模板库" / "32位牙列-分")).resolve()
-TOOTH_LIBRARY_ROOT = Path(os.environ.get('CROWNFLOW_TOOTH_LIBRARY_ROOT',ROOT.parents[1]/'32牙位基础解剖模板库'/'牙齿数据库')).resolve()
+# 模板牙库根：显式 env 优先；否则**项目目录内自带副本**（整个项目目录可直接拷到别的机器跑）；
+# 都没有时回退历史位置（项目目录的上一级）。
+_LIBRARY_IN_PROJECT = ROOT.parent / "32牙位基础解剖模板库"
+_TEMPLATE_LIBRARY_BASE = Path(os.environ.get("CROWNFLOW_TEMPLATE_LIBRARY_ROOT")
+                              or (_LIBRARY_IN_PROJECT if _LIBRARY_IN_PROJECT.is_dir()
+                                  else ROOT.parents[1] / "32牙位基础解剖模板库"))
+ANATOMY_DIR = Path(os.environ.get("CROWNFLOW_ANATOMY_DIR", _TEMPLATE_LIBRARY_BASE / "32位牙列-分")).resolve()
+TOOTH_LIBRARY_ROOT = Path(os.environ.get('CROWNFLOW_TOOTH_LIBRARY_ROOT',_TEMPLATE_LIBRARY_BASE/'牙齿数据库')).resolve()
 MODEL_DIR = Path(os.environ.get("CROWNFLOW_MODEL_DIR", ROOT / "ml" / "checkpoints")).resolve()
 DB_PATH = DATA_DIR / "crownflow.sqlite3"
 
