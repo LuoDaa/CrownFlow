@@ -6,7 +6,7 @@ from .prep_conditioning import PreparedSurfaceContract, Indication, Readiness
 from .design_dependencies import file_digest
 from ..geometry.abutment_support import extract_abutment_support, SupportExtractionError
 from ..geometry.io import load_mesh
-from ..geometry.nonplanar_crown import fitting_support_above_margin
+from ..geometry.nonplanar_crown import fitting_support_above_margin, MarginBuildError
 
 def indication_of(design):
     return design.get('indication') or ('CROWN_ON_EXISTING_ABUTMENT' if design.get('support_type')=='abutment' else 'NATURAL_PREP')
@@ -35,8 +35,10 @@ def assess_abutment_surface(support,margin,axis,*,source_sha256=None,margin_revi
         if report['readiness']=='ABUTMENT_SUPPORT_READY':
             # The existing input predicate remains authoritative after explicit conditioning.
             fitting_support_above_margin(prepared.mesh,margin,axis,prepared=True)
-    except ValueError as exc:
-        return rejected(getattr(exc,'code','MARGIN_NOT_ON_SUPPORT' if '缺口' in str(exc) else 'SUPPORT_EXTRACTION_AMBIGUOUS'),str(exc))
+    except SupportExtractionError as exc:
+        return rejected(getattr(exc,'code','SUPPORT_EXTRACTION_AMBIGUOUS'),str(exc))
+    except MarginBuildError as exc:
+        return rejected(getattr(exc,'code','MARGIN_NOT_ON_SUPPORT'),str(exc))
     contract.readiness=report['readiness'];contract.rejection_code=report['rejection_code']
     contract.rejection_reason={'SCREW_CHANNEL_CONFIRMATION_REQUIRED':'请核对并确认基台顶部螺丝通道开口',
         'UNKNOWN_SUPPORT_HOLE':'存在未分类孔洞，请检查扫描来源，禁止自动封闭'}.get(contract.rejection_code,'')
