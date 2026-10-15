@@ -1,9 +1,9 @@
 // Preview is disposable; server local-band solve and gates decide the committed geometry.
 export function adjacency(faces,n){const sets=Array.from({length:n},()=>new Set());for(const [a,b,c] of faces){sets[a].add(b).add(c);sets[b].add(a).add(c);sets[c].add(a).add(b)}return sets.map(s=>[...s])}
 export function growMasks(faces,weights,locks,fixedWeights=null){const masks=weights.map((w,i)=>w>.5&&locks[i]>0?'MOVING':'FIXED'),adj=adjacency(faces,weights.length);let front=new Set(masks.flatMap((m,i)=>m==='MOVING'?[i]:[])),seen=new Set(front);for(let k=0;k<3;k++){const next=new Set();for(const i of front)for(const j of adj[i])if(!seen.has(j)){next.add(j);seen.add(j);masks[j]='ELASTIC'}front=next}return masks.map((m,i)=>locks[i]===0||fixedWeights?.[i]>.5?'FIXED':m)}
-export function localBrush(base,normals,faces,centers,{radius,strength,falloff=2,operation},locks,weights=null){
+export function localBrush(base,normals,faces,centers,{radius,strength,falloff=2,operation},locks,weights=null,cachedAdj=null){
   const brush=base.map((p,i)=>Math.max(0,1-Math.min(...centers.map(c=>Math.hypot(...p.map((v,j)=>v-c[j]))))/radius)**falloff*locks[i]*(weights?.[i]??1));
-  const result=base.map(p=>[...p]),adj=operation==='smooth'?adjacency(faces,base.length):null;
+  const result=base.map(p=>[...p]),adj=operation==='smooth'?(cachedAdj||adjacency(faces,base.length)):null;
   const ids=brush.flatMap((w,i)=>w>0?[i]:[]);if(!ids.length)return result;
   let normal=null,center=null;
   if(operation==='flatten'){const sum=ids.reduce((s,i)=>s+brush[i],0);center=[0,1,2].map(k=>ids.reduce((s,i)=>s+base[i][k]*brush[i],0)/sum);normal=[0,1,2].map(k=>ids.reduce((s,i)=>s+normals[i][k]*brush[i],0));const length=Math.hypot(...normal);normal=normal.map(v=>v/(length||1))}
