@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from .laplacian import solve_local_band
 from .deform_gate import deformation_gate
-from ..nonplanar_crown import MarginCurtain
+from .zones import ZONE_MODEL_VERSION, build_crown_zones
 
 
 @dataclass
@@ -69,19 +69,28 @@ def surface_crossings(mesh,surface,mask):
         'coverage_note':'Crown domain only; coplanar overlaps require review; area counts whole hit faces, not overlap area.'}
 
 
-def fit_domains(mesh,frame,margin,surfaces,stage,protected=None):
+def fit_domains(mesh,frame,margin,surfaces,stage,protected=None,zones=None):
+    """Return stage masks from one shared crown semantic-zone model.
+
+    ``zones`` may be precomputed on the baseline crown and reused after vertex-only
+    deformations.  That keeps proximal and occlusal stages on the same frozen
+    anatomical vertex domains instead of independently guessing regions.
+    """
     reference=np.asarray(mesh.vertices)
-    height=MarginCurtain(margin,frame.z).axial_above(reference)
-    neck=height<=.4
-    normals=np.asarray(mesh.vertex_normals)
-    rel=(reference-frame.origin)@frame.matrix()
-    occ=(rel[:,2]>=np.quantile(rel[~neck,2],.75))&(normals@frame.z>.35) if (~neck).any() else np.zeros(len(reference),bool)
-    half=max(np.ptp((np.asarray(margin)-frame.origin)@frame.x)/2,1e-6)
-    masks={side:(~neck)&(~occ)&((rel[:,0] if side=='mesial' else -rel[:,0])>.6*half)&((normals@frame.x)*(1 if side=='mesial' else -1)>.1) for side in surfaces} if stage=='PROXIMAL' else {'occlusal':occ&~neck}
-    locked=neck | (occ if stage=='PROXIMAL' else np.zeros(len(reference),bool))
+    if zones is None:
+        zones=build_crown_zones(mesh,frame,margin)
+    zones.validate(len(reference))
+    if stage=='PROXIMAL':
+        masks={side:np.asarray(zones.mask_for_side(side),bool).copy() for side in surfaces}
+        locked=np.asarray(zones.cervical|zones.occlusal,bool).copy()
+    else:
+        masks={'occlusal':np.asarray(zones.occlusal,bool).copy()}
+        locked=np.asarray(zones.cervical,bool).copy()
     if protected is not None: locked |= protected
     masks={side:mask&~locked for side,mask in masks.items()}
     if stage=='PROXIMAL':
+        # The semantic side is intentionally broad.  Neighbor geometry narrows it
+        # to the local contact band, preserving the legacy 0.6 mm nearest band.
         for side,surface in surfaces.items():
             ids=np.flatnonzero(masks[side])
             if not len(ids): continue
@@ -123,6 +132,7 @@ def fit_stage(mesh,frame,margin,surfaces,targets,stage,*,protected=None,domain_m
         desired[ids[active]]=raw_target
         seeds.update(map(int,ids[active]))
     base={'stage':stage,'before':before,'after':before,'trials':[],
+        'zone_model':ZONE_MODEL_VERSION,
         'locked_vertex_count':int(locked.sum()),'transition_rings':int(transition_rings if transition_rings is not None else (7 if stage=='PROXIMAL' else 3)),'status':'REVIEW_REQUIRED','reason':None}
     if not any(r['valid_count'] for r in before.values()):
         base.update(status='NOT_ASSESSED',reason='NO_VALID_SURFACE_SAMPLES');return mesh.copy(),base,masks
