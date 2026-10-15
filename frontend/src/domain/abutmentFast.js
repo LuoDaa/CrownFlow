@@ -2,6 +2,7 @@ import { api, autoFitRequest } from "../api";
 import adapter from "./adapter";
 
 const IDENTITY = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+const MAX_AUTO_CORRECTION_ATTEMPTS = 3;
 
 const emit = (onProgress, id, label, progress, detail = "") => {
   onProgress?.({ id, label, progress, detail, at: Date.now() });
@@ -231,13 +232,47 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     throw new Error(blockers || "自动参考已建立，但当前参数没有形成可执行的邻接/对颌约束");
   }
 
-  emit(onProgress, "PREFIT", "患者空间整体适配", 28, "按邻牙宽度与咬合空间调整模板整体尺寸");
-  emit(onProgress, "CERVICAL", "颈缘贴合 Margin", 36);
-  emit(onProgress, "PROXIMAL", "生成近远中邻接形态", 48);
-  emit(onProgress, "OCCLUSAL", "生成冠高与咬合面适配", 62);
-  const candidate = await adapter.generateInitialCrown(designId, { kind: "AUTO" });
+  let candidate = null;
+  let payloadStages = [];
+  let hardFailures = [];
+  let attemptsUsed = 0;
 
-  const payloadStages = candidate?.payload?.stages || [];
+  // 生成不是“一次算完 + 校验挡住”。每一轮都会把上一轮患者化外冠作为下一轮基线，
+  // 再跑完整 Margin -> 邻接 -> 咬合闭环。这样校验结果会驱动下一轮几何，而不是只报错。
+  for (let attempt = 1; attempt <= MAX_AUTO_CORRECTION_ATTEMPTS; attempt += 1) {
+    attemptsUsed = attempt;
+    const baseProgress = 26 + (attempt - 1) * 16;
+    emit(
+      onProgress,
+      "AUTO_CORRECTION_ATTEMPT",
+      attempt === 1 ? "患者空间自动生成" : `自动纠正第 ${attempt} 轮`,
+      Math.min(baseProgress, 74),
+      "Margin → 左右邻接 → 上下咬合联合求解",
+    );
+
+    candidate = await adapter.generateInitialCrown(designId, { kind: "AUTO" });
+    payloadStages = candidate?.payload?.stages || [];
+    hardFailures = threeHardConstraintFailures(candidate, eligibility);
+
+    if (!hardFailures.length) {
+      emit(onProgress, "HARD_CONSTRAINTS_PASS", "Margin / 邻接 / 咬合全部达到目标", 82, `第 ${attempt} 轮收敛`);
+      break;
+    }
+
+    emit(
+      onProgress,
+      "AUTO_CORRECTION_RETRY",
+      attempt < MAX_AUTO_CORRECTION_ATTEMPTS ? "检测偏差，继续自动纠正" : "自动纠正达到本轮上限",
+      Math.min(baseProgress + 10, 83),
+      hardFailures.join("；"),
+    );
+
+    // 要继续求解，必须把当前患者化结果变成下一轮 outer_current；
+    // 同时这也保证即使最后仍未收敛，用户至少能在 3D 里看到真实失败位置，而不是看不到成品。
+    await adapter.confirmCrownCandidate(designId, candidate.id);
+    eligibility = await api.generationEligibility(designId);
+  }
+
   emitStageResult(onProgress, stageOf(payloadStages, "GLOBAL_PREFIT"), "PREFIT_DONE", "患者空间整体适配完成", 68);
   emitStageResult(onProgress, latestStageOf(payloadStages, ["CERVICAL_REFIT_FINAL", "CERVICAL_REFIT_AFTER_SHELL", "CERVICAL_REFIT_AFTER_HEIGHT", "CERVICAL_FIT"]), "CERVICAL_DONE", "Margin 颈缘约束完成", 72);
   emitStageResult(onProgress, latestStageOf(payloadStages, ["PROXIMAL_RECHECK_AFTER_SHELL", "PROXIMAL"]), "PROXIMAL_DONE", "邻接形态完成", 76);
@@ -245,25 +280,27 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     || stageOf(payloadStages, "OCCLUSAL_HEIGHT_PREFIT");
   emitStageResult(onProgress, occlusalStage, "OCCLUSAL_DONE", "咬合适配完成", 82);
 
-  const hardFailures = threeHardConstraintFailures(candidate, eligibility);
-  if (hardFailures.length) {
-    emit(onProgress, "HARD_CONSTRAINT_BLOCKED", "三个硬约束未全部通过", 84, hardFailures.join("；"));
-    throw new Error(`三个硬约束未全部通过：${hardFailures.join("；")}。候选未发布，请修正病例输入或参数后重新生成。`);
+  // 收敛轮的 candidate 尚未采纳；达到上限时最后一轮也必须采纳，
+  // 这样 Review/3D 永远有“最接近当前目标的真实外冠”可看。
+  if (candidate) {
+    emit(onProgress, "PUBLISH", hardFailures.length ? "保留当前最接近结果供 3D 复核" : "发布患者化外冠", 86);
+    await adapter.confirmCrownCandidate(designId, candidate.id);
   }
-  emit(onProgress, "HARD_CONSTRAINTS_PASS", "Margin / 邻接 / 咬合全部通过", 85);
-
-  emit(onProgress, "PUBLISH", "发布患者化外冠", 86);
-  await adapter.confirmCrownCandidate(designId, candidate.id);
 
   let final = null;
   let finalizeWarning = null;
-  try {
-    emit(onProgress, "INTAGLIO", "根据基台生成内冠", 90);
-    final = await adapter.finalize(designId, { preserveCervical: true });
-    emit(onProgress, "FINAL", "连接内外冠并生成最终 STL", 96);
-  } catch (error) {
-    finalizeWarning = error?.message || "最终内冠/QC 尚未完成";
-    emit(onProgress, "FINAL_REVIEW", "最终冠需要复核", 96, finalizeWarning);
+  if (!hardFailures.length) {
+    try {
+      emit(onProgress, "INTAGLIO", "根据基台生成内冠", 90);
+      final = await adapter.finalize(designId, { preserveCervical: true });
+      emit(onProgress, "FINAL", "连接内外冠并生成最终 STL", 96);
+    } catch (error) {
+      finalizeWarning = error?.message || "最终内冠/QC 尚未完成";
+      emit(onProgress, "FINAL_REVIEW", "最终冠需要复核", 96, finalizeWarning);
+    }
+  } else {
+    finalizeWarning = `三轮自动纠正后仍有 ${hardFailures.length} 项空间约束未收敛；已保留外冠供 3D 检查`;
+    emit(onProgress, "HARD_CONSTRAINT_REVIEW", "已保留未收敛外冠供 3D 检查", 96, hardFailures.join("；"));
   }
 
   const stageWarnings = payloadStages
@@ -271,6 +308,10 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     .map((stage) => `${stage.stage || "阶段"}:${stage.reason || stage.status}`);
   (candidate?.payload?.warnings || []).forEach((warning) => {
     const text = `${warning.stage || "检查"}:${warning.reason || "REVIEW_REQUIRED"}`;
+    if (!stageWarnings.includes(text)) stageWarnings.push(text);
+  });
+  hardFailures.forEach((failure) => {
+    const text = `hard-constraint:${failure}`;
     if (!stageWarnings.includes(text)) stageWarnings.push(text);
   });
   if (candidate?.payload?.status && candidate.payload.status !== "PASS_ENGINEERING") {
@@ -281,10 +322,24 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   emit(
     onProgress,
     "DONE",
-    final ? "自动牙冠设计完成" : "患者化外冠完成，可进入 3D 检查",
+    final
+      ? "自动牙冠设计完成"
+      : hardFailures.length
+        ? "自动纠正已完成，当前外冠已保留供 3D 定位问题"
+        : "患者化外冠完成，可进入 3D 检查",
     100,
-    stageWarnings.length ? `${stageWarnings.length} 项工程提示` : "",
+    hardFailures.length
+      ? `已自动求解 ${attemptsUsed} 轮 · ${hardFailures.length} 项仍需检查`
+      : (stageWarnings.length ? `${stageWarnings.length} 项工程提示` : ""),
   );
 
-  return { candidate, final, eligibility, warnings: stageWarnings };
+  return {
+    candidate,
+    final,
+    eligibility,
+    warnings: stageWarnings,
+    hardFailures,
+    attemptsUsed,
+    converged: hardFailures.length === 0,
+  };
 }
