@@ -8,7 +8,7 @@ from .nonplanar_crown import MarginCurtain, MarginBuildError, audit_margin_on_sc
 from .crown_outer.collar_body_outer import _clip_by_scalar, _boundary_loops
 from .margin_seam import _polyline_distances
 
-VERSION='abutment_support/margin_split_seed_flood/1.0'
+VERSION='abutment_support/margin_split_seed_flood/1.1'
 
 class SupportExtractionError(MarginBuildError):
     def __init__(self,code,message):
@@ -36,28 +36,60 @@ def _inside(points,polygon):
 def _embed_boundary(mesh,source_ids,ring,margin):
     vertices=mesh.vertices.tolist();faces=mesh.faces.tolist();sources=source_ids.tolist();anchors=[];errors=[]
     for point in margin:
-        _,counts=np.unique(np.sort(np.asarray(faces)[:,[0,1,1,2,2,0]].reshape(-1,2),axis=1),axis=0,return_counts=True)
-        edges=np.unique(np.sort(np.asarray(faces)[:,[0,1,1,2,2,0]].reshape(-1,2),axis=1),axis=0)[counts==1]
+        point=np.asarray(point,dtype=float)
+        if point.shape!=(3,) or not np.isfinite(point).all():
+            raise SupportExtractionError('MARGIN_NOT_ON_SUPPORT','确认的终止线包含非有限坐标，无法嵌入支撑边界')
+        face_array=np.asarray(faces,dtype=int)
+        all_edges=np.sort(face_array[:,[0,1,1,2,2,0]].reshape(-1,2),axis=1)
+        unique_edges,counts=np.unique(all_edges,axis=0,return_counts=True)
+        edges=unique_edges[counts==1]
         # The crown-margin loop alone is eligible; other openings must never attract anchors.
-        allowed=set(ring);edges=np.asarray([e for e in edges if e[0] in allowed and e[1] in allowed])
-        v=np.asarray(vertices);a=v[edges[:,0]];delta=v[edges[:,1]]-a
-        t=np.clip(np.einsum('ij,ij->i',point-a,delta)/np.einsum('ij,ij->i',delta,delta),0,1)
-        projected=a+t[:,None]*delta;distance=np.linalg.norm(projected-point,axis=1);j=int(distance.argmin());u,w=map(int,edges[j]);q=projected[j]
+        allowed=set(ring)
+        edges=np.asarray([e for e in edges if e[0] in allowed and e[1] in allowed],dtype=int)
+        if edges.size==0:
+            raise SupportExtractionError('SUPPORT_EXTRACTION_AMBIGUOUS','终止线对应边界为空，无法嵌入确认 Margin')
+        edges=edges.reshape(-1,2)
+        v=np.asarray(vertices,dtype=float)
+        if not np.isfinite(v).all():
+            raise SupportExtractionError('NONFINITE_SUPPORT_GEOMETRY','支撑网格含 NaN/Inf，禁止继续生成')
+        a=v[edges[:,0]]
+        delta=v[edges[:,1]]-a
+        delta2=np.einsum('ij,ij->i',delta,delta)
+        valid=np.isfinite(a).all(axis=1)&np.isfinite(delta).all(axis=1)&np.isfinite(delta2)&(delta2>1e-18)
+        if not np.any(valid):
+            raise SupportExtractionError('DEGENERATE_MARGIN_BOUNDARY','终止线边界全部为退化边，无法安全投影')
+        edges=edges[valid];a=a[valid];delta=delta[valid];delta2=delta2[valid]
+        numerator=np.einsum('ij,ij->i',point-a,delta)
+        t=np.clip(numerator/delta2,0,1)
+        projected=a+t[:,None]*delta
+        distance=np.linalg.norm(projected-point,axis=1)
+        finite=np.isfinite(projected).all(axis=1)&np.isfinite(distance)
+        if not np.any(finite):
+            raise SupportExtractionError('NONFINITE_MARGIN_PROJECTION','终止线投影产生非有限值，已中止以避免污染支撑网格')
+        edges=edges[finite];projected=projected[finite];distance=distance[finite]
+        j=int(np.argmin(distance));u,w=map(int,edges[j]);q=projected[j]
+        if not np.isfinite(q).all() or not np.isfinite(distance[j]):
+            raise SupportExtractionError('NONFINITE_MARGIN_PROJECTION','终止线投影结果无效，已中止')
         errors.append(float(distance[j]))
         if distance[j]>.05:
             raise SupportExtractionError('MARGIN_NOT_ON_SUPPORT','确认的终止线与切割边界偏差超过 0.05 mm，请重新核对，禁止暗改确认线')
         if np.linalg.norm(q-v[u])<1e-7:anchors.append(u);continue
         if np.linalg.norm(q-v[w])<1e-7:anchors.append(w);continue
         new=len(vertices);vertices.append(q.tolist());ring.append(new);anchors.append(new)
+        split=False
         for i,face in enumerate(faces):
             if u not in face or w not in face:continue
             for k in range(3):
                 x,y,z=face[k],face[(k+1)%3],face[(k+2)%3]
                 if {x,y}=={u,w}:
-                    faces[i]=[x,new,z];faces.append([new,y,z]);sources.append(sources[i]);break
-            break
+                    faces[i]=[x,new,z];faces.append([new,y,z]);sources.append(sources[i]);split=True;break
+            if split:break
+        if not split:
+            raise SupportExtractionError('SUPPORT_EXTRACTION_AMBIGUOUS','终止线投影命中边无法在当前支撑拓扑中拆分')
     result=trimesh.Trimesh(vertices,faces,process=False)
-    return result,np.asarray(sources),{'embedded_vertex_ids':anchors,'projection_distance_max_mm':max(errors),'confirmed_margin_moved':False}
+    if not np.isfinite(np.asarray(result.vertices,dtype=float)).all():
+        raise SupportExtractionError('NONFINITE_SUPPORT_GEOMETRY','Margin 嵌入后支撑网格含 NaN/Inf，已拒绝输出')
+    return result,np.asarray(sources),{'embedded_vertex_ids':anchors,'projection_distance_max_mm':max(errors) if errors else 0.0,'confirmed_margin_moved':False}
 
 @dataclass
 class PreparedAbutmentSupport:
@@ -143,6 +175,8 @@ def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=
     faces=faces[kept];mapping=source_faces[_mapping[kept]]
     if not len(faces):raise SupportExtractionError('SUPPORT_EXTRACTION_AMBIGUOUS','终止线以上没有可用支撑面')
     vertices,projected=margin_project_added_vertices(vertices,curve,n_original=len(support.vertices))
+    if not np.isfinite(np.asarray(vertices,dtype=float)).all():
+        raise SupportExtractionError('NONFINITE_SUPPORT_GEOMETRY','Margin 投影后支撑网格含 NaN/Inf，禁止继续')
     cut=trimesh.Trimesh(vertices,faces,process=False);_manifold(cut)
     labels=trimesh.graph.connected_component_labels(cut.face_adjacency,node_count=len(faces))
     matches=[]
@@ -159,6 +193,8 @@ def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=
     loops=_boundary_loops(mesh.faces)
     crown=min(loops,key=lambda loop:np.max(_polyline_distances(mesh.vertices[loop],curve)))
     mesh,mapping,embedding=_embed_boundary(mesh,mapping,crown.copy(),curve)
+    if not np.isfinite(np.asarray(mesh.vertices,dtype=float)).all():
+        raise SupportExtractionError('NONFINITE_SUPPORT_GEOMETRY','支撑提取产物含 NaN/Inf，禁止标记 READY')
     loops=_boundary_loops(mesh.faces)
     crown=min(loops,key=lambda loop:np.max(_polyline_distances(mesh.vertices[loop],curve)))
     ring_local=curtain.local[:,:2];next_local=np.roll(ring_local,-1,axis=0)
@@ -209,5 +245,7 @@ def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=
         'source_modified':False,'component_count':1,'boundary_loop_count':len(_boundary_loops(mesh.faces)),
         'scope':'AXIS_SINGLE_VALUED_CROWN_FINISH_LINE','margin_cut':{**margin_cut,'projected_boundary_vertices':int(projected)}}
     actual=trimesh.Trimesh(mesh.vertices,mesh.faces[:len(mapping)],process=False);actual.remove_unreferenced_vertices()
+    if not np.isfinite(np.asarray(actual.vertices,dtype=float)).all():
+        raise SupportExtractionError('NONFINITE_SUPPORT_GEOMETRY','实际基台表面含 NaN/Inf，禁止输出')
     if mesh_digest(support)!=original_hash:raise RuntimeError('source support changed during extraction')
     return PreparedAbutmentSupport(mesh,actual,report)
