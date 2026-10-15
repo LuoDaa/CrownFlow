@@ -67,3 +67,11 @@ jobs:
         run: |
           pytest tests/unit/services/test_abutment_fast.py -q
           pytest tests/unit/geometry/test_nonplanar_source_extraction.py -q
+      - name: Pack current source for real-case replay
+        working-directory: ${{ github.workspace }}
+        run: tar --exclude='.git' -czf /tmp/cad1-current-source.tar.gz backend frontend testdata .github
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cad1-current-source
+          path: /tmp/cad1-current-source.tar.gz
+          retention-days: 7
