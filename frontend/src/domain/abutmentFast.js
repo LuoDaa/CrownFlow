@@ -41,7 +41,6 @@ function threeHardConstraintFailures(candidate, eligibility) {
   const stages = candidate?.payload?.stages || [];
   const failures = [];
 
-  // 1) Margin：最终外冠必须保留整圈颈缘硬边界，优先检查所有后续 refit 的最后一次结果。
   const cervical = latestStageOf(stages, [
     "CERVICAL_REFIT_FINAL",
     "CERVICAL_REFIT_AFTER_SHELL",
@@ -63,7 +62,6 @@ function threeHardConstraintFailures(candidate, eligibility) {
     }
   }
 
-  // 2) 邻接：只有真实存在且已确认的邻牙侧才要求接触；ABSENT 侧明确豁免。
   const confirmedSides = Object.entries(eligibility?.neighbors || {})
     .filter(([, state]) => state === "CONFIRMED")
     .map(([side]) => side);
@@ -81,7 +79,6 @@ function threeHardConstraintFailures(candidate, eligibility) {
     }
   }
 
-  // 3) 咬合：快速基台流程始终要求确认 Bite + 咬合阶段工程通过；不能只生成“看起来放上去”的模板。
   const occlusal = latestStageOf(stages, ["OCCLUSAL_RECHECK_AFTER_SHELL", "OCCLUSAL"]);
   if (!eligibility?.bite_confirmed) {
     failures.push("Occlusion:BITE_NOT_CONFIRMED");
@@ -104,7 +101,7 @@ function emitStageResult(onProgress, stage, id, okLabel, progress) {
   );
 }
 
-export async function prepareAbutmentOrder({ caseId, fdi, designId = null, onProgress = null }) {
+export async function prepareAbutmentOrder({ caseId, fdi, designId = null, params = null, onProgress = null }) {
   if (!caseId || !fdi) throw new Error("请先选择牙位并导入病例");
 
   emit(onProgress, "DESIGN", "创建/恢复设计", 4);
@@ -113,7 +110,14 @@ export async function prepareAbutmentOrder({ caseId, fdi, designId = null, onPro
     : await adapter.setToothPosition({ caseId, fdi, supportType: "abutment" });
   if (design.support_type !== "abutment") throw new Error("当前设计不是基台冠，不能进入快速流程");
 
-  emit(onProgress, "MARGIN", "识别基台与 Margin", 10);
+  // 参数在自动识别开始前就落到设计上，避免 Margin/Axis 完成后 resumeDesign
+  // 又把用户刚调好的参数覆盖回旧值。
+  if (params) {
+    emit(onProgress, "PROFILE", "应用当前生成参数", 6);
+    await adapter.saveProfile(design.id, params);
+  }
+
+  emit(onProgress, "MARGIN", "自动识别基台 Margin", 10);
   const draft = await adapter.detectMargin({
     designId: design.id,
     axisConfirmed: false,
@@ -128,17 +132,17 @@ export async function prepareAbutmentOrder({ caseId, fdi, designId = null, onPro
     throw new Error("基台自动插入方向无效");
   }
 
-  emit(onProgress, "AXIS", "确认 Margin 与插入方向", 18);
+  emit(onProgress, "AXIS", "自动确认插入方向", 18);
   await adapter.saveMarginPoints(design.id, margin);
   await adapter.setInsertionAxis(design.id, axis, "CAD1 abutment automatic insertion axis");
 
-  emit(onProgress, "FRAME", "建立患者坐标系", 24);
+  emit(onProgress, "FRAME", "自动建立患者坐标系", 24);
   await autoFitRequest(design.id, "abutment-frame", "POST", {
     expected_input_digest: await inputDigest(design.id),
     confirmed: true,
   });
 
-  emit(onProgress, "BITE", "锁定当前上下颌咬合位姿", 30);
+  emit(onProgress, "BITE", "使用病例现有咬合位姿", 30);
   await api.confirmBite(design.id, {
     expected_input_digest: await inputDigest(design.id),
     confirmed: true,
@@ -151,10 +155,10 @@ export async function prepareAbutmentOrder({ caseId, fdi, designId = null, onPro
   const neighbors = await autoFitRequest(design.id, "auto-neighbors", "POST", {
     expected_input_digest: await inputDigest(design.id),
     confirmed: true,
-    patch_radius_mm: 4.25,
+    patch_radius_mm: 5.0,
   });
 
-  emit(onProgress, "READY", "自动参考建立完成", 40);
+  emit(onProgress, "READY", "病例空间参考建立完成", 40);
   return { design, margin, axis, neighbors };
 }
 
@@ -166,47 +170,50 @@ export async function selectAbutmentTemplate({ designId, library, params, onProg
   emit(onProgress, "TEMPLATE", `载入牙库 ${library}`, 46);
   const candidate = await adapter.selectCrownTemplate(designId, library);
   await adapter.confirmTemplateReference(designId, candidate.id);
-  emit(onProgress, "TEMPLATE_READY", "模板参考已确认", 48);
+  emit(onProgress, "TEMPLATE_READY", "模板参考已确认，开始自动生成", 48);
   return candidate;
 }
 
-async function ensureAutomaticReferences(designId, onProgress = null) {
-  emit(onProgress, "SYNC", "同步服务端设计状态", 3);
+async function ensureAutomaticReferences(designId, params, onProgress = null) {
+  emit(onProgress, "SYNC", "检查病例空间参考", 3);
   let eligibility = await api.generationEligibility(designId);
-  if (referencesReady(eligibility)) return eligibility;
+  if (referencesReady(eligibility)) return { eligibility, preparedNow: false };
 
   const design = await api.design(designId);
   await prepareAbutmentOrder({
     caseId: design.case_id,
     fdi: String(design.target_fdi),
     designId,
+    params,
     onProgress,
   });
   eligibility = await api.generationEligibility(designId);
-  return eligibility;
+  return { eligibility, preparedNow: true };
 }
 
 export async function generateAbutmentOrder({ designId, params, onProgress = null }) {
   if (!designId) throw new Error("请先创建基台订单");
 
   emit(onProgress, "SYNC", "检查自动设计输入", 2);
-  let eligibility = await ensureAutomaticReferences(designId, onProgress);
+  let { eligibility, preparedNow } = await ensureAutomaticReferences(designId, params, onProgress);
 
   emit(onProgress, "PROFILE", "同步牙冠参数", 8);
   await adapter.saveProfile(designId, params);
   eligibility = await api.generationEligibility(designId);
 
-  // Refresh every automatic reference before generation so older V2 cases cannot
-  // keep a CONFIRMED-but-edge-dominated neighbor patch. HUMAN_* input is preserved.
-  emit(onProgress, "NEIGHBORS", "刷新邻牙参考面", 14, "扩展接触核心周围安全参考面");
-  await autoFitRequest(designId, "auto-neighbors", "POST", {
-    expected_input_digest: await inputDigest(designId),
-    confirmed: true,
-    patch_radius_mm: 5.0,
-  });
-  eligibility = await api.generationEligibility(designId);
-  let states = neighborStates(eligibility);
+  // 新病例刚刚在 prepareAbutmentOrder 中已经用 V4/5mm 参考面识别过邻牙，
+  // 不再立刻重复一次昂贵提取。只有恢复旧病例时才刷新自动参考面。
+  if (!preparedNow) {
+    emit(onProgress, "NEIGHBORS", "刷新邻牙参考面", 14, "确保旧病例也使用当前接触参考范围");
+    await autoFitRequest(designId, "auto-neighbors", "POST", {
+      expected_input_digest: await inputDigest(designId),
+      confirmed: true,
+      patch_radius_mm: 5.0,
+    });
+    eligibility = await api.generationEligibility(designId);
+  }
 
+  let states = neighborStates(eligibility);
   if (!eligibility?.bite_confirmed) {
     emit(onProgress, "BITE", "重新确认静态咬合", 18);
     await api.confirmBite(designId, {
@@ -237,8 +244,6 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   let hardFailures = [];
   let attemptsUsed = 0;
 
-  // 生成不是“一次算完 + 校验挡住”。每一轮都会把上一轮患者化外冠作为下一轮基线，
-  // 再跑完整 Margin -> 邻接 -> 咬合闭环。这样校验结果会驱动下一轮几何，而不是只报错。
   for (let attempt = 1; attempt <= MAX_AUTO_CORRECTION_ATTEMPTS; attempt += 1) {
     attemptsUsed = attempt;
     const baseProgress = 26 + (attempt - 1) * 16;
@@ -267,8 +272,6 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
       hardFailures.join("；"),
     );
 
-    // 要继续求解，必须把当前患者化结果变成下一轮 outer_current；
-    // 同时这也保证即使最后仍未收敛，用户至少能在 3D 里看到真实失败位置，而不是看不到成品。
     await adapter.confirmCrownCandidate(designId, candidate.id);
     eligibility = await api.generationEligibility(designId);
   }
@@ -280,8 +283,6 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     || stageOf(payloadStages, "OCCLUSAL_HEIGHT_PREFIT");
   emitStageResult(onProgress, occlusalStage, "OCCLUSAL_DONE", "咬合适配完成", 82);
 
-  // 收敛轮的 candidate 尚未采纳；达到上限时最后一轮也必须采纳，
-  // 这样 Review/3D 永远有“最接近当前目标的真实外冠”可看。
   if (candidate) {
     emit(onProgress, "PUBLISH", hardFailures.length ? "保留当前最接近结果供 3D 复核" : "发布患者化外冠", 86);
     await adapter.confirmCrownCandidate(designId, candidate.id);
