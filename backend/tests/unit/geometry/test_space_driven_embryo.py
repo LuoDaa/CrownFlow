@@ -4,7 +4,10 @@ import trimesh
 from app.geometry.crown_outer.auto_fit_adapter import FitSurface
 from app.geometry.crown_outer.patient_frame import confirmed_patient_frame
 from app.geometry.crown_outer.space_contact import build_proximal_domains
-from app.geometry.crown_outer.space_morph import space_driven_embryo_prefit
+from app.geometry.crown_outer.space_morph import (
+    audit_inner_envelope_clearance,
+    space_driven_embryo_prefit,
+)
 
 
 def _frame():
@@ -50,7 +53,8 @@ def test_one_sided_neighbor_expands_only_that_side_without_whole_crown_translati
     )
     after = np.asarray(result.vertices)
 
-    assert report["algorithm"] == "SPACE_DRIVEN_EMBRYO_MORPH_V1"
+    assert report["algorithm"] == "SPACE_DRIVEN_EMBRYO_MORPH_V2"
+    assert report["template_role"] == "TOPOLOGY_AND_ANATOMY_EMBRYO_NOT_SIZE_TRUTH"
     assert report["md"]["whole_crown_translation_mm"] == 0.0
     assert report["md"]["mesial_scale"] > 1.0
     assert abs(report["md"]["distal_scale"] - 1.0) < 0.05
@@ -60,7 +64,7 @@ def test_one_sided_neighbor_expands_only_that_side_without_whole_crown_translati
     assert np.median(np.abs(after[distal, 0] - before[distal, 0])) < 0.15
 
 
-def test_support_and_material_envelope_can_make_embryo_larger_before_finalization():
+def test_support_fallback_and_material_envelope_can_make_embryo_larger_before_finalization():
     mesh = _crown()
     frame = _frame()
     margin = _margin()
@@ -76,14 +80,47 @@ def test_support_and_material_envelope_can_make_embryo_larger_before_finalizatio
     )
     after = np.asarray(result.vertices)
 
-    assert report["support_envelope"]["status"] in ("APPLIED", "NO_CORRECTION_NEEDED")
-    assert report["support_envelope"]["required_outer_to_support_mm"] == 0.85
+    shell = report["inner_shell"]
+    assert shell["status"] in ("APPLIED", "NO_CORRECTION_NEEDED")
+    assert shell["source"] == "PREP_SUPPORT_PLUS_CEMENT_GAP_FALLBACK"
+    assert abs(shell["required_outer_to_intaglio_mm"] - 0.85) < 1e-9
     assert report["md"]["mesial_scale"] > 1.0
     assert report["md"]["distal_scale"] > 1.0
     assert report["bl"]["buccal_scale"] > 1.0
+    assert report["height_floor"]["applied"]
     assert np.ptp(after[:, 0]) > np.ptp(before[:, 0])
     assert np.ptp(after[:, 1]) > np.ptp(before[:, 1])
+    assert np.max(after[:, 2]) > np.max(before[:, 2])
     assert np.isfinite(after).all()
+
+
+def test_actual_intaglio_preview_does_not_double_count_cement_gap():
+    mesh = _crown()
+    frame = _frame()
+    margin = _margin()
+    # This represents the already-gapped cutter/intaglio preview.  Cement gap is
+    # geometrically baked into it, so only minimum thickness may be added outside.
+    intaglio = trimesh.creation.cylinder(radius=2.25, height=4.2, sections=96)
+    intaglio.apply_translation([0.0, 0.0, 2.1])
+
+    result, report = space_driven_embryo_prefit(
+        mesh, frame, margin,
+        inner_envelope_mesh=intaglio,
+        minimum_thickness_mm=0.80,
+        cement_gap_mm=0.05,
+    )
+
+    shell = report["inner_shell"]
+    assert shell["source"] == "ACTUAL_BLOCKOUT_GAP_INTAGLIO_PREVIEW"
+    assert shell["actual_intaglio_preview_used"] is True
+    assert abs(shell["required_outer_to_intaglio_mm"] - 0.80) < 1e-9
+    audit = audit_inner_envelope_clearance(
+        result, intaglio, frame, margin, 0.80,
+    )
+    assert audit["status"] in ("PASS_ENGINEERING", "REVIEW_REQUIRED")
+    assert audit["sample_count"] > 50
+    assert np.isfinite(audit["min_clearance_mm"])
+    assert np.isfinite(np.asarray(result.vertices)).all()
 
 
 def test_proximal_domain_is_not_allowed_to_collapse_to_a_handful_of_vertices():
