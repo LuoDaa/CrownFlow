@@ -56,7 +56,7 @@ def _automatic_abutment_frame(work_mesh, origin, insertion_axis):
     origin = np.asarray(origin, dtype=float)
     z = _unit(insertion_axis, "插入方向无效")
     vertices = np.asarray(work_mesh.vertices, dtype=float)
-    if vertices.ndim != 2 or vertices.shape[1] != 3 or len(vertices) < 8:
+    if vertices.ndim != 2 or vertices.shape[1] != 3 or len(vertices) < 20:
         raise ValueError("工作颌网格不足，无法自动建立基台坐标")
 
     arch_center = np.median(vertices, axis=0)
@@ -197,12 +197,7 @@ def _neighbor_search_masks(local, areas, margin_local, side):
 
 
 def _robust_reference_outward(normals, areas, ids, frame_outward):
-    """Estimate local proximal outward direction while ignoring face winding.
-
-    Every selected face normal is first flipped into the same hemisphere as the
-    patient-frame side direction, then area-weighted.  The result follows a sloped
-    proximal wall instead of requiring it to be parallel to +/- patient X.
-    """
+    """Estimate local proximal outward direction while ignoring face winding."""
     ids = np.asarray(ids, int)
     if not len(ids):
         return np.asarray(frame_outward, float)
@@ -289,9 +284,8 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
         }
 
     # V3 stopped at roughly half_x+0.1, which in the real FDI46 case put the open
-    # patch boundary *inside the intended contact band*.  Move the reference-only
-    # inner edge about 0.75 mm inside the margin footprint while still constraining
-    # the flood to the same connected coronal anatomy.
+    # patch boundary inside the intended contact band. Move the reference-only
+    # inner edge inward while keeping the flood on connected coronal anatomy.
     inner_floor = max(0.35, half_x - 0.75, nearest_x - 2.25)
     halo_allowed = (
         (side_x > inner_floor)
@@ -302,10 +296,7 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
         & (areas > 1e-8)
     )
     reference_radius = min(12.0, max(float(radius_mm) * 2.25, float(radius_mm) + 3.0))
-    radial_ids = _connected_patch(
-        mesh, halo_allowed, seed,
-        distance <= reference_radius,
-    )
+    radial_ids = _connected_patch(mesh, halo_allowed, seed, distance <= reference_radius)
     graph_ids = _grow_face_halo(mesh, core_ids, halo_allowed, rings=12)
     reference_ids = np.unique(np.r_[core_ids, radial_ids, graph_ids]).astype(int)
 
@@ -320,9 +311,7 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
             "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V4",
         }
 
-    reference_outward = _robust_reference_outward(
-        normals, areas, core_ids, frame_outward,
-    )
+    reference_outward = _robust_reference_outward(normals, areas, core_ids, frame_outward)
     from ..geometry.crown_outer.auto_fit_adapter import FitSurface
     try:
         fit = FitSurface(region, reference_outward)
@@ -337,8 +326,7 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
     )
     interior_fraction = float(np.mean(core_boundary_valid)) if len(core_boundary_valid) else 0.0
     core_normals = np.asarray(normals)[core_ids].copy()
-    align = core_normals @ reference_outward
-    align = np.abs(align)
+    align = np.abs(core_normals @ reference_outward)
 
     return (region, reference_ids, reference_outward), {
         "status": "CONFIRMED",
@@ -398,9 +386,7 @@ def confirm_automatic_neighbors(design_id: str, p: AutoNeighborInput):
             diagnostics[side] = {"status": "PRESERVED_MANUAL_INPUT"}
             continue
 
-        extracted, report = _automatic_neighbor_patch(
-            mesh, frame, margin, side, p.patch_radius_mm,
-        )
+        extracted, report = _automatic_neighbor_patch(mesh, frame, margin, side, p.patch_radius_mm)
         diagnostics[side] = report
 
         if extracted is None and report.get("status") == "ABSENT":
