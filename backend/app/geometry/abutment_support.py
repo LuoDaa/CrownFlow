@@ -8,11 +8,12 @@ from .nonplanar_crown import MarginCurtain, MarginBuildError, audit_margin_on_sc
 from .crown_outer.collar_body_outer import _clip_by_scalar, _boundary_loops
 from .margin_seam import _polyline_distances
 
-VERSION='abutment_support/margin_split_seed_flood/1.1'
+VERSION='abutment_support/margin_split_seed_flood/1.2'
 
 class SupportExtractionError(MarginBuildError):
-    def __init__(self,code,message):
+    def __init__(self,code,message,diagnostics=None):
         self.code=code
+        self.diagnostics=diagnostics or {}
         super().__init__(message)
 
 def mesh_digest(mesh):
@@ -43,7 +44,6 @@ def _embed_boundary(mesh,source_ids,ring,margin):
         all_edges=np.sort(face_array[:,[0,1,1,2,2,0]].reshape(-1,2),axis=1)
         unique_edges,counts=np.unique(all_edges,axis=0,return_counts=True)
         edges=unique_edges[counts==1]
-        # The crown-margin loop alone is eligible; other openings must never attract anchors.
         allowed=set(ring)
         edges=np.asarray([e for e in edges if e[0] in allowed and e[1] in allowed],dtype=int)
         if edges.size==0:
@@ -98,16 +98,10 @@ class PreparedAbutmentSupport:
     report:dict
 
 def margin_project_added_vertices(vertices,curve,*,n_original,cap_mm=1.2):
-    """把**切割新插入的顶点**投影到确认终止线上（原支撑顶点一律不动）。
-
-    这就是"cut boundary 由 authoritative margin curve 定义"的落点：边界顶点被钉到曲线上，
-    原顶点/拓扑/mapping 不变，watertight 不变。
-    """
     from trimesh.proximity import closest_point
     import trimesh as _tm
     vertices=np.asarray(vertices,float);points=np.asarray(curve,float)
     if len(vertices)<=n_original:return vertices,0
-    polyline=_tm.load_path if False else None
     ids=np.arange(n_original,len(vertices))
     _,distance,_=closest_point(_tm.Trimesh(vertices=np.asarray(curve,float),
         faces=np.column_stack([np.arange(len(points)-1),np.arange(1,len(points)),
@@ -115,7 +109,6 @@ def margin_project_added_vertices(vertices,curve,*,n_original,cap_mm=1.2):
     moved=0;out=vertices.copy()
     near=distance<=cap_mm
     if near.any():
-        # 到折线的最近点（逐点最近线段投影）
         a=points[:-1];b=points[1:];delta=b-a
         for k in ids[near]:
             p=out[k]
@@ -127,18 +120,9 @@ def margin_project_added_vertices(vertices,curve,*,n_original,cap_mm=1.2):
 
 
 def margin_ribbon_field(support,curve):
-    """顶点相对「确认终止线 + 支撑自身法向」生成的切割带的有符号偏移（冠方为正）。
-
-    零集就是终止线在支撑表面上的最近路径（允许方法 A/B/C），因此切割边界
-    **由确认终止线定义**，而不是由轴向 curtain 与支撑表面的斜交线定义 ——
-    斜交线是之前 cut boundary ≠ margin 的根因。
-    返回 ``(offset, distance_to_curve)``；终止线上的点 offset≈0。
-    """
     from scipy.spatial import cKDTree
     from trimesh.proximity import closest_point
     vertices=np.asarray(support.vertices,float);points=np.asarray(curve,float)
-    # ⚠️ 法向必须取**曲线采样点处**的支撑面法向（每个采样点一片平面），
-    # 不能取各顶点自己的面法向：扫描面粗糙时后者会让场在顶点间抖动、把支撑切成碎片。
     curve_distance,curve_face_ids=closest_point(support,points)[:2]
     curve_normals=np.asarray(support.face_normals,float)[np.asarray(curve_face_ids,int)]
     distance,nearest_id=cKDTree(points).query(vertices)
@@ -146,11 +130,69 @@ def margin_ribbon_field(support,curve):
     return offset,distance
 
 
-def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=()):
-    """Split the existing axial-single-valued margin, then grow the chosen face region.
+def _rank_margin_components(cut,faces,labels,vertices,curve,seed=None):
+    """Rank distinct post-cut components whose boundary reproduces the Margin."""
+    candidates=[]
+    seed_point=None if seed is None else np.asarray(seed,float)
+    for label in np.unique(labels):
+        ids=np.flatnonzero(labels==label)
+        component_loops=[]
+        for loop in _boundary_loops(faces[ids]):
+            error=_polyline_distances(vertices[loop],curve)
+            p95=float(np.quantile(error,.95));mx=float(np.max(error))
+            if p95<.05 and mx<.1:
+                component_loops.append((p95,mx,np.asarray(loop,int)))
+        if not component_loops:
+            continue
+        component_loops.sort(key=lambda item:(item[0],item[1],-len(item[2])))
+        p95,mx,loop=component_loops[0]
+        area=float(np.sum(cut.area_faces[ids]))
+        seed_distance=None
+        if seed_point is not None:
+            component=trimesh.Trimesh(vertices,faces[ids],process=False)
+            try:
+                _,d,_=closest_point(component,seed_point.reshape(1,3));seed_distance=float(d[0])
+            except Exception:
+                seed_distance=None
+        candidates.append({'label':int(label),'loop':loop,'area_mm2':area,'face_count':int(len(ids)),
+            'margin_p95_mm':p95,'margin_max_mm':mx,'seed_distance_mm':seed_distance})
+    return candidates
 
-    No source repair or largest-component selection; unknown openings remain blocked.
-    """
+
+def _select_margin_component(candidates,seed=None):
+    public=[{k:v for k,v in c.items() if k!='loop'} for c in candidates]
+    diagnostics={'method':'MARGIN_MATCH_COMPONENT_RANK_V2','candidate_count':len(candidates),'candidates':public}
+    if not candidates:
+        return None,diagnostics
+    if len(candidates)==1:
+        diagnostics.update(selection='UNIQUE_MARGIN_MATCH',confidence='high',selected_label=candidates[0]['label'])
+        return candidates[0],diagnostics
+
+    ranked=list(candidates)
+    if seed is not None and any(c['seed_distance_mm'] is not None for c in ranked):
+        ranked.sort(key=lambda c:(float('inf') if c['seed_distance_mm'] is None else c['seed_distance_mm'],-c['area_mm2'],c['margin_p95_mm']))
+        first,second=ranked[0],ranked[1]
+        d0=first['seed_distance_mm'];d1=second['seed_distance_mm']
+        if d0 is not None and (d1 is None or d0+0.15<d1):
+            diagnostics.update(selection='SEED_DOMINANT',confidence='high',selected_label=first['label'])
+            return first,diagnostics
+
+    ranked.sort(key=lambda c:(-c['area_mm2'],c['margin_p95_mm'],c['margin_max_mm'],-c['face_count']))
+    first,second=ranked[0],ranked[1]
+    area_ratio=first['area_mm2']/max(second['area_mm2'],1e-12)
+    face_ratio=first['face_count']/max(second['face_count'],1)
+    error_better=(first['margin_p95_mm']+0.005<second['margin_p95_mm'] and first['margin_p95_mm']<=0.70*max(second['margin_p95_mm'],1e-9))
+    dominant=area_ratio>=1.20 or face_ratio>=1.25 or error_better
+    diagnostics.update(area_ratio_to_second=float(area_ratio),face_ratio_to_second=float(face_ratio))
+    if dominant:
+        diagnostics.update(selection='DOMINANT_MARGIN_CONNECTED_REGION',confidence='engineering_high',selected_label=first['label'])
+        return first,diagnostics
+    diagnostics.update(selection='AMBIGUOUS',confidence='low',selected_label=None)
+    return None,diagnostics
+
+
+def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=()):
+    """Split the existing abutment at the authoritative Margin and select support."""
     original_hash=mesh_digest(support);_manifold(support)
     curtain=MarginCurtain(margin,axis);curve=curtain.points
     _,dist,margin_faces=closest_point(support,curve)
@@ -165,11 +207,7 @@ def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=
         if point.shape!=(3,) or not np.isfinite(point).all():raise SupportExtractionError('SUPPORT_EXTRACTION_AMBIGUOUS','支撑种子必须是有限三维点')
         _,distance,ids=closest_point(support,point.reshape(1,3))
         if distance[0]>.5 or source_labels[ids[0]]!=chosen:raise SupportExtractionError('SUPPORT_EXTRACTION_AMBIGUOUS','支撑种子与确认终止线不属于同一表面')
-    # Margin-driven support cutting：
-    # 1) curtain 只负责**拓扑**切分（保留原顶点 id，边上插值出新顶点）；
-    # 2) 随后把**新插入的切割顶点投影到确认终止线上** —— 切割边界因此由确认曲线定义，
-    #    而原支撑顶点一个都不动（vertex mapping / 拓扑 / watertight 全部保留）。
-    # 之前的 cut boundary 是 curtain 与支撑表面的斜交线（差 0.37–0.55 mm），这才是根因。
+
     vertices,faces,added,_mapping=_clip_by_scalar(support.vertices,support.faces[source_faces],-curtain.axial_above(support.vertices),return_face_sources=True)
     kept=curtain.axial_above(vertices)[faces].max(axis=1)>1e-9
     faces=faces[kept];mapping=source_faces[_mapping[kept]]
@@ -179,15 +217,13 @@ def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=
         raise SupportExtractionError('NONFINITE_SUPPORT_GEOMETRY','Margin 投影后支撑网格含 NaN/Inf，禁止继续')
     cut=trimesh.Trimesh(vertices,faces,process=False);_manifold(cut)
     labels=trimesh.graph.connected_component_labels(cut.face_adjacency,node_count=len(faces))
-    matches=[]
-    for label in np.unique(labels):
-        ids=np.flatnonzero(labels==label)
-        for loop in _boundary_loops(faces[ids]):
-            error=_polyline_distances(vertices[loop],curve)
-            if np.quantile(error,.95)<.05 and error.max()<.1:matches.append((label,loop))
-    if len(matches)!=1:raise SupportExtractionError('SUPPORT_EXTRACTION_AMBIGUOUS','无法唯一识别与确认终止线对应的支撑区域')
-    label,_=matches[0]
-    # Connected labels are face-adjacency flood-fill regions after the margin cut.
+
+    candidates=_rank_margin_components(cut,faces,labels,vertices,curve,seed=seed)
+    selected,selection=_select_margin_component(candidates,seed=seed)
+    if selected is None:
+        raise SupportExtractionError('SUPPORT_EXTRACTION_AMBIGUOUS','无法唯一识别与确认终止线对应的支撑区域',selection)
+    label=int(selected['label'])
+
     ids=np.flatnonzero(labels==label)
     mesh=trimesh.Trimesh(vertices,faces[ids],process=False);mesh.remove_unreferenced_vertices();mapping=mapping[ids]
     loops=_boundary_loops(mesh.faces)
@@ -237,7 +273,8 @@ def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=
     unknown=[entry for entry in classified if entry['classification']=='UNKNOWN_HOLE']
     report={'algorithm_version':VERSION,'loops':classified,'source_face_ids':sorted(set(mapping.tolist())),
         'output_face_source_ids':mapping.tolist()+[-1]*len(cap_faces),'source_to_output_mapping':{str(i):np.flatnonzero(mapping==i).tolist() for i in np.unique(mapping)},
-        'margin_embedding':embedding,'screw_channel_present':any(e['classification']=='SCREW_CHANNEL_CANDIDATE' for e in classified),
+        'margin_embedding':embedding,'support_region_selection':selection,
+        'screw_channel_present':any(e['classification']=='SCREW_CHANNEL_CANDIDATE' for e in classified),
         'virtual_cap_operations':operations,'virtual_cap_face_ids':cap_faces,'capped_region_area_mm2':sum(o['area_mm2'] for o in operations),
         'unresolved_support_holes':len(pending)+len(unknown),'source_geometry_sha256':original_hash,'conditioned_support_sha256':mesh_digest(mesh),
         'readiness':'REVIEW_REQUIRED' if pending or unknown else 'ABUTMENT_SUPPORT_READY',
