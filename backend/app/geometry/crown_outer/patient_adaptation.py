@@ -26,7 +26,9 @@ from .zones import build_crown_zones
 class AdaptationConfig:
     cervical_band_mm: float = 1.20
     cervical_hard_band_mm: float = 0.22
-    cervical_hard_weight: float = 0.985
+    # Keep a tiny source contribution so coincident projections cannot collapse
+    # distinct topology.  0.995 leaves only 0.5% of the original seam error.
+    cervical_hard_weight: float = 0.995
     body_transition_mm: float = 1.60
     md_scale_min: float = 0.72
     md_scale_max: float = 1.32
@@ -74,6 +76,42 @@ def _duplicate_pair_count(points, tolerance=1e-8) -> int:
     if not len(points):
         return 0
     return int(len(cKDTree(points).query_pairs(float(tolerance))))
+
+
+def _polyline_distances_3d(points, loop) -> np.ndarray:
+    """Exact point-to-closed-polyline distance in 3D.
+
+    Margin is a curve, not a cloud of samples.  Measuring with a KD-tree over
+    Margin vertices over-reports error whenever the confirmed Margin is sparse:
+    a point can lie exactly on a segment yet be far from both sampled endpoints.
+    """
+    points = np.asarray(points, dtype=float)
+    loop = np.asarray(loop, dtype=float)
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("Margin 距离测量点必须是 Nx3")
+    if loop.ndim != 2 or loop.shape[1] != 3 or len(loop) < 3:
+        raise ValueError("Margin 必须至少包含 3 个三维点")
+    if not np.isfinite(points).all() or not np.isfinite(loop).all():
+        raise ValueError("Margin 距离测量输入含 NaN/Inf")
+    a = loop
+    delta = np.roll(loop, -1, axis=0) - a
+    denom = np.einsum("ij,ij->i", delta, delta)
+    valid = denom > 1e-20
+    if not np.any(valid):
+        raise ValueError("Margin 全部由退化线段组成")
+    safe = np.where(valid, denom, 1.0)
+    out = np.empty(len(points), dtype=float)
+    for start in range(0, len(points), 1024):
+        stop = min(start + 1024, len(points))
+        p = points[start:stop]
+        rel = p[:, None, :] - a[None, :, :]
+        t = np.einsum("nsi,si->ns", rel, delta) / safe[None, :]
+        t = np.clip(t, 0.0, 1.0)
+        nearest = a[None, :, :] + t[:, :, None] * delta[None, :, :]
+        d2 = np.sum((p[:, None, :] - nearest) ** 2, axis=2)
+        d2[:, ~valid] = np.inf
+        out[start:stop] = np.sqrt(np.min(d2, axis=1))
+    return out
 
 
 def _closest_points_on_margin_curve(points_local, margin_local):
@@ -307,13 +345,13 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
     h = np.clip(height / max(cfg.cervical_band_mm, 1e-6), 0.0, 1.0)
     weight = (1.0 - _smoothstep01(h)) ** 1.25
     weight *= rim.astype(float)
-    # Near-full rather than exact 1.0 snap: <0.02 residual for a 1 mm source gap,
-    # but distinct source vertices stay distinct even if projections coincide.
+    # Near-full rather than exact 1.0 snap: distinct source vertices stay distinct
+    # even if their continuous curve projections coincide.
     weight[seam] = cfg.cervical_hard_weight
 
-    tree = cKDTree(np.asarray(margin, dtype=float))
-    before_seam = tree.query(vertices[seam])[0]
-    before_band = tree.query(vertices[rim])[0]
+    margin_world = np.asarray(margin, dtype=float)
+    before_seam = _polyline_distances_3d(vertices[seam], margin_world)
+    before_band = _polyline_distances_3d(vertices[rim], margin_world)
     duplicates_before = _duplicate_pair_count(vertices)
 
     local += weight[:, None] * (target_local - local)
@@ -327,8 +365,8 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
         )
 
     after_vertices = np.asarray(current.vertices)
-    after_seam = tree.query(after_vertices[seam])[0]
-    after_band = tree.query(after_vertices[rim])[0]
+    after_seam = _polyline_distances_3d(after_vertices[seam], margin_world)
+    after_band = _polyline_distances_3d(after_vertices[rim], margin_world)
     report = {
         "stage": "CERVICAL_FIT",
         "status": "PASS_ENGINEERING",
@@ -337,6 +375,7 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
         "duplicate_pairs_before": duplicates_before,
         "duplicate_pairs_after": duplicates_after,
         "projection": "continuous_closed_margin_segment_xy_full_xyz_interpolation",
+        "distance_metric": "exact_point_to_closed_margin_polyline_3d",
         "segment_count_used": int(len(np.unique(segment_ids[seam]))),
         "segment_t_range": [float(np.min(segment_t[seam])), float(np.max(segment_t[seam]))],
         # `before_mm/after_mm` intentionally describe the actual cervical seam.
