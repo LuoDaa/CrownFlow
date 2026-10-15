@@ -9,18 +9,14 @@ async function inputDigest(designId) {
   return status.input_digest;
 }
 
-/**
- * Existing-abutment fast path.
- *
- * The operator supplies bite-aligned upper/lower scans + FDI.  Everything that
- * should not be a routine click is confirmed from deterministic geometry here:
- * abutment finish line, insertion axis, local patient frame, static bite pose and
- * adjacent contact patches.
- */
-export async function prepareAbutmentOrder({ caseId, fdi }) {
+export async function prepareAbutmentOrder({ caseId, fdi, designId = null }) {
   if (!caseId || !fdi) throw new Error("请先选择牙位并导入病例");
 
-  const design = await adapter.setToothPosition({ caseId, fdi, supportType: "abutment" });
+  const design = designId
+    ? await api.design(designId)
+    : await adapter.setToothPosition({ caseId, fdi, supportType: "abutment" });
+  if (design.support_type !== "abutment") throw new Error("当前设计不是基台冠，不能进入快速流程");
+
   const draft = await adapter.detectMargin({
     designId: design.id,
     axisConfirmed: false,
@@ -35,8 +31,6 @@ export async function prepareAbutmentOrder({ caseId, fdi }) {
     throw new Error("基台自动插入方向无效");
   }
 
-  // saveMargin / setAxis create the same authoritative revisions used by the
-  // natural-prep workflow; the fast path merely removes routine confirmation UI.
   await adapter.saveMarginPoints(design.id, margin);
   await adapter.setInsertionAxis(design.id, axis, "CAD1 abutment automatic insertion axis");
 
@@ -45,9 +39,6 @@ export async function prepareAbutmentOrder({ caseId, fdi }) {
     confirmed: true,
   });
 
-  // The product contract for this fast path is: uploaded jaws are already in the
-  // bite relationship.  Record identity as REGISTERED_EXPORT, never run a hidden
-  // automatic bite registration.
   await api.confirmBite(design.id, {
     expected_input_digest: await inputDigest(design.id),
     confirmed: true,
@@ -79,7 +70,6 @@ function stageFailure(candidate) {
   return stages.find((stage) => ["CONSTRAINT_CONFLICT", "BLOCKED", "INPUT_UNVERIFIED"].includes(stage.status));
 }
 
-/** Generate, accept and finalize one abutment crown without intermediate clicks. */
 export async function generateAbutmentOrder({ designId, params }) {
   if (!designId) throw new Error("请先创建基台订单");
   await adapter.saveProfile(designId, params);
@@ -93,9 +83,7 @@ export async function generateAbutmentOrder({ designId, params }) {
 
   const candidate = await adapter.generateInitialCrown(designId, { kind: "AUTO" });
   const failed = stageFailure(candidate);
-  if (failed) {
-    throw new Error(`${failed.stage || "自动设计"} 未通过：${failed.reason || failed.status}`);
-  }
+  if (failed) throw new Error(`${failed.stage || "自动设计"} 未通过：${failed.reason || failed.status}`);
   if (candidate?.payload?.status !== "PASS_ENGINEERING") {
     throw new Error(`自动牙冠未达到可自动采纳状态：${candidate?.payload?.status || "UNKNOWN"}`);
   }
