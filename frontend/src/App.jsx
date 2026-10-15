@@ -9,6 +9,7 @@ import SetupPage from "./app/pages/SetupPage";
 import DesignPage from "./app/pages/DesignPage";
 import ReviewPage from "./app/pages/ReviewPage";
 import "./styles/app.css";
+import "./styles/order-page.css";
 
 const ABUTMENT_FLOW = [
   { ...FLOW.find((item) => item.id === S.HOME), n: 1, label: "首页" },
@@ -21,9 +22,8 @@ const ABUTMENT_FLOW = [
 function primaryOf(wf, step, fastAbutment) {
   switch (step) {
     case S.CASE:
-      if (fastAbutment) return null;
-      return { label: wf.design ? "下一步：Margin / Axis" : "创建设计", disabled: !wf.caseId || (!wf.design && (!wf.fdi || !wf.supportType)),
-        run: () => (wf.design ? wf.go(S.MARGIN) : wf.prepare()) };
+      // 病例页自己的底部动作区已经包含完整主动作，不再使用全局 footer。
+      return null;
     case S.MARGIN:
       if (!wf.marginConfirmed) return { label: "确认当前 Margin", disabled: !wf.canConfirmMargin, run: wf.confirmMargin };
       if (!wf.axisConfirmed) return { label: "确认插入轴", disabled: !wf.canConfirmMargin, run: wf.confirmAxis };
@@ -69,8 +69,9 @@ export default function App() {
   const previous = previousOf(displayStep, fastAbutment);
   const title = stepOf(displayStep).title;
   const flow = fastAbutment ? ABUTMENT_FLOW : FLOW;
+  const intakeWorkspace = displayStep === S.HOME || displayStep === S.CASE;
 
-  return <div className="cd-app">
+  return <div className={`cd-app ${intakeWorkspace ? "cd-app-intake" : ""}`}>
     <header className="cd-topbar">
       <button type="button" className="cd-brand" onClick={() => wf.go(S.HOME)}>
         <div className="cd-logo">W</div>
@@ -86,13 +87,13 @@ export default function App() {
       </div>
     </header>
 
-    <Stepper step={displayStep} facts={wf.facts} busy={wf.busy} onGo={wf.go} flow={flow} />
+    {!intakeWorkspace && <Stepper step={displayStep} facts={wf.facts} busy={wf.busy} onGo={wf.go} flow={flow} />}
 
     <main className="cd-main">
       <Page wf={wf} step={displayStep} />
     </main>
 
-    <footer className="cd-bottom">
+    {!intakeWorkspace && <footer className="cd-bottom">
       <button type="button" className="cd-btn secondary" disabled={!previous || wf.busy} onClick={() => previous && wf.go(previous)}>
         ← 上一步
       </button>
@@ -100,7 +101,7 @@ export default function App() {
       {primary
         ? <button type="button" className="cd-btn primary" disabled={wf.busy || primary.disabled} onClick={primary.run}>{primary.label}</button>
         : <span className="cd-bottom-spacer" />}
-    </footer>
+    </footer>}
 
     {wf.msg && <div className="cd-toast" role="status">
       <span>{wf.msg}</span>
