@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Field, Notice, PageHead, Panel, Segmented } from "../ui";
 import { ADVANCED_PARAMS, CORE_PARAMS, DEFAULT_PARAMS } from "../../domain/useWorkflow";
 import { generateAbutmentOrder, prepareAbutmentOrder, selectAbutmentTemplate } from "../../domain/abutmentFast";
+import "../../styles/generation-overlay.css";
 
 const FDI_OPTIONS = ["16", "15", "14", "13", "12", "11", "21", "22", "23", "24", "25", "26",
   "36", "35", "34", "33", "32", "31", "41", "42", "43", "44", "45", "46", "37", "47"];
@@ -61,6 +62,47 @@ function GenerationProgress({ value }) {
   </div>;
 }
 
+function GenerationOverlay({ progress, message, fdi, library }) {
+  const percent = Math.max(0, Math.min(100, Number(progress?.progress || 0)));
+  const label = progress?.label || "正在自动生成牙冠";
+  const detail = progress?.detail || message || "正在根据基台、邻牙与对颌空间计算患者化牙冠…";
+  return <div className="cd-generation-overlay" role="dialog" aria-modal="true" aria-labelledby="generation-overlay-title">
+    <div className="cd-generation-overlay-card">
+      <div className="cd-generation-overlay-icon" aria-hidden="true">
+        <span className="cd-generation-overlay-ring" />
+        <strong>{Math.round(percent)}%</strong>
+      </div>
+      <div className="cd-generation-overlay-copy">
+        <div className="cd-generation-overlay-eyebrow">CROWNFLOW AUTO DESIGN</div>
+        <h2 id="generation-overlay-title">正在生成牙冠</h2>
+        <div className="cd-generation-overlay-meta">
+          {fdi && <span>FDI {fdi}</span>}
+          {library && <span>{library}</span>}
+        </div>
+      </div>
+      <div className="cd-generation-overlay-stage">
+        <b>{label}</b><span>{Math.round(percent)}%</span>
+      </div>
+      <div className="cd-generation-overlay-track" aria-label={`生成进度 ${Math.round(percent)}%`}>
+        <div style={{ width:`${percent}%` }} />
+      </div>
+      <p>{detail}</p>
+      <div className="cd-generation-overlay-steps" aria-hidden="true">
+        <span className={percent >= 5 ? "on" : ""}>空间适配</span>
+        <i />
+        <span className={percent >= 25 ? "on" : ""}>Margin</span>
+        <i />
+        <span className={percent >= 45 ? "on" : ""}>邻接</span>
+        <i />
+        <span className={percent >= 60 ? "on" : ""}>咬合</span>
+        <i />
+        <span className={percent >= 80 ? "on" : ""}>内冠 / Final</span>
+      </div>
+      <small className="cd-generation-overlay-note">生成过程中请勿刷新或关闭页面。完成后会自动进入检查结果。</small>
+    </div>
+  </div>;
+}
+
 function assetName(assets, kind) {
   const asset = assets.find((item) => item.kind === kind);
   if (!asset) return "";
@@ -77,6 +119,7 @@ export default function CasePage({ wf }) {
   const [fastMsg, setFastMsg] = useState("");
   const [fastProgress, setFastProgress] = useState(null);
   const [templatesRequested, setTemplatesRequested] = useState(false);
+  const [generationOpen, setGenerationOpen] = useState(false);
 
   const bothJaws = has("upper") && has("lower");
   const fastPrepared = Boolean(wf.design && wf.marginConfirmed && wf.axisConfirmed && wf.frameConfirmed && wf.serverStatus?.bite?.pose_confirmed);
@@ -89,10 +132,18 @@ export default function CasePage({ wf }) {
     setFastMsg("");
     setFastProgress(null);
     setTemplatesRequested(false);
+    setGenerationOpen(false);
     wf.setLibrary("");
     // 病例相关的页面缓存必须随 caseId 清空；参数故意保留，作为用户偏好跨病例复用。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wf.caseId]);
+
+  useEffect(() => {
+    if (!generationOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [generationOpen]);
 
   useEffect(() => { setTemplatesRequested(false); }, [wf.design?.id]);
   useEffect(() => {
@@ -139,6 +190,7 @@ export default function CasePage({ wf }) {
   };
 
   const runFastGeneration = async () => {
+    setGenerationOpen(true);
     setFastBusy(true); setFastProgress({ id:"START", label:"启动自动牙冠设计", progress:1 });
     setFastMsg("正在执行患者驱动 CAD：整体适配 → Margin → 邻接 → 咬合 → 内冠…");
     try {
@@ -154,7 +206,10 @@ export default function CasePage({ wf }) {
     } catch (error) {
       setFastProgress((current) => current ? { ...current, detail:`失败：${error.message}` } : null);
       setFastMsg(`自动生成停止：${error.message}`);
-    } finally { setFastBusy(false); }
+    } finally {
+      setGenerationOpen(false);
+      setFastBusy(false);
+    }
   };
 
   const primaryAction = () => {
@@ -281,7 +336,7 @@ export default function CasePage({ wf }) {
       </div>}
     </Panel>
 
-    {(fastProgress || fastMsg) && <div className="cd-order-status-card">
+    {!generationOpen && (fastProgress || fastMsg) && <div className="cd-order-status-card">
       {fastProgress && <GenerationProgress value={fastProgress} />}
       {fastMsg && <Notice tone={/失败|未完成|停止/.test(fastMsg) ? "warn" : "ok"}>{fastMsg}</Notice>}
     </div>}
@@ -299,5 +354,7 @@ export default function CasePage({ wf }) {
       </div>
       <button type="button" className="cd-btn primary cd-order-primary" disabled={action.disabled} onClick={action.run}>{action.label}</button>
     </div>
+
+    {generationOpen && <GenerationOverlay progress={fastProgress} message={fastMsg} fdi={fdi} library={selectedLibrary} />}
   </div>;
 }
