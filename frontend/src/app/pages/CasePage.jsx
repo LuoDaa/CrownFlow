@@ -31,6 +31,20 @@ function ParamRow({ spec, value, disabled, onChange }) {
   </div>;
 }
 
+function GenerationProgress({ value }) {
+  if (!value) return null;
+  const progress = Math.max(0, Math.min(100, Number(value.progress || 0)));
+  return <div className="cd-generation-progress" role="status" aria-live="polite">
+    <div style={{ display:"flex", justifyContent:"space-between", gap:12, marginBottom:6 }}>
+      <b>{value.label}</b><span>{Math.round(progress)}%</span>
+    </div>
+    <div style={{ height:8, borderRadius:999, background:"rgba(128,128,128,.2)", overflow:"hidden" }}>
+      <div style={{ width:`${progress}%`, height:"100%", background:"currentColor", transition:"width .25s ease" }} />
+    </div>
+    {value.detail && <small style={{ display:"block", marginTop:6 }}>{value.detail}</small>}
+  </div>;
+}
+
 export default function CasePage({ wf }) {
   const assets = wf.detail?.assets || [];
   const fdi = wf.design ? String(wf.design.target_fdi) : wf.fdi;
@@ -39,6 +53,7 @@ export default function CasePage({ wf }) {
   const fastAbutment = supportType === "abutment";
   const [fastBusy, setFastBusy] = useState(false);
   const [fastMsg, setFastMsg] = useState("");
+  const [fastProgress, setFastProgress] = useState(null);
   const [advanced, setAdvanced] = useState(false);
   const [templatesRequested, setTemplatesRequested] = useState(false);
 
@@ -54,14 +69,22 @@ export default function CasePage({ wf }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fastAbutment, fastPrepared, wf.design?.id, templatesRequested, wf.busy, fastBusy]);
 
+  const onProgress = (stage) => {
+    setFastProgress(stage);
+    if (stage?.label) setFastMsg(stage.detail ? `${stage.label}：${stage.detail}` : stage.label);
+  };
+
   const prepareFast = async () => {
-    setFastBusy(true); setFastMsg("正在自动识别基台 Margin、插入方向、咬合和邻牙参考…");
+    setFastBusy(true); setFastProgress(null); setFastMsg("正在自动识别基台 Margin、插入方向、咬合和邻牙参考…");
     try {
-      const result = await prepareAbutmentOrder({ caseId: wf.caseId, fdi, designId: wf.design?.id || null });
+      const result = await prepareAbutmentOrder({
+        caseId: wf.caseId, fdi, designId: wf.design?.id || null, onProgress,
+      });
       await wf.refreshDetail();
       await wf.resumeDesign(result.design.id, wf.caseId);
       wf.setStep("case");
       const detected = Object.values(result.neighbors?.neighbors || {}).filter((item) => item.confirmation_status === "CONFIRMED").length;
+      setFastProgress({ id:"READY", label:"自动准备完成", progress:100, detail:`找到 ${detected} 个邻牙参考面` });
       setFastMsg(`基台自动准备完成：Margin / Axis / Bite 已确认，自动找到 ${detected} 个邻牙接触面。`);
     } catch (error) {
       setFastMsg(`自动准备未完成：${error.message}`);
@@ -69,12 +92,13 @@ export default function CasePage({ wf }) {
   };
 
   const chooseLibrary = async (name) => {
-    setFastBusy(true); setFastMsg(`正在应用牙库 ${name}…`);
+    setFastBusy(true); setFastProgress(null); setFastMsg(`正在应用牙库 ${name}…`);
     try {
       wf.setLibrary(name);
-      await selectAbutmentTemplate({ designId: wf.design.id, library: name, params: wf.params });
+      await selectAbutmentTemplate({ designId: wf.design.id, library: name, params: wf.params, onProgress });
       await wf.resumeDesign(wf.design.id, wf.caseId);
       wf.setStep("case");
+      setFastProgress({ id:"TEMPLATE_READY", label:"牙库模板已确认", progress:100 });
       setFastMsg(`已选定 ${name} 作为解剖模板。模板只是起始形态，生成时会按邻牙和对颌真实变形。`);
     } catch (error) {
       setFastMsg(`牙库选择失败：${error.message}`);
@@ -82,18 +106,20 @@ export default function CasePage({ wf }) {
   };
 
   const runFastGeneration = async () => {
-    setFastBusy(true); setFastMsg("正在执行 CAD 1.0：邻接形态 → 咬合高度/凹凸 → 内冠 → QC…");
+    setFastBusy(true); setFastProgress({ id:"START", label:"启动自动牙冠设计", progress:1 });
+    setFastMsg("正在执行患者驱动 CAD：整体适配 → Margin → 邻接 → 咬合 → 内冠…");
     try {
-      const result = await generateAbutmentOrder({ designId: wf.design.id, params: wf.params });
+      const result = await generateAbutmentOrder({ designId: wf.design.id, params: wf.params, onProgress });
       await wf.resumeDesign(wf.design.id, wf.caseId);
       if (result?.final) {
         setFastMsg(result.warnings?.length
-          ? `牙冠已生成；检查项已降级为提示：${result.warnings.join("；")}`
-          : "基台冠已自动生成并完成内冠/QC，正在打开最终检查。");
+          ? `牙冠已生成；有 ${result.warnings.length} 项工程提示，可在 3D 中检查。`
+          : "基台冠已自动生成并完成内冠，正在打开最终检查。");
       } else {
-        setFastMsg(`外冠候选已生成并已进入 3D，可继续检查/微调。内冠或 QC 暂未完成${result?.warnings?.length ? `：${result.warnings.join("；")}` : ""}`);
+        setFastMsg(`患者化外冠已生成并进入 3D。内冠/Final 尚有提示${result?.warnings?.length ? `（${result.warnings.length} 项）` : ""}。`);
       }
     } catch (error) {
+      setFastProgress((current) => current ? { ...current, detail:`失败：${error.message}` } : null);
       setFastMsg(`自动生成停止：${error.message}`);
     } finally { setFastBusy(false); }
   };
@@ -142,6 +168,7 @@ export default function CasePage({ wf }) {
           {fastPrepared && <Notice tone="ok">
             自动准备完成：Margin、插入方向、PatientFrame、Bite 已确认；近中 {neighbors.mesial?.confirmation_status || "—"} / 远中 {neighbors.distal?.confirmation_status || "—"}。
           </Notice>}
+          {fastProgress && <GenerationProgress value={fastProgress} />}
           {fastMsg && <Notice tone={/失败|未完成|停止/.test(fastMsg) ? "warn" : "ok"}>{fastMsg}</Notice>}
         </> : <>
           {wf.design && <Notice tone="ok">设计已创建：FDI {wf.design.target_fdi} · 天然牙预备体</Notice>}
@@ -181,7 +208,7 @@ export default function CasePage({ wf }) {
           <button type="button" className="cd-btn primary" disabled={wf.busy || fastBusy || !wf.selectedTemplate}
             onClick={runFastGeneration}>{fastBusy ? "正在自动生成…" : "直接生成牙冠"}</button>
         </div>
-        <p className="cd-hint">生成顺序：牙库模板定位 → 左右邻牙邻接形态/接触 → 对颌冠高与咬合面空间 → 基台内冠 → 厚度/碰撞/QC。</p>
+        <p className="cd-hint">生成顺序：患者空间整体适配 → Margin 颈缘 → 左右邻牙邻接形态 → 对颌冠高/咬合面 → 基台内冠 → Final/QC。</p>
       </Panel>
     </div>}
   </div>;
