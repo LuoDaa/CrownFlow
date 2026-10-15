@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 
 from ..nonplanar_crown import MarginCurtain
@@ -115,15 +116,7 @@ def _polyline_distances_3d(points, loop) -> np.ndarray:
 
 
 def _closest_points_on_margin_curve(points_local, margin_local):
-    """Continuous closest points on the *segments* of the closed Margin loop.
-
-    The old implementation snapped every cervical vertex to the nearest sampled
-    Margin vertex.  Several crown vertices could therefore receive exactly the
-    same target and collapse into duplicate vertices.  Segment projection gives a
-    continuous target (segment id + interpolation parameter) and preserves the 3D
-    Margin height by interpolating the full XYZ segment, while proximity is chosen
-    in the patient-frame XY plane.
-    """
+    """Continuous closest points on the *segments* of the closed Margin loop."""
     points = np.asarray(points_local, dtype=float)
     loop = np.asarray(margin_local, dtype=float)
     if points.ndim != 2 or points.shape[1] != 3:
@@ -146,8 +139,6 @@ def _closest_points_on_margin_curve(points_local, margin_local):
     targets = np.empty_like(points)
     segment_ids = np.empty(len(points), dtype=int)
     parameters = np.empty(len(points), dtype=float)
-
-    # Chunking avoids a large temporary tensor on dense library meshes.
     for start in range(0, len(points), 1024):
         stop = min(start + 1024, len(points))
         p = points[start:stop]
@@ -169,13 +160,79 @@ def _closest_points_on_margin_curve(points_local, margin_local):
     return targets, segment_ids, parameters
 
 
-def _neighbor_face_x(surface, frame, side: str) -> float | None:
-    """Return the neighbor X coordinate facing the target tooth.
+def _full_loop_margin_anchors(local, margin_local, rim, height):
+    """Choose unique rim vertices that cover the *whole* confirmed Margin loop.
 
-    Auto-neighbor patches are already side-labelled.  In the confirmed patient
-    frame the mesial patch should be on +X and distal on -X.  The quantile nearest
-    the crown is deliberately robust to patch edges/outliers.
+    The previous hard seam was selected only by ``height <= 0.22``.  If the
+    library cervical geometry sat 0.3--1.2 mm above one arc of the Margin, that
+    arc had no seam vertex at all even though the reported seam p95 looked tiny.
+    Here every Margin sample receives a unique rim anchor whenever the mesh has
+    enough rim vertices.  A global assignment with XY/angular/height cost keeps
+    the correspondence anatomically ordered instead of snapping many vertices to
+    one sample.
     """
+    rim_ids = np.flatnonzero(np.asarray(rim, bool))
+    loop = np.asarray(margin_local, float)
+    if len(rim_ids) < 8 or len(loop) < 3:
+        return np.zeros(0, int), np.zeros(0, int)
+
+    count = min(len(loop), len(rim_ids))
+    if count == len(loop):
+        margin_ids = np.arange(len(loop), dtype=int)
+    else:
+        margin_ids = np.floor(np.linspace(0, len(loop), count, endpoint=False)).astype(int)
+
+    candidates = np.asarray(local, float)[rim_ids]
+    targets = loop[margin_ids]
+    dxy = np.linalg.norm(targets[:, None, :2] - candidates[None, :, :2], axis=2)
+    dz = np.abs(targets[:, None, 2] - candidates[None, :, 2])
+
+    center = np.mean(loop[:, :2], axis=0)
+    target_angle = np.arctan2(targets[:, 1] - center[1], targets[:, 0] - center[0])
+    candidate_angle = np.arctan2(candidates[:, 1] - center[1], candidates[:, 0] - center[0])
+    delta_angle = target_angle[:, None] - candidate_angle[None, :]
+    angular = np.abs(np.arctan2(np.sin(delta_angle), np.cos(delta_angle)))
+    radius_scale = max(float(np.median(np.linalg.norm(loop[:, :2] - center, axis=1))), 0.5)
+    hpenalty = np.maximum(np.asarray(height, float)[rim_ids], 0.0)[None, :]
+
+    cost = dxy + 0.25 * dz + 0.35 * radius_scale * angular + 0.15 * hpenalty
+    rows, cols = linear_sum_assignment(cost)
+    anchor_ids = rim_ids[cols]
+    matched_margin_ids = margin_ids[rows]
+    order = np.argsort(matched_margin_ids)
+    return anchor_ids[order], matched_margin_ids[order]
+
+
+def _anchor_transition_weights(mesh, anchor_ids, rim):
+    """Diffuse full-loop seam anchors through a few topological rings."""
+    anchor_ids = np.asarray(anchor_ids, int)
+    rim = np.asarray(rim, bool)
+    influence = np.zeros(len(mesh.vertices), float)
+    if not len(anchor_ids):
+        return influence
+    influence[anchor_ids] = 1.0
+    adjacency = [set() for _ in mesh.vertices]
+    for a, b in np.asarray(mesh.edges_unique, int):
+        adjacency[int(a)].add(int(b))
+        adjacency[int(b)].add(int(a))
+    seen = set(map(int, anchor_ids))
+    front = set(seen)
+    for value in (0.80, 0.55, 0.30):
+        nxt = {
+            v for u in front for v in adjacency[u]
+            if v not in seen and rim[v]
+        }
+        if not nxt:
+            break
+        ids = np.asarray(sorted(nxt), int)
+        influence[ids] = np.maximum(influence[ids], value)
+        seen |= nxt
+        front = nxt
+    return influence
+
+
+def _neighbor_face_x(surface, frame, side: str) -> float | None:
+    """Return the neighbor X coordinate facing the target tooth."""
     local = _local(surface.mesh.vertices, frame)
     x = local[:, 0]
     x = x[np.isfinite(x)]
@@ -195,12 +252,7 @@ def _neighbor_face_x(surface, frame, side: str) -> float | None:
 def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
                           proximal_target_mm=None, antagonist_surface=None,
                           occlusal_target_mm=None, config: AdaptationConfig | None = None):
-    """Fit whole-crown width/height before local Laplacian contact refinement.
-
-    The cervical band is blended out, so the Margin remains the pivot of the
-    transform.  X is scaled/translated from mesial/distal available space.  Z is
-    scaled from antagonist clearance error; cusp/fossa relief is not flattened.
-    """
+    """Fit whole-crown width/height before local Laplacian contact refinement."""
     cfg = config or AdaptationConfig()
     _finite_mesh(mesh)
     current = mesh.copy()
@@ -218,7 +270,6 @@ def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
         "height": {"applied": False},
     }
 
-    # ---- Mesiodistal available-space fit -------------------------------------------------
     surfaces = proximal_surfaces or {}
     target = None if proximal_target_mm is None else float(proximal_target_mm)
     if surfaces and target is not None:
@@ -262,7 +313,6 @@ def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
             "distal_face_x_mm": distal_x,
         }
 
-    # ---- Overall height fit ---------------------------------------------------------------
     if antagonist_surface is not None and occlusal_target_mm is not None:
         temp = current.copy()
         temp.vertices = _world(local, frame)
@@ -273,9 +323,6 @@ def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
             valid = np.asarray(valid, bool) & np.isfinite(signed)
             if np.any(valid):
                 errors = np.asarray(signed[valid], float) - float(occlusal_target_mm)
-                # Use the closest fraction of the antagonist envelope to establish
-                # crown height.  This prevents deep fossae from forcing a global
-                # raise while still allowing the whole crown to reach occlusion.
                 ordered = np.sort(errors)
                 take = max(1, int(np.ceil(len(ordered) * cfg.contact_quantile)))
                 delta = float(np.median(ordered[:take]))
@@ -306,14 +353,7 @@ def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
 
 
 def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | None = None):
-    """Pull the template cervical seam onto the confirmed patient Margin.
-
-    Targets are continuous projections onto Margin *segments*, never discrete
-    Margin samples.  The bottom seam is fitted almost completely while a wider
-    emergence band blends the displacement out.  Keeping a tiny fraction of the
-    source position in the hard band avoids many-to-one collapse on pathological
-    vertical columns while still bringing the seam to clinical-scale proximity.
-    """
+    """Pull the template cervical region onto the *entire* confirmed Margin loop."""
     cfg = config or AdaptationConfig()
     if not (0.0 < cfg.cervical_hard_weight < 1.0):
         raise ValueError("cervical_hard_weight 必须位于 (0,1)")
@@ -335,18 +375,22 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
     if not np.any(rim):
         return current, {"stage": "CERVICAL_FIT", "status": "REVIEW_REQUIRED", "reason": "NO_CERVICAL_RIM"}
 
-    seam = rim & (height <= cfg.cervical_hard_band_mm)
+    near_seam = rim & (height <= cfg.cervical_hard_band_mm)
+    anchor_ids, anchor_margin_ids = _full_loop_margin_anchors(local, margin_local, rim, height)
+    seam = near_seam.copy()
+    if len(anchor_ids):
+        seam[anchor_ids] = True
+        target_local[anchor_ids] = margin_local[anchor_margin_ids]
     if int(seam.sum()) < 8:
         rim_ids = np.flatnonzero(rim)
         order = rim_ids[np.argsort(height[rim_ids])]
         seam[order[:max(8, int(np.ceil(len(order) * 0.20)))]] = True
 
-    # Transition band: strong near the Margin, smoothly vanishing coronally.
     h = np.clip(height / max(cfg.cervical_band_mm, 1e-6), 0.0, 1.0)
     weight = (1.0 - _smoothstep01(h)) ** 1.25
     weight *= rim.astype(float)
-    # Near-full rather than exact 1.0 snap: distinct source vertices stay distinct
-    # even if their continuous curve projections coincide.
+    influence = _anchor_transition_weights(current, anchor_ids, rim)
+    weight = np.maximum(weight, influence * cfg.cervical_hard_weight)
     weight[seam] = cfg.cervical_hard_weight
 
     margin_world = np.asarray(margin, dtype=float)
@@ -367,18 +411,36 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
     after_vertices = np.asarray(current.vertices)
     after_seam = _polyline_distances_3d(after_vertices[seam], margin_world)
     after_band = _polyline_distances_3d(after_vertices[rim], margin_world)
+    if len(anchor_ids):
+        reverse = cKDTree(after_vertices[anchor_ids]).query(margin_world, k=1)[0]
+        coverage_fraction = float(np.mean(reverse <= 0.05))
+        reverse_p95 = float(np.quantile(reverse, 0.95))
+        reverse_max = float(np.max(reverse))
+    else:
+        reverse = np.full(len(margin_world), np.inf)
+        coverage_fraction = 0.0
+        reverse_p95 = float("inf")
+        reverse_max = float("inf")
+
+    used_segments = np.unique(np.r_[segment_ids[near_seam], anchor_margin_ids]).astype(int)
+    status = (
+        "PASS_ENGINEERING"
+        if float(np.quantile(after_seam, 0.95)) <= 0.05 and coverage_fraction >= 0.98
+        else "REVIEW_REQUIRED"
+    )
     report = {
         "stage": "CERVICAL_FIT",
-        "status": "PASS_ENGINEERING",
+        "status": status,
         "rim_vertex_count": int(rim.sum()),
         "seam_vertex_count": int(seam.sum()),
+        "full_loop_anchor_count": int(len(anchor_ids)),
+        "margin_sample_count": int(len(margin_world)),
         "duplicate_pairs_before": duplicates_before,
         "duplicate_pairs_after": duplicates_after,
-        "projection": "continuous_closed_margin_segment_xy_full_xyz_interpolation",
+        "projection": "continuous_closed_margin_segment_plus_full_loop_unique_anchor_assignment",
         "distance_metric": "exact_point_to_closed_margin_polyline_3d",
-        "segment_count_used": int(len(np.unique(segment_ids[seam]))),
+        "segment_count_used": int(len(used_segments)),
         "segment_t_range": [float(np.min(segment_t[seam])), float(np.max(segment_t[seam]))],
-        # `before_mm/after_mm` intentionally describe the actual cervical seam.
         "before_mm": {
             "median": float(np.median(before_seam)),
             "p95": float(np.quantile(before_seam, 0.95)),
@@ -388,6 +450,13 @@ def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | No
             "median": float(np.median(after_seam)),
             "p95": float(np.quantile(after_seam, 0.95)),
             "max": float(np.max(after_seam)),
+        },
+        "full_loop_coverage": {
+            "within_0_05mm_fraction": coverage_fraction,
+            "reverse_p95_mm": reverse_p95,
+            "reverse_max_mm": reverse_max,
+            "covered_samples": int(np.sum(reverse <= 0.05)),
+            "uncovered_samples": int(np.sum(reverse > 0.05)),
         },
         "transition_band_mm": {
             "before_median": float(np.median(before_band)),
