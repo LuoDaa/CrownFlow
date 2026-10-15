@@ -21,7 +21,7 @@ class AdaptationConfig:
     cervical_band_mm: float = 1.20
     cervical_hard_band_mm: float = 0.22
     cervical_hard_weight: float = 0.995
-    cervical_noop_p95_mm: float = 0.020
+    cervical_noop_p95_mm: float = 0.050
     cervical_line_search: tuple[float, ...] = (1.0, 0.75, 0.50, 0.25, 0.125, 0.0625)
     body_transition_mm: float = 1.60
     md_scale_min: float = 0.72
