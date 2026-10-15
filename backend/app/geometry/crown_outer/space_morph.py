@@ -218,17 +218,87 @@ def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, r
     }
 
 
+def _antagonist_axial_clearance(points, antagonist_surface, frame):
+    """One-sided insertion-axis clearance to the crown-facing antagonist envelope.
+
+    A generic closest-point signed distance can change sign after a crown has
+    crossed a closed antagonist mesh.  For overall crown height that is wrong:
+    the first surface seen from the cervical side is the immutable occlusal
+    ceiling.  Cast every sample from below along confirmed +Z and retain the
+    first hit on that axial line.  Clearance therefore stays negative after
+    penetration instead of becoming a false positive gap on the far side.
+    """
+    points = np.asarray(points, float)
+    mesh = antagonist_surface.mesh
+    if not len(points) or mesh is None or not len(mesh.faces):
+        return np.full(len(points), np.nan), np.zeros(len(points), bool), {"method": "NO_ANTAGONIST_MESH"}
+    z = np.asarray(frame.z, float)
+    zn = float(np.linalg.norm(z))
+    if zn <= 1e-10 or not np.isfinite(zn):
+        return np.full(len(points), np.nan), np.zeros(len(points), bool), {"method": "INVALID_FRAME_Z"}
+    z /= zn
+    mverts = np.asarray(mesh.vertices, float)
+    finite_mesh = np.isfinite(mverts).all(axis=1)
+    finite_points = np.isfinite(points).all(axis=1)
+    if not np.any(finite_mesh) or not np.any(finite_points):
+        return np.full(len(points), np.nan), np.zeros(len(points), bool), {"method": "NONFINITE_INPUT"}
+    mesh_proj = mverts[finite_mesh] @ z
+    point_proj = points @ z
+    start = float(min(np.min(mesh_proj), np.min(point_proj[finite_points])) - 3.0)
+    origins = points.copy()
+    origins[finite_points] += (start - point_proj[finite_points])[:, None] * z[None, :]
+    directions = np.repeat(z[None, :], len(points), axis=0)
+    clearance = np.full(len(points), np.nan, float)
+    valid = np.zeros(len(points), bool)
+    try:
+        locations, ray_ids, _face_ids = mesh.ray.intersects_location(
+            origins[finite_points], directions[finite_points], multiple_hits=True
+        )
+    except Exception as exc:
+        return clearance, valid, {"method": "AXIAL_RAY_UNAVAILABLE", "error": str(exc)}
+    if not len(locations):
+        return clearance, valid, {"method": "AXIAL_FIRST_HIT", "hit_count": 0}
+    source_ids = np.flatnonzero(finite_points)
+    ray_ids = np.asarray(ray_ids, int)
+    locations = np.asarray(locations, float)
+    hit_proj = locations @ z
+    # One ray can cross many surfaces.  The minimum projected hit is the first
+    # crown-facing envelope as seen from the Margin/cervical side.
+    best = {}
+    for k, local_ray in enumerate(ray_ids.tolist()):
+        if local_ray < 0 or local_ray >= len(source_ids):
+            continue
+        global_id = int(source_ids[local_ray])
+        hp = float(hit_proj[k])
+        if not np.isfinite(hp):
+            continue
+        if global_id not in best or hp < best[global_id]:
+            best[global_id] = hp
+    for idx, hp in best.items():
+        clearance[idx] = hp - float(point_proj[idx])
+        valid[idx] = np.isfinite(clearance[idx])
+    return clearance, valid, {
+        "method": "AXIAL_FIRST_HIT_FROM_CERVICAL_SIDE",
+        "hit_count": int(valid.sum()),
+        "sample_count": int(len(points)),
+        "axis": z.tolist(),
+    }
+
+
 def _occlusal_metrics(values, target):
     values = np.asarray(values, float)
     error = values - float(target)
     penetration = np.maximum(-error, 0.0)
     gap = np.maximum(error, 0.0)
+    penetrating = penetration[penetration > 0.0]
     positive = gap[gap > 0.0]
     gap_contact = float(np.quantile(positive, 0.18)) if len(positive) else 0.0
+    penetration_p95 = float(np.quantile(penetrating, .95)) if len(penetrating) else 0.0
     return {
         "gap_quantile_mm": gap_contact,
-        "penetration_p95_mm": float(np.quantile(penetration, .95)),
-        "penetration_max_mm": float(np.max(penetration)),
+        "penetration_p95_mm": penetration_p95,
+        "penetration_max_mm": float(np.max(penetration)) if len(penetration) else 0.0,
+        "penetration_fraction": float(np.mean(penetration > 0.0)) if len(penetration) else 0.0,
         "signed_min_mm": float(np.min(values)),
         "signed_median_mm": float(np.median(values)),
         "signed_p05_mm": float(np.quantile(values, .05)),
@@ -241,33 +311,33 @@ def _occlusal_objective(metrics, cfg):
 
 
 def _fit_antagonist_height(current, frame, margin, antagonist_surface, target, cfg):
-    """Bidirectional closed-loop crown-height fit.
-
-    A too-short embryo grows coronally; a globally over-high/penetrating embryo is
-    lowered.  Local cusp/fossa relief remains the following OCCLUSAL stage's job.
-    """
+    """Bidirectional closed-loop crown-height fit against a one-sided envelope."""
     target = float(target)
     passes, ever = [], False
+    envelope_meta = None
     for iteration in range(max(1, int(cfg.height_iterations))):
         zones = build_crown_zones(current, frame, margin)
         ids = np.flatnonzero(zones.occlusal)
         if not len(ids):
             return current, {"applied": ever, "reason": "NO_OCCLUSAL_ZONE", "passes": passes}
-        _cp, _faces, signed, _distance, valid = antagonist_surface.query(np.asarray(current.vertices)[ids])
-        signed = np.asarray(signed, float)
+        signed, valid, envelope_meta = _antagonist_axial_clearance(
+            np.asarray(current.vertices)[ids], antagonist_surface, frame
+        )
         valid = np.asarray(valid, bool) & np.isfinite(signed)
         if int(valid.sum()) < 12:
-            return current, {"applied": ever, "reason": "NO_VALID_ANTAGONIST_SAMPLES", "passes": passes}
+            return current, {"applied": ever, "reason": "NO_VALID_ANTAGONIST_SAMPLES", "passes": passes,
+                             "envelope": envelope_meta}
         values = signed[valid]
         before = _occlusal_metrics(values, target)
         if (before["penetration_p95_mm"] <= cfg.penetration_p95_limit_mm
                 and before["gap_quantile_mm"] <= cfg.height_target_band_mm):
             return current, {"applied": ever, "reason": "HEIGHT_ON_TARGET", "passes": passes, "final": before,
-                             "target_clearance_mm": target}
+                             "target_clearance_mm": target, "envelope": envelope_meta,
+                             "mode": "ONE_SIDED_AXIAL_CLOSED_LOOP_ANTAGONIST_HEIGHT_V3"}
         penetration = np.maximum(target - values, 0.0)
-        if float(np.quantile(penetration, .95)) > cfg.penetration_p95_limit_mm:
-            p = penetration[penetration > cfg.penetration_p95_limit_mm]
-            requested = -float(np.quantile(p, 0.70)) if len(p) else 0.0
+        positive_pen = penetration[penetration > cfg.penetration_p95_limit_mm]
+        if len(positive_pen):
+            requested = -float(np.quantile(positive_pen, 0.70))
             direction = "LOWER_TO_RELIEVE_PENETRATION"
         else:
             gap = values - target
@@ -288,8 +358,9 @@ def _fit_antagonist_height(current, frame, margin, antagonist_surface, target, c
             trial_local[:, 2] += weight * requested * float(alpha)
             trial = current.copy(); trial.vertices = _world(trial_local, frame)
             _finite_mesh(trial)
-            _cp2, _f2, signed2, _d2, valid2 = antagonist_surface.query(np.asarray(trial.vertices)[ids])
-            signed2 = np.asarray(signed2, float)
+            signed2, valid2, meta2 = _antagonist_axial_clearance(
+                np.asarray(trial.vertices)[ids], antagonist_surface, frame
+            )
             valid2 = np.asarray(valid2, bool) & np.isfinite(signed2)
             if int(valid2.sum()) < 12:
                 continue
@@ -297,25 +368,30 @@ def _fit_antagonist_height(current, frame, margin, antagonist_surface, target, c
             improved = _occlusal_objective(after, cfg) < _occlusal_objective(before, cfg) - 1e-4
             passes.append({"iteration": iteration + 1, "direction": direction, "alpha": float(alpha),
                            "requested_step_mm": requested, "applied_step_mm": requested * float(alpha),
-                           "before": before, "after": after, "accepted": bool(improved)})
+                           "before": before, "after": after, "accepted": bool(improved), "envelope": meta2})
             if improved:
                 accepted = trial
+                envelope_meta = meta2
                 break
         if accepted is None:
             return current, {"applied": ever, "reason": "HEIGHT_LINE_SEARCH_CONFLICT", "passes": passes,
-                             "final": before, "target_clearance_mm": target}
+                             "final": before, "target_clearance_mm": target, "envelope": envelope_meta,
+                             "mode": "ONE_SIDED_AXIAL_CLOSED_LOOP_ANTAGONIST_HEIGHT_V3"}
         current = accepted
         ever = True
     zones = build_crown_zones(current, frame, margin)
     ids = np.flatnonzero(zones.occlusal)
     final = None
     if len(ids):
-        _cp, _faces, signed, _distance, valid = antagonist_surface.query(np.asarray(current.vertices)[ids])
-        signed = np.asarray(signed, float); valid = np.asarray(valid, bool) & np.isfinite(signed)
+        signed, valid, envelope_meta = _antagonist_axial_clearance(
+            np.asarray(current.vertices)[ids], antagonist_surface, frame
+        )
+        valid = np.asarray(valid, bool) & np.isfinite(signed)
         if np.any(valid):
             final = _occlusal_metrics(signed[valid], target)
-    return current, {"applied": ever, "mode": "BIDIRECTIONAL_CLOSED_LOOP_ANTAGONIST_HEIGHT_V2",
-                     "passes": passes, "final": final, "target_clearance_mm": target}
+    return current, {"applied": ever, "mode": "ONE_SIDED_AXIAL_CLOSED_LOOP_ANTAGONIST_HEIGHT_V3",
+                     "passes": passes, "final": final, "target_clearance_mm": target,
+                     "envelope": envelope_meta}
 
 
 def space_driven_embryo_prefit(mesh, frame, margin, *, support_mesh=None,
