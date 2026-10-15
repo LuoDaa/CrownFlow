@@ -25,9 +25,12 @@ def _frame():
 
 
 def test_automatic_abutment_frame_is_right_handed_and_radial():
-    left = trimesh.creation.box(extents=[2.0, 5.0, 3.0])
+    # Subdivide the synthetic jaw so the fixture satisfies the same minimum-mesh
+    # guard as production IOS scans.  The old two-box fixture had only 16 vertices
+    # and was testing the guard rather than the frame geometry.
+    left = trimesh.creation.box(extents=[2.0, 5.0, 3.0]).subdivide()
     left.apply_translation([-4.0, 0.0, 1.5])
-    right = trimesh.creation.box(extents=[2.0, 5.0, 3.0])
+    right = trimesh.creation.box(extents=[2.0, 5.0, 3.0]).subdivide()
     right.apply_translation([4.0, 0.0, 1.5])
     jaw = trimesh.util.concatenate([left, right])
 
