@@ -4,6 +4,8 @@ from pathlib import Path
 from fastapi import HTTPException
 from .design_dependencies import confirmed_inputs, dependency_digest, file_digest
 
+LATEST_AUTO_NEIGHBOR_SCOPE = 'AUTO_CAD1_CORONAL_MD_NEIGHBOR_V4'
+
 
 def eligibility(d):
     from ..api.routes import asset
@@ -22,19 +24,39 @@ def eligibility(d):
     try: _,frame=frame_from(d)
     except (HTTPException,KeyError): pass
     if not frame:
-        # A1：坐标帧是 live 生成的**前置条件**（模板放置的横向轴只能来自确认帧），
-        # 不再允许"没确认就先放一个，方向靠世界轴猜"。
         blockers.append({'stage':'FRAME','message':'请先确认近中/颊侧方向与毫米单位（坐标确认），再生成外形'})
-    neighbors=json.loads(d.get('neighbors_json') or '{}');sides={}
+
+    neighbors=json.loads(d.get('neighbors_json') or '{}');sides={};stale_auto=[]
     for side in ('mesial','distal'):
         item=neighbors.get(side,{})
         valid=bool(frame and item.get('frame_revision_id')==frame['revision_id'])
+        scope=str(item.get('scope') or '')
+        # Automatic references are algorithm-versioned geometry artifacts.  A
+        # previously CONFIRMED V2/V3 patch is not safe to reuse after the V4
+        # contact-wall/halo change: direct /workflow/generate must never silently
+        # consume it simply because the frontend refresh step was skipped.
+        if (
+            d.get('support_type')=='abutment'
+            and scope.startswith('AUTO_CAD1_CORONAL_MD_NEIGHBOR_')
+            and scope != LATEST_AUTO_NEIGHBOR_SCOPE
+        ):
+            valid=False
+            stale_auto.append(side)
         if valid and item.get('confirmation_status')=='CONFIRMED':
             try:
                 valid=(scan_reference(d['case_id'],item['source']['kind'])==item['source']
                        and Path(item['path']).is_file() and file_digest(item['path'])==item['region_sha256'])
             except (HTTPException,KeyError,OSError): valid=False
         sides[side]=item.get('confirmation_status','UNKNOWN') if valid else 'UNKNOWN'
+    if stale_auto:
+        blockers.append({
+            'stage':'PROXIMAL',
+            'code':'AUTO_NEIGHBOR_REFERENCE_STALE',
+            'message':'自动邻牙参考面算法版本已更新，请先刷新邻牙参考后再生成',
+            'sides':stale_auto,
+            'required_scope':LATEST_AUTO_NEIGHBOR_SCOPE,
+        })
+
     bite=json.loads(d.get('bite_json') or '{}');bite_valid=bool(frame and bite.get('revision_id')
         and bite.get('pose_confirmed') and bite.get('frame_revision_id')==frame['revision_id'] and bite.get('transform'))
     if bite_valid:
@@ -53,6 +75,7 @@ def eligibility(d):
         'automatic_mode':mode if not blockers else None,'frame_confirmed':bool(frame),'neighbors':sides,
         'bite_confirmed':bite_valid,'proximal_target_confirmed':params.get('proximal_target_mm') is not None,
         'occlusal_target_confirmed':params.get('occlusal_target_mm') is not None,
+        'neighbor_reference_version':LATEST_AUTO_NEIGHBOR_SCOPE,
         'release_status':'NOT_PRODUCTION_APPROVED'}
 
 
@@ -94,11 +117,10 @@ def generate_candidate(d,kind):
         artifacts={'outer':str(baseline),'baseline':str(baseline)}
     report.update(eligibility=state,input_diagnostics=diagnostics,
         completed_stages=[s['stage'] for s in report['stages'] if s['status'] in ('PLACED','PASS_ENGINEERING')],
-        blocked_stages=[s for s in report['stages'] if s['status'] in ('NOT_ASSESSED','INPUT_UNVERIFIED','BLOCKED')],        review_required_stages=['CANDIDATE','FINAL_QC'],manufacturing_status='NOT_PRODUCTION_APPROVED',
+        blocked_stages=[s for s in report['stages'] if s['status'] in ('NOT_ASSESSED','INPUT_UNVERIFIED','BLOCKED')],
+        review_required_stages=['CANDIDATE','FINAL_QC'],manufacturing_status='NOT_PRODUCTION_APPROVED',
         candidate_outer_sha256=file_digest(artifacts['outer']),
         artifact_sha256={k:file_digest(v) for k,v in artifacts.items()})
-    # A1：候选报告必须自证 truth source（哪颗模板 / 哪个确认帧 / 哪条放置实现），
-    # 否则"几何来自 A、报告写着 B"这类断链在报告层无法被发现。
     report['template_source']=placement.get('template_source')
     report['template_source_warning']=placement.get('template_source_warning')
     report['frame_source']=placement.get('frame_source')
@@ -106,8 +128,6 @@ def generate_candidate(d,kind):
                              'source':'CONFIRMED'}
     report['placement_path']=placement.get('placement_path')
     report['baseline_sha256']=file_digest(artifacts['baseline'])
-    # B：放置路径给出**同一有符号口径**的接触快照（未确认的输入只标未评估，绝不猜符号）。
-    # 快照不是门禁：失败时如实记下原因，而不是让候选生成整个失败。
     from .contact_measurement import measure_confirmed_inputs, serializable_measurement
     from fastapi import HTTPException as _HTTPException
     parameters=json.loads(d['parameters_json'])
