@@ -9,6 +9,7 @@ import SetupPage from "./app/pages/SetupPage";
 import DesignPage from "./app/pages/DesignPage";
 import ReviewPage from "./app/pages/ReviewPage";
 import "./styles/app.css";
+import "./styles/automate.css";
 
 /** Natural-prep still uses the explicit CAD workflow. Abutment orders use the
  * Automate-style product shell: Upload -> Results -> Review/Edit on demand. */
