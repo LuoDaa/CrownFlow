@@ -1,17 +1,16 @@
 """Space-driven deterministic crown morphing.
 
-The library tooth is an *embryo*: it supplies topology and local anatomy, but not
-patient dimensions.  Patient geometry owns the usable space:
+The library tooth is only an *embryo*: topology/anatomical character may come from
+it, but patient dimensions never do.  The outer crown is first expanded into the
+feasible patient space, then local Laplacian stages create proximal/occlusal detail.
 
-* Margin is the cervical boundary (handled by ``cervical_fit_to_margin``);
-* mesial/distal neighbors define independent side envelopes;
-* prepared support + cement gap + minimum thickness define an inner no-go envelope;
-* antagonist defines the coronal height envelope;
-* local Laplacian/ARAP-like stages refine contacts after this global space fit.
+Spatial truth, in order of authority:
 
-This follows the same deterministic idea used by clinical CAD systems and the
-literature on deformable crown fitting: solve positional/spatial constraints first,
-then use a shape-preserving regularizer.  No ML model is required for CAD-1.
+* confirmed Margin = cervical boundary;
+* actual intaglio preview (blockout + gap) + minimum thickness = inner no-go shell;
+* mesial/distal neighbor surfaces = independent side contact envelopes;
+* antagonist = coronal height/clearance envelope;
+* library embryo = soft shape prior only.
 """
 from __future__ import annotations
 
@@ -29,15 +28,15 @@ class SpaceMorphConfig:
     body_transition_mm: float = 1.45
     md_scale_min: float = 0.55
     md_scale_max: float = 2.00
-    bl_scale_min: float = 0.75
-    bl_scale_max: float = 1.80
+    bl_scale_min: float = 0.70
+    bl_scale_max: float = 1.90
     height_scale_min: float = 0.70
-    height_scale_max: float = 1.55
+    height_scale_max: float = 1.65
     max_height_delta_mm: float = 3.5
     contact_quantile: float = 0.18
-    support_iterations: int = 3
-    support_max_push_per_pass_mm: float = 0.85
-    support_query_cervical_exclusion_mm: float = 0.30
+    envelope_iterations: int = 4
+    envelope_max_push_per_pass_mm: float = 0.90
+    shell_audit_sample_limit: int = 4096
 
 
 def _basis(frame):
@@ -115,28 +114,86 @@ def _apply_asymmetric_axis_warp(local, axis, center, negative_scale, positive_sc
     local[:, axis] += np.asarray(weight, float) * (target - values)
 
 
-def _support_window_local(support_mesh, frame, margin_z, crown_top):
-    local = _local(support_mesh.vertices, frame)
+def _envelope_window_local(envelope_mesh, frame, margin_z, crown_top):
+    local = _local(envelope_mesh.vertices, frame)
     finite = np.isfinite(local).all(axis=1)
     local = local[finite]
     if not len(local):
         return local
-    mask = (local[:, 2] >= margin_z - 0.50) & (local[:, 2] <= crown_top + 1.0)
+    mask = (local[:, 2] >= margin_z - 0.50) & (local[:, 2] <= crown_top + 1.50)
     return local[mask] if np.any(mask) else local
 
 
-def _support_clearance_push(mesh, support_mesh, frame, margin, required_mm, body_weight, cfg):
-    """Push outer body out of the support/intaglio minimum-material envelope.
+def _body_weight(mesh, frame, margin, transition_mm):
+    h = MarginCurtain(margin, frame.z).axial_above(mesh.vertices)
+    return _smoothstep01(h / max(float(transition_mm), 1e-6)), h
 
-    The prepared support is authoritative.  We move only the *outer* embryo and
-    never the support.  Closest-point direction is blended with the radial patient
-    direction so a point that accidentally starts inside the support is still
-    pushed outward rather than deeper through it.
+
+def audit_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, required_mm,
+                                   *, config: SpaceMorphConfig | None = None):
+    """Read-only outer-vs-intaglio body clearance audit.
+
+    This is an engineering shell metric, not a substitute for final ray thickness.
+    It exists to stop the old failure mode where the intaglio visibly protruded
+    through an undersized embryo before finalization.
     """
-    if support_mesh is None or required_mm is None or required_mm <= 0:
+    cfg = config or SpaceMorphConfig()
+    if inner_envelope_mesh is None or required_mm is None or float(required_mm) <= 0:
+        return {"status": "NOT_ASSESSED", "reason": "INNER_ENVELOPE_OR_THICKNESS_MISSING"}
+    weight, height = _body_weight(mesh, frame, margin, cfg.body_transition_mm)
+    ids = np.flatnonzero((weight > 0.05) & (height > 0.20))
+    if not len(ids):
+        return {"status": "NOT_ASSESSED", "reason": "NO_BODY_VERTICES"}
+    vertices = np.asarray(mesh.vertices)[ids]
+    _cp, dist, _ = closest_point(inner_envelope_mesh, vertices)
+    dist = np.asarray(dist, float)
+    finite = np.isfinite(dist)
+    values = dist[finite]
+    if not len(values):
+        return {"status": "NOT_ASSESSED", "reason": "NO_FINITE_CLEARANCE"}
+    deficit = np.maximum(float(required_mm) - values, 0.0)
+
+    inside_fraction = None
+    try:
+        inner_vertices = np.asarray(inner_envelope_mesh.vertices, float)
+        if len(inner_vertices) > cfg.shell_audit_sample_limit:
+            sample = np.linspace(0, len(inner_vertices) - 1,
+                                 cfg.shell_audit_sample_limit, dtype=int)
+            inner_vertices = inner_vertices[sample]
+        if bool(mesh.is_watertight and mesh.is_winding_consistent):
+            inside_fraction = float(np.mean(mesh.contains(inner_vertices)))
+    except Exception:  # noqa: BLE001 - audit must never crash generation
+        inside_fraction = None
+
+    return {
+        "status": "PASS_ENGINEERING" if float(np.quantile(deficit, .95)) <= 0.02 else "REVIEW_REQUIRED",
+        "method": "OUTER_VERTEX_TO_ACTUAL_INTAGLIO_DISTANCE",
+        "required_mm": float(required_mm),
+        "sample_count": int(len(values)),
+        "min_clearance_mm": float(np.min(values)),
+        "p05_clearance_mm": float(np.quantile(values, .05)),
+        "median_clearance_mm": float(np.median(values)),
+        "deficit_p95_mm": float(np.quantile(deficit, .95)),
+        "deficit_max_mm": float(np.max(deficit)),
+        "inner_vertex_containment_fraction": inside_fraction,
+    }
+
+
+def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, required_mm,
+                                     *, config: SpaceMorphConfig | None = None):
+    """Expand only the outer body until it clears the authoritative intaglio shell.
+
+    Correction direction is a blend of closest-point separation and patient-radial
+    expansion.  The radial component prevents an embryo that starts *inside* the
+    abutment/intaglio from being pushed through the wrong side.  Near the insertion
+    axis the fallback direction is coronal (+Z), which also protects occlusal shell
+    thickness above a broad abutment top.
+    """
+    cfg = config or SpaceMorphConfig()
+    if inner_envelope_mesh is None or required_mm is None or float(required_mm) <= 0:
         return mesh.copy(), {
             "status": "NOT_ASSESSED",
-            "reason": "SUPPORT_OR_MINIMUM_THICKNESS_MISSING",
+            "reason": "INNER_ENVELOPE_OR_THICKNESS_MISSING",
         }
 
     current = mesh.copy()
@@ -147,14 +204,14 @@ def _support_clearance_push(mesh, support_mesh, frame, margin, required_mm, body
     max_push = 0.0
     passes = []
 
-    body_weight = np.asarray(body_weight, dtype=float)
-    for iteration in range(max(1, int(cfg.support_iterations))):
-        vertices = np.asarray(current.vertices, dtype=float).copy()
-        active = np.flatnonzero(body_weight > 0.02)
+    for iteration in range(max(1, int(cfg.envelope_iterations))):
+        weight, height = _body_weight(current, frame, margin, cfg.body_transition_mm)
+        vertices = np.asarray(current.vertices, float).copy()
+        active = np.flatnonzero((weight > 0.02) & (height > 0.12))
         if not len(active):
             break
-        cp, dist, _ = closest_point(support_mesh, vertices[active])
-        dist = np.asarray(dist, dtype=float)
+        cp, dist, _ = closest_point(inner_envelope_mesh, vertices[active])
+        dist = np.asarray(dist, float)
         finite = np.isfinite(dist) & np.isfinite(cp).all(axis=1)
         deficit = np.maximum(float(required_mm) - dist, 0.0)
         bad = finite & (deficit > 1e-5)
@@ -168,34 +225,36 @@ def _support_clearance_push(mesh, support_mesh, frame, margin, required_mm, body
             break
 
         chosen = active[bad]
-        world_delta = vertices[chosen] - cp[bad]
-        local_delta = world_delta @ matrix
         local_vertices = (vertices[chosen] - origin) @ matrix
+        local_delta = (vertices[chosen] - cp[bad]) @ matrix
 
         radial = np.c_[local_vertices[:, :2] - center_xy, np.zeros(len(chosen))]
         radial_norm = np.linalg.norm(radial, axis=1)
-        near_axis = radial_norm < 1e-8
-        if np.any(near_axis):
-            radial[near_axis] = np.array([0.0, 0.0, 1.0])
-            radial_norm[near_axis] = 1.0
-        radial /= np.maximum(radial_norm[:, None], 1e-12)
+        near_axis = radial_norm < 0.35
+        radial[~near_axis] /= np.maximum(radial_norm[~near_axis, None], 1e-12)
+        radial[near_axis] = np.array([0.0, 0.0, 1.0])
 
         dnorm = np.linalg.norm(local_delta, axis=1)
-        local_dir = np.zeros_like(local_delta)
-        ok = dnorm > 1e-8
-        local_dir[ok] = local_delta[ok] / dnorm[ok, None]
-        local_dir[~ok] = radial[~ok]
-        blended = 0.65 * local_dir + 0.35 * radial
-        # Always keep the correction on the material/outward side of the patient
-        # radial field.  This is the key guard when the embryo starts *inside* prep.
-        inward = np.einsum("ij,ij->i", blended, radial) < 0.0
-        blended[inward] *= -1.0
-        bnorm = np.linalg.norm(blended, axis=1)
-        blended /= np.maximum(bnorm[:, None], 1e-12)
+        sep = np.zeros_like(local_delta)
+        good = dnorm > 1e-8
+        sep[good] = local_delta[good] / dnorm[good, None]
+        sep[~good] = radial[~good]
 
-        push = deficit[bad] * np.clip(body_weight[chosen], 0.15, 1.0)
-        push = np.minimum(push, float(cfg.support_max_push_per_pass_mm))
-        vertices[chosen] += (blended @ matrix.T) * push[:, None]
+        # On the occlusal half of the crown we allow an additional +Z component;
+        # on side walls radial growth dominates.  This is deterministic and keeps
+        # the actual intaglio immutable.
+        coronal = np.c_[np.zeros(len(chosen)), np.zeros(len(chosen)), np.ones(len(chosen))]
+        z_fraction = np.clip(height[chosen] / max(float(np.quantile(height[height > 0], .9))
+                                                  if np.any(height > 0) else 1.0, 1e-6), 0.0, 1.0)
+        desired = 0.55 * sep + 0.35 * radial + 0.10 * z_fraction[:, None] * coronal
+        inward = np.einsum("ij,ij->i", desired, radial) < -0.05
+        desired[inward] -= 2.0 * np.einsum("ij,ij->i", desired[inward], radial[inward])[:, None] * radial[inward]
+        norm = np.linalg.norm(desired, axis=1)
+        desired /= np.maximum(norm[:, None], 1e-12)
+
+        push = deficit[bad] * np.clip(weight[chosen], 0.20, 1.0)
+        push = np.minimum(push, float(cfg.envelope_max_push_per_pass_mm))
+        vertices[chosen] += (desired @ matrix.T) * push[:, None]
         current.vertices = vertices
         total_moved.update(map(int, chosen.tolist()))
         max_push = max(max_push, float(push.max(initial=0.0)))
@@ -207,25 +266,17 @@ def _support_clearance_push(mesh, support_mesh, frame, margin, required_mm, body
             "max_push_mm": float(push.max(initial=0.0)),
         })
 
-    active = np.flatnonzero(body_weight > 0.02)
-    if len(active):
-        _cp, after_dist, _ = closest_point(support_mesh, np.asarray(current.vertices)[active])
-        after_dist = np.asarray(after_dist, dtype=float)
-        finite = np.isfinite(after_dist)
-        min_after = float(np.min(after_dist[finite])) if np.any(finite) else None
-        p05_after = float(np.quantile(after_dist[finite], 0.05)) if np.any(finite) else None
-    else:
-        min_after = p05_after = None
-
+    audit = audit_inner_envelope_clearance(
+        current, inner_envelope_mesh, frame, margin, required_mm, config=cfg,
+    )
     return current, {
         "status": "APPLIED" if total_moved else "NO_CORRECTION_NEEDED",
-        "method": "SUPPORT_CLOSEST_POINT_PLUS_PATIENT_RADIAL_ENVELOPE",
-        "required_outer_to_support_mm": float(required_mm),
+        "method": "ACTUAL_INTAGLIO_CLOSEST_POINT_PLUS_PATIENT_RADIAL_CORONAL_ENVELOPE",
+        "required_outer_to_intaglio_mm": float(required_mm),
         "moved_vertices": int(len(total_moved)),
         "max_push_per_pass_mm": float(max_push),
-        "min_after_mm": min_after,
-        "p05_after_mm": p05_after,
         "passes": passes,
+        "audit_after": audit,
     }
 
 
@@ -235,6 +286,7 @@ def space_driven_embryo_prefit(
     margin,
     *,
     support_mesh=None,
+    inner_envelope_mesh=None,
     minimum_thickness_mm=None,
     cement_gap_mm=None,
     proximal_surfaces=None,
@@ -243,11 +295,12 @@ def space_driven_embryo_prefit(
     occlusal_target_mm=None,
     config: SpaceMorphConfig | None = None,
 ):
-    """Fit the embryo crown to the *available patient space* before local editing.
+    """Fit the embryo to patient space before local contact/occlusal refinement.
 
-    Unlike a rigid/translation proposal this warp has independent mesial and distal
-    scales around the Margin center.  A one-sided neighbor therefore grows only the
-    relevant side; the entire crown is never translated merely to create contact.
+    A one-sided neighbor grows only that side; the whole crown is never translated
+    merely to make contact.  If the actual intaglio preview is available, it is the
+    authoritative inner shell.  Otherwise support + cement gap is a conservative
+    fallback lower bound.
     """
     cfg = config or SpaceMorphConfig()
     _finite_mesh(mesh)
@@ -258,8 +311,7 @@ def space_driven_embryo_prefit(
     center_y = float(np.median(margin_local[:, 1]))
     margin_z = float(np.median(margin_local[:, 2]))
 
-    height_above = MarginCurtain(margin, frame.z).axial_above(current.vertices)
-    body_weight = _smoothstep01(height_above / max(float(cfg.body_transition_mm), 1e-6))
+    body_weight, height_above = _body_weight(current, frame, margin, cfg.body_transition_mm)
     body = height_above > max(0.30, float(cfg.body_transition_mm) * 0.30)
     if not np.any(body):
         body = np.ones(len(local), bool)
@@ -267,11 +319,12 @@ def space_driven_embryo_prefit(
     report = {
         "stage": "GLOBAL_PREFIT",
         "status": "PASS_ENGINEERING",
-        "algorithm": "SPACE_DRIVEN_EMBRYO_MORPH_V1",
+        "algorithm": "SPACE_DRIVEN_EMBRYO_MORPH_V2",
         "template_role": "TOPOLOGY_AND_ANATOMY_EMBRYO_NOT_SIZE_TRUTH",
         "md": {"applied": False},
         "bl": {"applied": False},
-        "support_envelope": {"status": "NOT_ASSESSED"},
+        "inner_shell": {"status": "NOT_ASSESSED"},
+        "height_floor": {"applied": False},
         "height": {"applied": False},
     }
 
@@ -282,23 +335,33 @@ def space_driven_embryo_prefit(
     current_min_y = float(np.quantile(body_y, 0.02))
     current_max_y = float(np.quantile(body_y, 0.98))
 
-    shell_required = None
+    min_thickness = None
     if minimum_thickness_mm is not None and np.isfinite(minimum_thickness_mm) and float(minimum_thickness_mm) > 0:
-        shell_required = float(minimum_thickness_mm)
-        if cement_gap_mm is not None and np.isfinite(cement_gap_mm) and float(cement_gap_mm) > 0:
+        min_thickness = float(minimum_thickness_mm)
+
+    if inner_envelope_mesh is not None:
+        envelope_mesh = inner_envelope_mesh
+        shell_required = min_thickness
+        envelope_source = "ACTUAL_BLOCKOUT_GAP_INTAGLIO_PREVIEW"
+    else:
+        envelope_mesh = support_mesh
+        shell_required = min_thickness
+        if shell_required is not None and cement_gap_mm is not None and np.isfinite(cement_gap_mm) and float(cement_gap_mm) > 0:
             shell_required += float(cement_gap_mm)
+        envelope_source = "PREP_SUPPORT_PLUS_CEMENT_GAP_FALLBACK"
 
-    support_local = np.zeros((0, 3), dtype=float)
-    if support_mesh is not None:
+    envelope_local = np.zeros((0, 3), float)
+    if envelope_mesh is not None:
         crown_top = float(np.quantile(local[:, 2], 0.98))
-        support_local = _support_window_local(support_mesh, frame, margin_z, crown_top)
+        envelope_local = _envelope_window_local(envelope_mesh, frame, margin_z, crown_top)
 
-    support_min_x = support_max_x = support_min_y = support_max_y = None
-    if len(support_local):
-        support_min_x = float(np.quantile(support_local[:, 0], 0.02))
-        support_max_x = float(np.quantile(support_local[:, 0], 0.98))
-        support_min_y = float(np.quantile(support_local[:, 1], 0.02))
-        support_max_y = float(np.quantile(support_local[:, 1], 0.98))
+    env_min_x = env_max_x = env_min_y = env_max_y = env_top = None
+    if len(envelope_local):
+        env_min_x = float(np.quantile(envelope_local[:, 0], 0.02))
+        env_max_x = float(np.quantile(envelope_local[:, 0], 0.98))
+        env_min_y = float(np.quantile(envelope_local[:, 1], 0.02))
+        env_max_y = float(np.quantile(envelope_local[:, 1], 0.98))
+        env_top = float(np.quantile(envelope_local[:, 2], 0.98))
 
     surfaces = proximal_surfaces or {}
     target = None if proximal_target_mm is None else float(proximal_target_mm)
@@ -307,8 +370,8 @@ def space_driven_embryo_prefit(
     mesial_contact = (mesial_face - target) if mesial_face is not None and target is not None else None
     distal_contact = (distal_face + target) if distal_face is not None and target is not None else None
 
-    floor_max_x = None if support_max_x is None or shell_required is None else support_max_x + shell_required
-    floor_min_x = None if support_min_x is None or shell_required is None else support_min_x - shell_required
+    floor_max_x = None if env_max_x is None or shell_required is None else env_max_x + shell_required
+    floor_min_x = None if env_min_x is None or shell_required is None else env_min_x - shell_required
 
     desired_max_x = mesial_contact if mesial_contact is not None else current_max_x
     desired_min_x = distal_contact if distal_contact is not None else current_min_x
@@ -317,8 +380,7 @@ def space_driven_embryo_prefit(
     if floor_min_x is not None:
         desired_min_x = min(desired_min_x, floor_min_x)
 
-    constraint_conflict = bool(desired_min_x >= desired_max_x - 0.20)
-    if not constraint_conflict:
+    if desired_min_x < desired_max_x - 0.20:
         mesial_scale = _side_scale(current_max_x, desired_max_x, center_x, True,
                                     cfg.md_scale_min, cfg.md_scale_max)
         distal_scale = _side_scale(current_min_x, desired_min_x, center_x, False,
@@ -336,28 +398,25 @@ def space_driven_embryo_prefit(
             "desired_max_x_mm": float(desired_max_x),
             "mesial_neighbor_face_x_mm": mesial_face,
             "distal_neighbor_face_x_mm": distal_face,
-            "support_floor_min_x_mm": floor_min_x,
-            "support_floor_max_x_mm": floor_max_x,
+            "inner_floor_min_x_mm": floor_min_x,
+            "inner_floor_max_x_mm": floor_max_x,
             "whole_crown_translation_mm": 0.0,
         }
     else:
         report["md"] = {
             "applied": False,
             "status": "CONSTRAINT_CONFLICT",
-            "reason": "SUPPORT_ENVELOPE_EXCEEDS_PROXIMAL_SPACE",
+            "reason": "INNER_SHELL_EXCEEDS_PROXIMAL_SPACE",
             "desired_min_x_mm": float(desired_min_x),
             "desired_max_x_mm": float(desired_max_x),
         }
         report["status"] = "REVIEW_REQUIRED"
 
-    # Buccal/lingual have no direct adjacent-tooth contact target in CAD-1.  Use
-    # the preparation/material envelope as a *minimum* width, never shrink the
-    # embryo merely because its library BL width is smaller/larger.
     desired_min_y = current_min_y
     desired_max_y = current_max_y
-    if shell_required is not None and support_min_y is not None and support_max_y is not None:
-        desired_min_y = min(desired_min_y, support_min_y - shell_required)
-        desired_max_y = max(desired_max_y, support_max_y + shell_required)
+    if shell_required is not None and env_min_y is not None and env_max_y is not None:
+        desired_min_y = min(desired_min_y, env_min_y - shell_required)
+        desired_max_y = max(desired_max_y, env_max_y + shell_required)
     buccal_scale = _side_scale(current_max_y, desired_max_y, center_y, True,
                                 cfg.bl_scale_min, cfg.bl_scale_max)
     lingual_scale = _side_scale(current_min_y, desired_min_y, center_y, False,
@@ -365,24 +424,49 @@ def space_driven_embryo_prefit(
     _apply_asymmetric_axis_warp(local, 1, center_y, lingual_scale, buccal_scale, body_weight)
     report["bl"] = {
         "applied": bool(abs(buccal_scale - 1.0) > 1e-6 or abs(lingual_scale - 1.0) > 1e-6),
-        "mode": "SUPPORT_MATERIAL_ENVELOPE_MINIMUM_WIDTH",
+        "mode": "INNER_SHELL_MINIMUM_WIDTH",
         "buccal_scale": buccal_scale,
         "lingual_scale": lingual_scale,
         "desired_min_y_mm": float(desired_min_y),
         "desired_max_y_mm": float(desired_max_y),
     }
 
+    # Ensure enough vertical material above the actual intaglio before antagonist
+    # fitting.  This was missing in the old path and produced the characteristic
+    # OUTER×INTAGLIO ring around the abutment top.
+    current_top = float(np.quantile(local[body, 2], .98))
+    desired_top = current_top
+    if env_top is not None and shell_required is not None:
+        desired_top = max(current_top, env_top + shell_required)
+    if desired_top > current_top + 1e-6:
+        height_now = max(current_top - margin_z, 0.5)
+        height_desired = max(desired_top - margin_z, 0.5)
+        top_scale = float(np.clip(height_desired / height_now,
+                                  cfg.height_scale_min, cfg.height_scale_max))
+        full_z = margin_z + (local[:, 2] - margin_z) * top_scale
+        local[:, 2] += body_weight * (full_z - local[:, 2])
+        report["height_floor"] = {
+            "applied": True,
+            "mode": "ACTUAL_INTAGLIO_TOP_PLUS_MINIMUM_THICKNESS",
+            "scale": top_scale,
+            "current_top_mm": current_top,
+            "desired_top_mm": desired_top,
+            "inner_top_mm": env_top,
+            "minimum_thickness_mm": shell_required,
+        }
+
     current.vertices = _world(local, frame)
     _finite_mesh(current)
 
-    current, support_report = _support_clearance_push(
-        current, support_mesh, frame, margin, shell_required, body_weight, cfg,
+    current, shell_report = enforce_inner_envelope_clearance(
+        current, envelope_mesh, frame, margin, shell_required, config=cfg,
     )
-    report["support_envelope"] = {
-        **support_report,
-        "minimum_thickness_mm": None if minimum_thickness_mm is None else float(minimum_thickness_mm),
+    report["inner_shell"] = {
+        **shell_report,
+        "source": envelope_source,
+        "minimum_thickness_mm": min_thickness,
         "cement_gap_mm": None if cement_gap_mm is None else float(cement_gap_mm),
-        "cement_gap_included": bool(cement_gap_mm is not None and np.isfinite(cement_gap_mm) and float(cement_gap_mm) > 0),
+        "actual_intaglio_preview_used": bool(inner_envelope_mesh is not None),
     }
 
     if antagonist_surface is not None and occlusal_target_mm is not None:
@@ -404,8 +488,7 @@ def space_driven_embryo_prefit(
                 crown_height = max(top - margin_z, 0.5)
                 scale = float(np.clip((crown_height + delta) / crown_height,
                                       cfg.height_scale_min, cfg.height_scale_max))
-                height_above = MarginCurtain(margin, frame.z).axial_above(current.vertices)
-                weight = _smoothstep01(height_above / max(float(cfg.body_transition_mm), 1e-6))
+                weight, _height = _body_weight(current, frame, margin, cfg.body_transition_mm)
                 full_z = margin_z + (local[:, 2] - margin_z) * scale
                 local[:, 2] += weight * (full_z - local[:, 2])
                 current.vertices = _world(local, frame)
