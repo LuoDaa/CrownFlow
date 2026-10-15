@@ -31,6 +31,66 @@ function stageOf(stages, name) {
   return (stages || []).find((stage) => stage?.stage === name) || null;
 }
 
+function latestStageOf(stages, names) {
+  const accepted = new Set(names);
+  return [...(stages || [])].reverse().find((stage) => accepted.has(stage?.stage)) || null;
+}
+
+function threeHardConstraintFailures(candidate, eligibility) {
+  const stages = candidate?.payload?.stages || [];
+  const failures = [];
+
+  // 1) Margin：最终外冠必须保留整圈颈缘硬边界，优先检查所有后续 refit 的最后一次结果。
+  const cervical = latestStageOf(stages, [
+    "CERVICAL_REFIT_FINAL",
+    "CERVICAL_REFIT_AFTER_SHELL",
+    "CERVICAL_REFIT_AFTER_HEIGHT",
+    "CERVICAL_FIT",
+  ]);
+  if (!cervical || cervical.status !== "PASS_ENGINEERING") {
+    failures.push(`Margin:${cervical?.reason || cervical?.status || "NOT_ASSESSED"}`);
+  } else {
+    const coverage = cervical.full_loop_coverage;
+    if (coverage && (
+      Number(coverage.within_0_05mm_fraction ?? 1) < 0.98
+      || Number(coverage.uncovered_samples ?? 0) > 0
+    )) {
+      failures.push("Margin:FULL_LOOP_COVERAGE_NOT_REACHED");
+    }
+    if (Number(cervical.after_mm?.p95 ?? 0) > 0.05 + 1e-9) {
+      failures.push("Margin:P95_EXCEEDS_0.05MM");
+    }
+  }
+
+  // 2) 邻接：只有真实存在且已确认的邻牙侧才要求接触；ABSENT 侧明确豁免。
+  const confirmedSides = Object.entries(eligibility?.neighbors || {})
+    .filter(([, state]) => state === "CONFIRMED")
+    .map(([side]) => side);
+  if (confirmedSides.length) {
+    const proximal = latestStageOf(stages, ["PROXIMAL_RECHECK_AFTER_SHELL", "PROXIMAL"]);
+    if (!proximal || proximal.status !== "PASS_ENGINEERING") {
+      failures.push(`Proximal:${proximal?.reason || proximal?.status || "NOT_ASSESSED"}`);
+    } else {
+      const physical = proximal.physical_after || {};
+      confirmedSides.forEach((side) => {
+        if (physical?.[side]?.target_reached !== true) {
+          failures.push(`Proximal:${side}:TARGET_NOT_REACHED`);
+        }
+      });
+    }
+  }
+
+  // 3) 咬合：快速基台流程始终要求确认 Bite + 咬合阶段工程通过；不能只生成“看起来放上去”的模板。
+  const occlusal = latestStageOf(stages, ["OCCLUSAL_RECHECK_AFTER_SHELL", "OCCLUSAL"]);
+  if (!eligibility?.bite_confirmed) {
+    failures.push("Occlusion:BITE_NOT_CONFIRMED");
+  } else if (!occlusal || occlusal.status !== "PASS_ENGINEERING") {
+    failures.push(`Occlusion:${occlusal?.reason || occlusal?.status || "NOT_ASSESSED"}`);
+  }
+
+  return failures;
+}
+
 function emitStageResult(onProgress, stage, id, okLabel, progress) {
   if (!stage) return;
   const ok = ["PASS_ENGINEERING", "PLACED"].includes(stage.status);
@@ -179,10 +239,18 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
 
   const payloadStages = candidate?.payload?.stages || [];
   emitStageResult(onProgress, stageOf(payloadStages, "GLOBAL_PREFIT"), "PREFIT_DONE", "患者空间整体适配完成", 68);
-  emitStageResult(onProgress, stageOf(payloadStages, "CERVICAL_FIT"), "CERVICAL_DONE", "Margin 颈缘约束完成", 72);
-  emitStageResult(onProgress, stageOf(payloadStages, "PROXIMAL"), "PROXIMAL_DONE", "邻接形态完成", 76);
-  const occlusalStage = stageOf(payloadStages, "OCCLUSAL") || stageOf(payloadStages, "OCCLUSAL_HEIGHT_PREFIT");
+  emitStageResult(onProgress, latestStageOf(payloadStages, ["CERVICAL_REFIT_FINAL", "CERVICAL_REFIT_AFTER_SHELL", "CERVICAL_REFIT_AFTER_HEIGHT", "CERVICAL_FIT"]), "CERVICAL_DONE", "Margin 颈缘约束完成", 72);
+  emitStageResult(onProgress, latestStageOf(payloadStages, ["PROXIMAL_RECHECK_AFTER_SHELL", "PROXIMAL"]), "PROXIMAL_DONE", "邻接形态完成", 76);
+  const occlusalStage = latestStageOf(payloadStages, ["OCCLUSAL_RECHECK_AFTER_SHELL", "OCCLUSAL"])
+    || stageOf(payloadStages, "OCCLUSAL_HEIGHT_PREFIT");
   emitStageResult(onProgress, occlusalStage, "OCCLUSAL_DONE", "咬合适配完成", 82);
+
+  const hardFailures = threeHardConstraintFailures(candidate, eligibility);
+  if (hardFailures.length) {
+    emit(onProgress, "HARD_CONSTRAINT_BLOCKED", "三个硬约束未全部通过", 84, hardFailures.join("；"));
+    throw new Error(`三个硬约束未全部通过：${hardFailures.join("；")}。候选未发布，请修正病例输入或参数后重新生成。`);
+  }
+  emit(onProgress, "HARD_CONSTRAINTS_PASS", "Margin / 邻接 / 咬合全部通过", 85);
 
   emit(onProgress, "PUBLISH", "发布患者化外冠", 86);
   await adapter.confirmCrownCandidate(designId, candidate.id);
