@@ -100,6 +100,44 @@ def test_cervical_fit_covers_margin_arc_even_when_library_cervix_is_locally_high
     assert np.isfinite(result.vertices).all()
 
 
+def test_cervical_fit_is_idempotent_after_full_loop_is_already_on_margin():
+    margin = _margin(n=96)
+    frame = _frame()
+    first, first_report = cervical_fit_to_margin(_crown(), frame, margin)
+    before_second = np.asarray(first.vertices).copy()
+    before_duplicates = _duplicate_pairs(before_second)
+
+    second, second_report = cervical_fit_to_margin(first, frame, margin)
+
+    assert first_report["status"] == "PASS_ENGINEERING"
+    assert second_report["status"] == "PASS_ENGINEERING"
+    assert second_report["idempotent_noop"] is True
+    assert second_report["duplicate_pairs_before"] == before_duplicates
+    assert second_report["duplicate_pairs_after"] == before_duplicates
+    assert np.allclose(second.vertices, before_second)
+
+
+def test_cervical_refit_after_coronal_shell_edit_never_creates_new_duplicate_pairs():
+    margin = _margin(n=96)
+    frame = _frame()
+    fitted, _ = cervical_fit_to_margin(_crown(), frame, margin)
+    edited = fitted.copy()
+    vertices = np.asarray(edited.vertices).copy()
+    coronal = vertices[:, 2] > 0.60
+    radial = vertices[:, :2]
+    norm = np.linalg.norm(radial, axis=1)
+    good = coronal & (norm > 1e-8)
+    vertices[good, :2] += 0.25 * radial[good] / norm[good, None]
+    edited.vertices = vertices
+    before_duplicates = _duplicate_pairs(vertices)
+
+    result, report = cervical_fit_to_margin(edited, frame, margin)
+
+    assert report["duplicate_pairs_after"] <= before_duplicates
+    assert report["duplicate_guard"]["policy"] == "BACKTRACK_INSTEAD_OF_ABORT"
+    assert np.isfinite(result.vertices).all()
+
+
 def test_global_prefit_expands_md_width_between_two_neighbors():
     mesh = _crown()
     margin = _margin()
@@ -123,6 +161,7 @@ def test_global_prefit_expands_md_width_between_two_neighbors():
 
     assert report["md"]["applied"]
     assert after_x > before_x
+    assert report["md"]["whole_crown_translation_mm"] == 0.0
     assert np.max(np.linalg.norm(after - before, axis=1)) > 0.05
     assert np.isfinite(result.vertices).all()
 
