@@ -10,7 +10,7 @@ from ..geometry.insertion import AxisStatus, InsertionAxisResult, solve_insertio
 from ..geometry.intaglio import BlockoutPolicy, GapFieldParams, apply_gap_field, build_blockout
 from ..geometry.boolean import require_exact_boolean_backend
 from ..geometry.qc import build_qc
-from ..geometry.nonplanar_crown import build_nonplanar_crown, fitting_support_above_margin
+from ..geometry.nonplanar_crown import build_nonplanar_crown, fitting_support_above_margin, MarginCurtain
 from ..geometry.manufacturing_qc import audit_manufacturing
 
 
@@ -47,15 +47,38 @@ def _design_mode(params: dict) -> bool:
     return str(params.get("quality_mode", "DESIGN")).upper().startswith("DESIGN")
 
 
+def _engineering_shell_requirement(outer, params):
+    """Return outer-to-intaglio separation and its provenance.
+
+    A confirmed minimum thickness is authoritative.  If it is absent we still
+    need a small *topological* separation to prevent OUTER×INTAGLIO surfaces from
+    occupying the same volume; that derived value is explicitly not a clinical
+    thickness target.
+    """
+    value = params.get("minimum_thickness_mm")
+    if value is not None:
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = None
+    if value is not None and np.isfinite(value) and value > 0:
+        return value, "CONFIRMED_MINIMUM_THICKNESS"
+    edges = np.asarray(getattr(outer, "edges_unique_length", []), float)
+    edges = edges[np.isfinite(edges) & (edges > 1e-8)]
+    median_edge = float(np.median(edges)) if len(edges) else 0.06
+    derived = float(np.clip(2.0 * median_edge, 0.12, 0.30))
+    return derived, "DERIVED_TOPOLOGY_SEPARATION_NOT_CLINICAL_THICKNESS"
+
+
 def finalize_crown(outer_path: Path, support_path: Path, final_path: Path, cutter_path: Path,
                    margin_points, insertion_axis, params: dict, *, prepared_support=None,
                    support_contract=None, protected_surfaces=()):
     """Build intaglio + shared 3D Margin seam and return a final crown artifact.
 
-    DESIGN mode is intentionally review-oriented: watertight/shared-seam/nonmanifold/
-    winding/degenerate failures remain hard failures, while exported self-intersection
-    findings are preserved as explicit warnings so engineering 3D review can continue.
-    STRICT mode keeps self-intersection findings blocking.
+    Before Boolean/stitch, the actual blockout+gap cutter is treated as an inner
+    spatial envelope.  The external crown is expanded (never the intaglio) if it
+    is too small to contain that envelope.  This prevents the former mid-body /
+    occlusal OUTER×INTAGLIO intersection ring from reaching the stitch stage.
     """
     require_exact_boolean_backend()
     indication = params.get("indication")
@@ -135,9 +158,22 @@ def finalize_crown(outer_path: Path, support_path: Path, final_path: Path, cutte
         lower = np.isclose(cavity_z, cavity_z.min(), atol=1e-7, rtol=0)
         cutter.vertices[lower] -= closure_extension * direction
 
+    # Full-body shell guard.  Previous code corrected only a ~2mm cervical band,
+    # while real failures were concentrated 3-7mm above Margin around the abutment
+    # top.  The actual cutter is the inner truth, so move only the outer surface.
+    from ..geometry.crown_outer.space_morph import enforce_inner_envelope_clearance
+    curtain = MarginCurtain(margin_points, insertion_axis)
+    shell_required, shell_source = _engineering_shell_requirement(outer, params)
+    outer, shell_guard = enforce_inner_envelope_clearance(
+        outer, cutter, curtain.frame, margin_points, shell_required,
+    )
+    shell_guard["requirement_source"] = shell_source
+    shell_guard["clinical_thickness_claim"] = shell_source == "CONFIRMED_MINIMUM_THICKNESS"
+
     blockout_diag = blockout.as_dict()
     blockout_diag["fitting_domain"] = fitting_domain
     blockout_diag["cavity_lower_closure_extension_mm"] = closure_extension
+    blockout_diag["outer_shell_space_guard"] = shell_guard
 
     quality_mode = params.get("quality_mode", "DESIGN")
     design_mode = _design_mode(params)
@@ -210,11 +246,13 @@ def finalize_crown(outer_path: Path, support_path: Path, final_path: Path, cutte
             prepared_support.report["virtual_cap_face_ids"] if prepared_support else ()
         ),
     )
+    qc["OuterShellSpaceGuard"] = shell_guard
 
     design_warnings = list(built.report.get("stitch_warnings") or [])
     if self_intersection_flag:
         design_warnings.append("EXPORTED_SELF_INTERSECTION_REVIEW_REQUIRED")
-    # Preserve order while removing duplicates.
+    if (shell_guard.get("audit_after") or {}).get("status") == "REVIEW_REQUIRED":
+        design_warnings.append("INNER_SHELL_SPACE_CONSTRAINT_REVIEW_REQUIRED")
     design_warnings = list(dict.fromkeys(design_warnings))
     qc["final_acceptance"] = {
         "status": "DESIGN_READY" if design_mode else "STRICT_VERIFIED",
