@@ -52,7 +52,9 @@ jobs:
       - name: Compile backend
         run: python -m compileall -q app tests
       - name: Space-driven embryo regression
-        run: pytest tests/unit/geometry/test_space_driven_embryo.py -q
+        run: |
+          pytest tests/unit/geometry/test_space_driven_embryo.py -q
+          pytest tests/unit/geometry/test_space_contact_patient_envelope.py -q
       - name: Margin and occlusion regressions
         run: |
           pytest tests/unit/geometry/test_patient_adaptation.py -q
