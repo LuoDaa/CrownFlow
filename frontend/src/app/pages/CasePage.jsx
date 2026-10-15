@@ -84,9 +84,15 @@ export default function CasePage({ wf }) {
   const runFastGeneration = async () => {
     setFastBusy(true); setFastMsg("正在执行 CAD 1.0：邻接形态 → 咬合高度/凹凸 → 内冠 → QC…");
     try {
-      await generateAbutmentOrder({ designId: wf.design.id, params: wf.params });
-      setFastMsg("基台冠已自动生成并完成内冠/QC，正在打开最终检查。");
+      const result = await generateAbutmentOrder({ designId: wf.design.id, params: wf.params });
       await wf.resumeDesign(wf.design.id, wf.caseId);
+      if (result?.final) {
+        setFastMsg(result.warnings?.length
+          ? `牙冠已生成；检查项已降级为提示：${result.warnings.join("；")}`
+          : "基台冠已自动生成并完成内冠/QC，正在打开最终检查。");
+      } else {
+        setFastMsg(`外冠候选已生成并已进入 3D，可继续检查/微调。内冠或 QC 暂未完成${result?.warnings?.length ? `：${result.warnings.join("；")}` : ""}`);
+      }
     } catch (error) {
       setFastMsg(`自动生成停止：${error.message}`);
     } finally { setFastBusy(false); }
