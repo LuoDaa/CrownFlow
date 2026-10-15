@@ -26,6 +26,7 @@ from .zones import build_crown_zones
 class AdaptationConfig:
     cervical_band_mm: float = 1.20
     cervical_hard_band_mm: float = 0.22
+    cervical_hard_weight: float = 0.985
     body_transition_mm: float = 1.60
     md_scale_min: float = 0.72
     md_scale_max: float = 1.32
@@ -66,6 +67,68 @@ def _finite_mesh(mesh) -> None:
         raise ValueError("冠形网格没有有效顶点")
     if not np.isfinite(vertices).all():
         raise ValueError("冠形适配产生 NaN/Inf，已中止")
+
+
+def _duplicate_pair_count(points, tolerance=1e-8) -> int:
+    points = np.asarray(points, dtype=float)
+    if not len(points):
+        return 0
+    return int(len(cKDTree(points).query_pairs(float(tolerance))))
+
+
+def _closest_points_on_margin_curve(points_local, margin_local):
+    """Continuous closest points on the *segments* of the closed Margin loop.
+
+    The old implementation snapped every cervical vertex to the nearest sampled
+    Margin vertex.  Several crown vertices could therefore receive exactly the
+    same target and collapse into duplicate vertices.  Segment projection gives a
+    continuous target (segment id + interpolation parameter) and preserves the 3D
+    Margin height by interpolating the full XYZ segment, while proximity is chosen
+    in the patient-frame XY plane.
+    """
+    points = np.asarray(points_local, dtype=float)
+    loop = np.asarray(margin_local, dtype=float)
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("颈缘待适配点必须是 Nx3")
+    if loop.ndim != 2 or loop.shape[1] != 3 or len(loop) < 3:
+        raise ValueError("Margin 必须至少包含 3 个三维点")
+    if not np.isfinite(points).all() or not np.isfinite(loop).all():
+        raise ValueError("颈缘或 Margin 含 NaN/Inf")
+
+    a = loop
+    b = np.roll(loop, -1, axis=0)
+    delta = b - a
+    delta_xy = delta[:, :2]
+    denom = np.einsum("ij,ij->i", delta_xy, delta_xy)
+    valid_segments = denom > 1e-18
+    if not np.any(valid_segments):
+        raise ValueError("Margin 全部由退化线段组成")
+
+    safe = np.where(valid_segments, denom, 1.0)
+    targets = np.empty_like(points)
+    segment_ids = np.empty(len(points), dtype=int)
+    parameters = np.empty(len(points), dtype=float)
+
+    # Chunking avoids a large temporary tensor on dense library meshes.
+    for start in range(0, len(points), 1024):
+        stop = min(start + 1024, len(points))
+        p = points[start:stop]
+        rel = p[:, None, :2] - a[None, :, :2]
+        t = np.einsum("nsi,si->ns", rel, delta_xy) / safe[None, :]
+        t = np.clip(t, 0.0, 1.0)
+        projected_xy = a[None, :, :2] + t[:, :, None] * delta_xy[None, :, :]
+        d2 = np.sum((p[:, None, :2] - projected_xy) ** 2, axis=2)
+        d2[:, ~valid_segments] = np.inf
+        ids = np.argmin(d2, axis=1)
+        rows = np.arange(len(p))
+        chosen_t = t[rows, ids]
+        targets[start:stop] = a[ids] + chosen_t[:, None] * delta[ids]
+        segment_ids[start:stop] = ids
+        parameters[start:stop] = chosen_t
+
+    if not np.isfinite(targets).all():
+        raise ValueError("Margin 曲线投影产生非有限目标")
+    return targets, segment_ids, parameters
 
 
 def _neighbor_face_x(surface, frame, side: str) -> float | None:
@@ -205,67 +268,92 @@ def global_patient_prefit(mesh, frame, margin, *, proximal_surfaces=None,
 
 
 def cervical_fit_to_margin(mesh, frame, margin, *, config: AdaptationConfig | None = None):
-    """Pull the template cervical rim onto the confirmed patient Margin.
+    """Pull the template cervical seam onto the confirmed patient Margin.
 
-    Only the outer rim portion of the cervical band is moved strongly.  Interior
-    cap vertices are excluded by a radial test, avoiding the historical failure
-    mode where a closed library cap was collapsed toward the Margin loop.
+    Targets are continuous projections onto Margin *segments*, never discrete
+    Margin samples.  The bottom seam is fitted almost completely while a wider
+    emergence band blends the displacement out.  Keeping a tiny fraction of the
+    source position in the hard band avoids many-to-one collapse on pathological
+    vertical columns while still bringing the seam to clinical-scale proximity.
     """
     cfg = config or AdaptationConfig()
+    if not (0.0 < cfg.cervical_hard_weight < 1.0):
+        raise ValueError("cervical_hard_weight 必须位于 (0,1)")
     _finite_mesh(mesh)
     current = mesh.copy()
     vertices = np.asarray(current.vertices, dtype=float)
     local = _local(vertices, frame)
     margin_local = _local(margin, frame)
     center = np.mean(margin_local[:, :2], axis=0)
-    mxy = margin_local[:, :2] - center
-    mtheta = np.arctan2(mxy[:, 1], mxy[:, 0])
-    mradius = np.linalg.norm(mxy, axis=1)
 
     height = MarginCurtain(margin, frame.z).axial_above(vertices)
     band = np.asarray((height >= -0.15) & (height <= cfg.cervical_band_mm), bool)
     vxy = local[:, :2] - center
-    vtheta = np.arctan2(vxy[:, 1], vxy[:, 0])
     vradius = np.linalg.norm(vxy, axis=1)
 
-    # Nearest angular Margin sample; closed-loop angular distance.
-    diff = np.abs(np.angle(np.exp(1j * (vtheta[:, None] - mtheta[None, :]))))
-    nearest = np.argmin(diff, axis=1)
-    target_local = margin_local[nearest]
-    target_radius = mradius[nearest]
+    target_local, segment_ids, segment_t = _closest_points_on_margin_curve(local, margin_local)
+    target_radius = np.linalg.norm(target_local[:, :2] - center, axis=1)
     rim = band & (vradius >= np.maximum(0.40 * target_radius, target_radius - 2.0))
-
     if not np.any(rim):
         return current, {"stage": "CERVICAL_FIT", "status": "REVIEW_REQUIRED", "reason": "NO_CERVICAL_RIM"}
 
-    # Hard fit at the bottom, smooth emergence transition above it.
+    seam = rim & (height <= cfg.cervical_hard_band_mm)
+    if int(seam.sum()) < 8:
+        rim_ids = np.flatnonzero(rim)
+        order = rim_ids[np.argsort(height[rim_ids])]
+        seam[order[:max(8, int(np.ceil(len(order) * 0.20)))]] = True
+
+    # Transition band: strong near the Margin, smoothly vanishing coronally.
     h = np.clip(height / max(cfg.cervical_band_mm, 1e-6), 0.0, 1.0)
     weight = (1.0 - _smoothstep01(h)) ** 1.25
-    weight[height <= cfg.cervical_hard_band_mm] = 1.0
     weight *= rim.astype(float)
+    # Near-full rather than exact 1.0 snap: <0.02 residual for a 1 mm source gap,
+    # but distinct source vertices stay distinct even if projections coincide.
+    weight[seam] = cfg.cervical_hard_weight
 
-    before_tree = cKDTree(np.asarray(margin, dtype=float))
-    before_distance = before_tree.query(vertices[rim])[0]
-    desired = local.copy()
-    desired[rim] = target_local[rim]
-    local += weight[:, None] * (desired - local)
+    tree = cKDTree(np.asarray(margin, dtype=float))
+    before_seam = tree.query(vertices[seam])[0]
+    before_band = tree.query(vertices[rim])[0]
+    duplicates_before = _duplicate_pair_count(vertices)
+
+    local += weight[:, None] * (target_local - local)
     current.vertices = _world(local, frame)
     _finite_mesh(current)
 
-    after_distance = before_tree.query(np.asarray(current.vertices)[rim])[0]
+    duplicates_after = _duplicate_pair_count(current.vertices)
+    if duplicates_after > duplicates_before:
+        raise ValueError(
+            f"CERVICAL_FIT 产生新的重合顶点（{duplicates_before} → {duplicates_after}），已中止"
+        )
+
+    after_vertices = np.asarray(current.vertices)
+    after_seam = tree.query(after_vertices[seam])[0]
+    after_band = tree.query(after_vertices[rim])[0]
     report = {
         "stage": "CERVICAL_FIT",
         "status": "PASS_ENGINEERING",
         "rim_vertex_count": int(rim.sum()),
+        "seam_vertex_count": int(seam.sum()),
+        "duplicate_pairs_before": duplicates_before,
+        "duplicate_pairs_after": duplicates_after,
+        "projection": "continuous_closed_margin_segment_xy_full_xyz_interpolation",
+        "segment_count_used": int(len(np.unique(segment_ids[seam]))),
+        "segment_t_range": [float(np.min(segment_t[seam])), float(np.max(segment_t[seam]))],
+        # `before_mm/after_mm` intentionally describe the actual cervical seam.
         "before_mm": {
-            "median": float(np.median(before_distance)),
-            "p95": float(np.quantile(before_distance, 0.95)),
-            "max": float(np.max(before_distance)),
+            "median": float(np.median(before_seam)),
+            "p95": float(np.quantile(before_seam, 0.95)),
+            "max": float(np.max(before_seam)),
         },
         "after_mm": {
-            "median": float(np.median(after_distance)),
-            "p95": float(np.quantile(after_distance, 0.95)),
-            "max": float(np.max(after_distance)),
+            "median": float(np.median(after_seam)),
+            "p95": float(np.quantile(after_seam, 0.95)),
+            "max": float(np.max(after_seam)),
+        },
+        "transition_band_mm": {
+            "before_median": float(np.median(before_band)),
+            "after_median": float(np.median(after_band)),
+            "after_p95": float(np.quantile(after_band, 0.95)),
         },
     }
     return current, report
