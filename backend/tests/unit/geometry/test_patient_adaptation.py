@@ -24,25 +24,61 @@ def _margin(rx=2.5, ry=2.0, z=0.0, n=96):
 
 
 def _crown():
-    # A closed tapered crown-like body with a deliberately undersized cervical base.
-    mesh = trimesh.creation.cone(radius=2.0, height=6.0, sections=96)
-    mesh.apply_translation([0.0, 0.0, 0.0])
-    return mesh
+    # Multi-ring closed crown-like fixture.  The old cone fixture only contained
+    # one cervical ring + one apex, so a body-weighted global prefit could report a
+    # valid transform while having no intermediate side-wall vertices to move.
+    profile = np.array([
+        [0.0, 0.0],
+        [1.95, 0.0],
+        [2.05, 0.35],
+        [2.15, 1.20],
+        [2.30, 2.80],
+        [2.20, 4.30],
+        [1.65, 5.80],
+        [0.0, 6.00],
+    ])
+    return trimesh.creation.revolve(profile, sections=96)
 
 
-def test_cervical_fit_moves_outer_rim_toward_margin():
+def _duplicate_pairs(vertices, tol=1e-8):
+    from scipy.spatial import cKDTree
+    return len(cKDTree(np.asarray(vertices)).query_pairs(tol))
+
+
+def test_cervical_fit_moves_outer_rim_toward_margin_without_collapsing_vertices():
     mesh = _crown()
     margin = _margin()
     frame = _frame()
 
     before = np.asarray(mesh.vertices).copy()
+    before_duplicates = _duplicate_pairs(before)
     result, report = cervical_fit_to_margin(mesh, frame, margin)
 
     assert report["status"] == "PASS_ENGINEERING"
     assert report["rim_vertex_count"] > 0
+    assert report["seam_vertex_count"] > 0
     assert report["after_mm"]["median"] < report["before_mm"]["median"]
+    assert report["after_mm"]["p95"] <= 0.05
+    assert report["duplicate_pairs_after"] == report["duplicate_pairs_before"]
+    assert _duplicate_pairs(result.vertices) == before_duplicates
     assert np.isfinite(result.vertices).all()
     assert not np.allclose(before, result.vertices)
+
+
+def test_cervical_fit_uses_continuous_margin_segments_not_discrete_sample_snap():
+    mesh = _crown()
+    # Deliberately sparse loop: discrete nearest-sample snapping would make many
+    # crown vertices share one target.  Continuous segment projection must not.
+    margin = _margin(n=20)
+    frame = _frame()
+
+    result, report = cervical_fit_to_margin(mesh, frame, margin)
+
+    assert report["projection"].startswith("continuous_closed_margin_segment")
+    assert report["segment_count_used"] > 4
+    assert report["duplicate_pairs_after"] == report["duplicate_pairs_before"]
+    assert report["after_mm"]["p95"] <= 0.05
+    assert np.isfinite(result.vertices).all()
 
 
 def test_global_prefit_expands_md_width_between_two_neighbors():
@@ -57,16 +93,19 @@ def test_global_prefit_expands_md_width_between_two_neighbors():
     distal.apply_translation([-3.4, 0.0, 3.0])
     surfaces = {"mesial": FitSurface(mesial), "distal": FitSurface(distal)}
 
-    before_x = np.ptp(np.asarray(mesh.vertices)[:, 0])
+    before = np.asarray(mesh.vertices).copy()
+    before_x = np.ptp(before[:, 0])
     result, report = global_patient_prefit(
         mesh, frame, margin,
         proximal_surfaces=surfaces,
         proximal_target_mm=0.05,
     )
-    after_x = np.ptp(np.asarray(result.vertices)[:, 0])
+    after = np.asarray(result.vertices)
+    after_x = np.ptp(after[:, 0])
 
     assert report["md"]["applied"]
     assert after_x > before_x
+    assert np.max(np.linalg.norm(after - before, axis=1)) > 0.05
     assert np.isfinite(result.vertices).all()
 
 
