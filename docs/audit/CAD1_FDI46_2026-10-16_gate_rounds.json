@@ -1,0 +1,76 @@
+{
+ "design": "2ef7cf7d2ac6401190031811f0ec0ec1",
+ "fdi": 46,
+ "rounds": [
+  {
+   "round": 1,
+   "candidate": "4d94853294f049aeb9f16500675dc6cd",
+   "wall_s": 63.4,
+   "outer_sha16": "a1677493d9e9d973",
+   "fails": [
+    "Proximal:CONSTRAINT_CONFLICT",
+    "Occlusion:None"
+   ],
+   "stage_status": {
+    "INTAGLIO_SPACE_PREVIEW": "READY",
+    "GLOBAL_PREFIT": "PASS_ENGINEERING",
+    "CERVICAL_FIT": "PASS_ENGINEERING",
+    "PROXIMAL": "CONSTRAINT_CONFLICT",
+    "CERVICAL_LOCK_AFTER_PROXIMAL": "PASS_ENGINEERING",
+    "INNER_SHELL_RECHECK": "APPLIED",
+    "CERVICAL_LOCK_AFTER_SHELL": "PASS_ENGINEERING",
+    "SHELL_REPAIR_DECISION": "SKIPPED_SMALL_LOCAL_CHANGE",
+    "INNER_SHELL_POST_REPAIR_AUDIT": "SKIPPED",
+    "INNER_SHELL_FINAL_AUDIT": "REVIEW_REQUIRED"
+   }
+  },
+  {
+   "round": 2,
+   "candidate": "08972fc8d47b4f24812e71a280272e75",
+   "wall_s": 74.8,
+   "outer_sha16": "ff74f1ec692856af",
+   "fails": [
+    "Margin:P95_EXCEEDS_0.05MM",
+    "Proximal:CONSTRAINT_CONFLICT",
+    "Occlusion:None"
+   ],
+   "stage_status": {
+    "INTAGLIO_SPACE_PREVIEW": "READY",
+    "GLOBAL_PREFIT": "PASS_ENGINEERING",
+    "CERVICAL_FIT": "PASS_ENGINEERING",
+    "PROXIMAL": "CONSTRAINT_CONFLICT",
+    "CERVICAL_LOCK_AFTER_PROXIMAL": "PASS_ENGINEERING",
+    "INNER_SHELL_RECHECK": "APPLIED",
+    "CERVICAL_LOCK_AFTER_SHELL": "PASS_ENGINEERING",
+    "SHELL_REPAIR_DECISION": "SKIPPED_SMALL_LOCAL_CHANGE",
+    "INNER_SHELL_POST_REPAIR_AUDIT": "SKIPPED",
+    "INNER_SHELL_FINAL_AUDIT": "REVIEW_REQUIRED"
+   }
+  },
+  {
+   "round": 3,
+   "candidate": "66e2a4197b7d477f9a254426577380f0",
+   "wall_s": 87.0,
+   "outer_sha16": "5bbb7863f4fb8ba0",
+   "fails": [
+    "Margin:P95_EXCEEDS_0.05MM",
+    "Proximal:CONSTRAINT_CONFLICT",
+    "Occlusion:None"
+   ],
+   "stage_status": {
+    "INTAGLIO_SPACE_PREVIEW": "READY",
+    "GLOBAL_PREFIT": "PASS_ENGINEERING",
+    "CERVICAL_FIT": "PASS_ENGINEERING",
+    "PROXIMAL": "CONSTRAINT_CONFLICT",
+    "CERVICAL_LOCK_AFTER_PROXIMAL": "PASS_ENGINEERING",
+    "INNER_SHELL_RECHECK": "APPLIED",
+    "CERVICAL_LOCK_AFTER_SHELL": "PASS_ENGINEERING",
+    "SHELL_REPAIR_DECISION": "SKIPPED_SMALL_LOCAL_CHANGE",
+    "INNER_SHELL_POST_REPAIR_AUDIT": "SKIPPED",
+    "INNER_SHELL_FINAL_AUDIT": "REVIEW_REQUIRED"
+   }
+  }
+ ],
+ "audit_new_bytes": 26683,
+ "audit_file": "D:\\code\\牙冠自动生成\\CrownFlow_Complete_FullProject\\CrownFlow\\data\\cases\\61d3a6abd58c42c3b8bf9df353733ac6\\2ef7cf7d2ac6401190031811f0ec0ec1_generation_audit.jsonl"
+}
