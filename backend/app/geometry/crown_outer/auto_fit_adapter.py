@@ -32,7 +32,10 @@ OCCLUSAL_CONTACT_FRACTION = 0.22
 PROXIMAL_MAX_REACH_MM = 3.5
 OCCLUSAL_MAX_REACH_MM = 4.5
 PER_PASS_MAX_MOVE_MM = 1.50
-MAX_PASSES = 3
+# Height-seeking may require several safe partial passes.  Five passes lets the
+# solver accept a non-flipping partial raise (for example alpha=.65) and then
+# continue toward the antagonist instead of demanding one violent move.
+MAX_PASSES = 5
 ALPHAS = (1.0, 0.65, 0.4, 0.25, 0.125)
 
 
@@ -254,8 +257,17 @@ def _desired_targets(reference, ids, cp, fids, signed, distance, valid,
 
 
 def _metric_value(report, stage, which):
-    key = "target_error" if stage == "PROXIMAL" else "deficit"
-    block = report.get(key) if isinstance(report, dict) else None
+    """Metric used to decide whether a trial moves the crown toward its target.
+
+    ``deficit=max(0,target-signed)`` is zero when a crown is *too far* from the
+    antagonist, so it cannot recognize a successful height-seeking move.  The
+    symmetric target error works for both collision relief and under-height seek:
+    every accepted partial pass must reduce |signed-target|.
+    """
+    block = report.get("target_error") if isinstance(report, dict) else None
+    if not block:
+        # Compatibility fallback for old/partial reports.
+        block = report.get("deficit") if isinstance(report, dict) else None
     if not block:
         return None
     value = block.get(which)
