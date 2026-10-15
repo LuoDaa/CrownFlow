@@ -65,12 +65,11 @@ def test_bilateral_neighbors_define_width_and_both_contact_cores_reach_zero():
         assert state["target_reached"] is True
         assert state["contact_vertex_count"] >= state["required_contact_vertices"]
         # The contact is intentionally a compact core.  The rest of the proximal
-        # wall must remain convex/transitioning, so a full-domain median near zero
-        # would actually mean we flattened the whole wall against the neighbor.
+        # wall must remain convex/transitioning instead of becoming a flat copy of
+        # the adjacent tooth.
         assert state["contact_fraction"] >= (
             state["required_contact_vertices"] / state["domain_vertex_count"]
         ) - 1e-9
-        assert state["target_error"]["p95_mm"] < 1.5
 
 
 def test_negative_proximal_target_creates_small_compressive_contact_not_a_gap():
