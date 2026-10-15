@@ -1,13 +1,18 @@
 """Stable semantic zones for CAD-1 crown deformation.
 
-The AutoFit solvers should not each re-invent what "cervical", "occlusal" and
-"proximal" mean.  This module owns that classification and returns immutable
-vertex masks that can be frozen and reused by proximal/occlusal stages.
+The tooth library supplies the anatomy prior.  This module partitions the placed
+crown into functional regions that survive vertex-only deformation:
 
-Version 1 deliberately preserves the geometric thresholds that were previously
-embedded in ``auto_fit_adapter.fit_domains``.  The important first step is to
-make the semantics explicit and testable; tooth-class / template-authored masks
-can replace the heuristic builder later without changing the solvers.
+* cervical: margin protection / emergence transition;
+* mesial + distal: proximal morphology/contact control;
+* occlusal: antagonist-driven height and relief control;
+* body: anatomy-preserving transition surface.
+
+The v2 defaults are intentionally broader than the legacy masks.  The previous
+very narrow masks often made AutoFit report success while visually leaving the
+library tooth almost unchanged.  Broader semantic zones plus local Laplacian
+falloff let the constraint solver move enough anatomy to matter without turning
+the whole crown into a negative copy of surrounding teeth.
 """
 from __future__ import annotations
 
@@ -18,22 +23,22 @@ import numpy as np
 from ..nonplanar_crown import MarginCurtain
 
 
-ZONE_MODEL_VERSION = "crown_semantic_zones/1"
+ZONE_MODEL_VERSION = "crown_semantic_zones/2"
 
 
 @dataclass(frozen=True)
 class CrownZoneConfig:
-    """Geometry thresholds for the v1 semantic-zone builder.
+    """Geometry thresholds for CAD-1 functional zones.
 
-    Defaults intentionally match the legacy ``fit_domains`` implementation so
-    introducing the zone abstraction does not silently change clinical behavior.
+    These are template/anatomy-domain thresholds, not clinical clearance values.
+    Clearance/contact targets continue to come from the design profile.
     """
 
-    cervical_height_mm: float = 0.4
-    occlusal_height_quantile: float = 0.75
-    occlusal_normal_min: float = 0.35
-    proximal_half_width_fraction: float = 0.6
-    proximal_normal_min: float = 0.1
+    cervical_height_mm: float = 0.50
+    occlusal_height_quantile: float = 0.62
+    occlusal_normal_min: float = -0.05
+    proximal_half_width_fraction: float = 0.45
+    proximal_normal_min: float = -0.10
 
     def validate(self) -> None:
         if not np.isfinite(self.cervical_height_mm) or self.cervical_height_mm < 0:
@@ -105,13 +110,11 @@ class CrownZones:
 
 
 def build_crown_zones(mesh, frame, margin, config: CrownZoneConfig | None = None) -> CrownZones:
-    """Classify one crown mesh in the confirmed patient frame.
+    """Classify a placed crown in the confirmed patient coordinate frame.
 
-    The returned masks are topology-stable: if later solvers only move vertices
-    (without re-meshing), callers may freeze this object and reuse the same
-    vertex IDs through proximal and occlusal stages.
+    The returned masks are topology-stable.  As long as subsequent AutoFit stages
+    move vertices without remeshing, exactly the same vertex ids can be reused.
     """
-
     cfg = config or CrownZoneConfig()
     cfg.validate()
 
@@ -137,8 +140,7 @@ def build_crown_zones(mesh, frame, margin, config: CrownZoneConfig | None = None
     occlusal = np.zeros(len(reference), dtype=bool)
     occlusal_cut = None
     if np.any(non_cervical):
-        occlusal_cut = float(np.quantile(
-            local[non_cervical, 2], cfg.occlusal_height_quantile))
+        occlusal_cut = float(np.quantile(local[non_cervical, 2], cfg.occlusal_height_quantile))
         occlusal = (
             non_cervical
             & (local[:, 2] >= occlusal_cut)
