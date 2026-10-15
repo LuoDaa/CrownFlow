@@ -1,12 +1,12 @@
 """Patient-driven CAD-1 proposals, functional remeasurement and W3 preflight.
 
-Outer-crown geometry is built as a spatially constrained embryo morph:
+The library tooth is only an anatomy embryo.  Live CAD dimensions come from the
+patient's feasible space:
 
-    library embryo -> support/material envelope -> independent proximal side fit
-    -> Margin fit -> proximal contact envelope -> antagonist height envelope
-    -> occlusal refinement -> intaglio/final.
+    intaglio/material envelope -> independent proximal side envelopes -> Margin
+    -> antagonist height/relief -> joint shell/contact recheck -> final crown.
 
-The library supplies topology/anatomical character; patient geometry supplies size.
+QC records review warnings but never silently restores the template baseline.
 """
 import json
 from pathlib import Path
@@ -22,7 +22,11 @@ from ..geometry.nonplanar_crown import fitting_support_above_margin, MarginBuild
 from ..geometry.crown_outer.collar_body_outer import _boundary_loops
 from ..geometry.crown_outer.auto_fit_adapter import FitSurface, fit_stage, fit_domains, measure, surface_crossings
 from ..geometry.crown_outer.patient_adaptation import cervical_fit_to_margin
-from ..geometry.crown_outer.space_morph import space_driven_embryo_prefit
+from ..geometry.crown_outer.space_morph import (
+    space_driven_embryo_prefit,
+    enforce_inner_envelope_clearance,
+    audit_inner_envelope_clearance,
+)
 from ..geometry.crown_outer.space_contact import fit_proximal_envelopes, build_proximal_domains
 from ..geometry.crown_outer.thickness import input_qc
 from .design_dependencies import file_digest, require_current_outer
@@ -125,6 +129,24 @@ def audit_final_context(d, outer_path, final_path, qc):
     }
 
 
+def _proximal_protection(mesh, patches, domains, target):
+    protected = np.zeros(len(mesh.vertices), bool)
+    if target is None:
+        return protected
+    for side, surface in patches.items():
+        if side not in domains:
+            continue
+        _, query = measure(
+            mesh.vertices, domains[side], surface, float(target),
+            kind='PROXIMAL', side=side,
+        )
+        if query is None:
+            continue
+        ids, _, _, signed, _, valid = query
+        protected[ids[valid & (np.abs(signed - float(target)) <= .15)]] = True
+    return protected
+
+
 def propose(d, frame, frame_ref, mode, baseline_path=None):
     if baseline_path is None:
         require_current_outer(d)
@@ -160,7 +182,7 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
         'stages': [],
         'warnings': [],
         'per_side': {},
-        'solver_version': 'space-driven-embryo+local-envelope/3.0',
+        'solver_version': 'space-driven-embryo+actual-intaglio+local-envelope/3.1',
         'material_process_status': 'NOT_ASSESSED',
         'manufacturing_status': 'NOT_PRODUCTION_APPROVED',
         'geometry_frame_revision_id': frame_ref['revision_id'],
@@ -266,10 +288,30 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     min_thickness = profile.get('thickness.minimum_thickness_mm')
     cement_gap = profile.get('intaglio.cement_gap_mm')
 
-    # Space first: support/material envelope + independent mesial/distal dimensions.
+    # Construct the *actual* blockout+gap envelope early.  This is the geometry the
+    # final outer must contain; support-only sizing is merely a fallback.
+    intaglio_preview = None
+    intaglio_preview_path = None
+    try:
+        from .intaglio_preview import build_intaglio_preview
+        intaglio_preview, _preview_blockout, preview_report = build_intaglio_preview(
+            support, margin, axis, parameters,
+        )
+        intaglio_preview_path = prefix.with_name(prefix.name + '_intaglio_preview.stl')
+        save_mesh(intaglio_preview, intaglio_preview_path)
+        report['stages'].append({'stage': 'INTAGLIO_SPACE_PREVIEW', **preview_report})
+    except (ValueError, MarginBuildError) as exc:
+        report['stages'].append({
+            'stage': 'INTAGLIO_SPACE_PREVIEW',
+            'status': 'NOT_ASSESSED',
+            'reason': str(exc),
+        })
+        report['warnings'].append({'stage': 'INTAGLIO_SPACE_PREVIEW', 'reason': str(exc)})
+
     mesh, prefit_report = space_driven_embryo_prefit(
         mesh, frame, margin,
         support_mesh=support,
+        inner_envelope_mesh=intaglio_preview,
         minimum_thickness_mm=min_thickness,
         cement_gap_mm=cement_gap,
         proximal_surfaces=patches,
@@ -279,7 +321,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     prefit_path = prefix.with_name(prefix.name + '_prefit.stl')
     save_mesh(mesh, prefit_path)
 
-    # Margin remains the hard cervical truth after body morphing.
     mesh, cervical_report = cervical_fit_to_margin(mesh, frame, margin)
     report['stages'].append(cervical_report)
     cervical_path = prefix.with_name(prefix.name + '_cervical.stl')
@@ -351,11 +392,10 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
                 raise ValueError('对颌工程预算为 200000 面，请先处理扫描并重新确认')
             occlusal = FitSurface(ant, (-frame.z).tolist())
 
-            # Re-run the space morph with antagonist + support so height growth can
-            # never shrink back through the material envelope.
             mesh, height_report = space_driven_embryo_prefit(
                 mesh, frame, margin,
                 support_mesh=support,
+                inner_envelope_mesh=intaglio_preview,
                 minimum_thickness_mm=min_thickness,
                 cement_gap_mm=cement_gap,
                 antagonist_surface=occlusal,
@@ -367,20 +407,12 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
             height_path = prefix.with_name(prefix.name + '_height_prefit.stl')
             save_mesh(mesh, height_path)
 
-            protected = np.zeros(len(mesh.vertices), bool)
+            protected = _proximal_protection(
+                mesh, patches, domains,
+                None if preserve_source == SOURCE_MISSING else float(preserve_target),
+            )
             if preserve_source == SOURCE_MISSING:
                 report['occlusal_protection'] = {'status': 'NOT_ASSESSED', 'reason': 'PROXIMAL_TARGET_UNCONFIRMED'}
-            else:
-                for side, surface in patches.items():
-                    if side not in domains:
-                        continue
-                    _, query = measure(
-                        mesh.vertices, domains[side], surface, float(preserve_target),
-                        kind='PROXIMAL', side=side,
-                    )
-                    if query is not None:
-                        ids, _, _, signed, _, valid = query
-                        protected[ids[valid & (np.abs(signed - float(preserve_target)) <= .15)]] = True
 
             domain_reference = mesh.copy()
             mesh, rep, masks = fit_stage(
@@ -411,6 +443,64 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
             required.append(rep['status'])
             occlusal_path = prefix.with_name(prefix.name + '_occlusal.stl')
             save_mesh(mesh, occlusal_path)
+
+    # Joint hard-space recheck: the final intaglio/material shell has authority over
+    # the template.  If local contact/occlusal refinement made the body too small,
+    # restore physical shell clearance, then re-solve contacts once around it.
+    shell_guard_path = None
+    if intaglio_preview is not None and min_thickness is not None and float(min_thickness) > 0:
+        mesh, shell_rep = enforce_inner_envelope_clearance(
+            mesh, intaglio_preview, frame, margin, float(min_thickness),
+        )
+        report['stages'].append({'stage': 'INNER_SHELL_RECHECK', **shell_rep})
+        shell_changed = int(shell_rep.get('moved_vertices') or 0) > 0
+
+        if shell_changed:
+            mesh, cerv_shell = cervical_fit_to_margin(mesh, frame, margin)
+            report['stages'].append({**cerv_shell, 'stage': 'CERVICAL_REFIT_AFTER_SHELL'})
+
+            if patches and proximal_target is not None:
+                mesh, prox2, domains = fit_proximal_envelopes(
+                    mesh, frame, margin, patches, float(proximal_target), max_passes=2,
+                )
+                report['stages'].append({**prox2, 'stage': 'PROXIMAL_RECHECK_AFTER_SHELL'})
+
+            if occlusal is not None and occlusal_target is not None:
+                protected = _proximal_protection(
+                    mesh, patches, domains,
+                    None if preserve_source == SOURCE_MISSING else float(preserve_target),
+                )
+                ref2 = mesh.copy()
+                mesh, occ2, masks2 = fit_stage(
+                    mesh, frame, margin,
+                    {'occlusal': occlusal}, {'occlusal': occlusal_target}, 'OCCLUSAL',
+                    protected=protected, domain_mesh=ref2, max_passes=2,
+                )
+                occl_mask = masks2['occlusal']
+                report['stages'].append({**occ2, 'stage': 'OCCLUSAL_RECHECK_AFTER_SHELL'})
+
+            # Contact/occlusion refinement is soft relative to material existence.
+            # Reassert the shell once more; any resulting contact deviation is then
+            # visible in the final joint metrics rather than as hidden self-crossing.
+            mesh, shell_final = enforce_inner_envelope_clearance(
+                mesh, intaglio_preview, frame, margin, float(min_thickness),
+            )
+            report['stages'].append({'stage': 'INNER_SHELL_FINAL_GUARD', **shell_final})
+            mesh, cerv_final = cervical_fit_to_margin(mesh, frame, margin)
+            report['stages'].append({**cerv_final, 'stage': 'CERVICAL_REFIT_FINAL'})
+
+        shell_audit = audit_inner_envelope_clearance(
+            mesh, intaglio_preview, frame, margin, float(min_thickness),
+        )
+        report['stages'].append({'stage': 'INNER_SHELL_FINAL_AUDIT', **shell_audit})
+        if shell_audit.get('status') != 'PASS_ENGINEERING':
+            report['warnings'].append({
+                'stage': 'INNER_SHELL_FINAL_AUDIT',
+                'reason': 'INNER_SHELL_SPACE_CONSTRAINT_REVIEW_REQUIRED',
+                'audit': shell_audit,
+            })
+        shell_guard_path = prefix.with_name(prefix.name + '_shell_guard.stl')
+        save_mesh(mesh, shell_guard_path)
 
     from ..geometry.crown_outer.deform_gate import deformation_gate
     from ..geometry.nonplanar_crown import MarginCurtain
@@ -515,6 +605,10 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
         'cervical': str(cervical_path),
         **diagnostic_artifacts,
     }
+    if intaglio_preview_path is not None:
+        artifacts['intaglio_preview'] = str(intaglio_preview_path)
+    if shell_guard_path is not None:
+        artifacts['shell_guard'] = str(shell_guard_path)
     if report.get('proximal_asset'):
         artifacts['proximal'] = report['proximal_asset']['path']
     if 'height_path' in locals():
