@@ -107,7 +107,11 @@ def generate_candidate(d,kind):
             'geometry':diagnostics,'repair_stage':'PREP'})
     placement,baseline=initialize_draft_outer(d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
     if kind=='AUTO':
-        frame,ref=frame_from(d);_,report,artifacts=propose(d,frame,ref,state['automatic_mode'],baseline_path=baseline)
+        # AUTO candidate阶段只求外冠。昂贵的内冠 Boolean、厚度/制造 QC 只在
+        # candidate 被采纳且三项空间约束收敛后由 /finalize 执行一次。
+        # 这样自动纠正 2~3 轮时不会重复构建 Final Crown。
+        frame,ref=frame_from(d);_,report,artifacts=propose(
+            d,frame,ref,state['automatic_mode'],baseline_path=baseline,run_w3_preflight=False)
         artifacts['baseline']=str(baseline);report['candidate_kind']='AUTO_FIT_CANDIDATE'
     else:
         report={'type':'template_draft','candidate_kind':'TEMPLATE_ONLY_DRAFT','status':'TEMPLATE_REVIEW_REQUIRED',
