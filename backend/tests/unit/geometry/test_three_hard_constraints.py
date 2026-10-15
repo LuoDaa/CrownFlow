@@ -27,10 +27,12 @@ def _margin(rx=2.5, ry=2.0, n=96):
 
 
 def _crown():
-    profile = np.array([
-        [0.0, 0.0], [1.95, 0.0], [2.05, 0.35], [2.15, 1.20],
-        [2.30, 2.80], [2.20, 4.30], [1.65, 5.80], [0.0, 6.00],
-    ])
+    z = np.linspace(0.0, 6.0, 24)
+    control_z = np.array([0.0, 0.35, 1.20, 2.80, 4.30, 5.80, 6.00])
+    control_r = np.array([1.95, 2.05, 2.15, 2.30, 2.20, 1.65, 0.0])
+    radius = np.interp(z, control_z, control_r)
+    profile = np.c_[radius, z]
+    profile = np.vstack([[0.0, 0.0], profile])
     return trimesh.creation.revolve(profile, sections=96)
 
 
@@ -60,11 +62,19 @@ def test_patient_side_growth_reaches_continuous_negative_contact_core():
         crown, _frame(), _margin(), {"mesial": FitSurface(neighbor)}, -0.02,
     )
     state = report["physical_after"]["mesial"]
-    assert report["status"] == "PASS_ENGINEERING", report
-    assert state["target_reached"] is True, report
-    assert state["contact_vertex_count"] >= state["required_contact_vertices"], report
-    assert state["largest_connected_contact_vertices"] >= state["required_connected_contact_vertices"], report
-    assert abs(state["signed_median_mm"] - (-0.02)) < 0.20, report
+    diag = {
+        "status": report["status"], "reason": report.get("reason"),
+        "reach": report["large_scale_reach"]["mesial"],
+        "domain": report["domain_quality"]["mesial"],
+        "physical_after": state,
+        "passes": report["passes"],
+        "last_trials": report["trials"][-5:],
+    }
+    assert report["status"] == "PASS_ENGINEERING", diag
+    assert state["target_reached"] is True, diag
+    assert state["contact_vertex_count"] >= state["required_contact_vertices"], diag
+    assert state["largest_connected_contact_vertices"] >= state["required_connected_contact_vertices"], diag
+    assert abs(state["signed_median_mm"] - (-0.02)) < 0.20, diag
     assert np.isfinite(result.vertices).all()
 
 
