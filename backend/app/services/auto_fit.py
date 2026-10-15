@@ -1,4 +1,4 @@
-"""Patient-driven CAD-1 proposals, functional remeasurement and W3 preflight.
+"""Patient-driven CAD-1 proposals, functional remeasurement and optional W3 preflight.
 
 The library tooth is only an anatomy embryo.  Live CAD dimensions come from the
 patient's feasible space:
@@ -147,7 +147,7 @@ def _proximal_protection(mesh, patches, domains, target):
     return protected
 
 
-def propose(d, frame, frame_ref, mode, baseline_path=None):
+def propose(d, frame, frame_ref, mode, baseline_path=None, run_w3_preflight=True):
     if baseline_path is None:
         require_current_outer(d)
     else:
@@ -288,8 +288,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     min_thickness = profile.get('thickness.minimum_thickness_mm')
     cement_gap = profile.get('intaglio.cement_gap_mm')
 
-    # Construct the *actual* blockout+gap envelope early.  This is the geometry the
-    # final outer must contain; support-only sizing is merely a fallback.
     intaglio_preview = None
     intaglio_preview_path = None
     try:
@@ -444,9 +442,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
             occlusal_path = prefix.with_name(prefix.name + '_occlusal.stl')
             save_mesh(mesh, occlusal_path)
 
-    # Joint hard-space recheck: the final intaglio/material shell has authority over
-    # the template.  If local contact/occlusal refinement made the body too small,
-    # restore physical shell clearance, then re-solve contacts once around it.
     shell_guard_path = None
     if intaglio_preview is not None and min_thickness is not None and float(min_thickness) > 0:
         mesh, shell_rep = enforce_inner_envelope_clearance(
@@ -479,9 +474,6 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
                 occl_mask = masks2['occlusal']
                 report['stages'].append({**occ2, 'stage': 'OCCLUSAL_RECHECK_AFTER_SHELL'})
 
-            # Contact/occlusion refinement is soft relative to material existence.
-            # Reassert the shell once more; any resulting contact deviation is then
-            # visible in the final joint metrics rather than as hidden self-crossing.
             mesh, shell_final = enforce_inner_envelope_clearance(
                 mesh, intaglio_preview, frame, margin, float(min_thickness),
             )
@@ -616,43 +608,50 @@ def propose(d, frame, frame_ref, mode, baseline_path=None):
     if 'occlusal_path' in locals():
         artifacts['occlusal'] = str(occlusal_path)
 
-    final_path = prefix.with_name(prefix.name + '_w3_final.stl')
-    cutter_path = prefix.with_name(prefix.name + '_w3_cutter.stl')
-    try:
-        from .contact_measurement import thickness_protection_surfaces
-        protection = thickness_protection_surfaces(d) if parameters.get('enforce_minimum_thickness') else ()
-        _, _, _, result = finalize_crown(
-            outer_path, Path(support_ref['path']), final_path, cutter_path,
-            margin, axis, parameters,
-            prepared_support=prepared_support,
-            support_contract=support_contract,
-            protected_surfaces=protection,
-        )
-        qc = result['w3']['qc']
-        report['w3_preflight'] = {'status': 'CONSTRUCTED_ENGINEERING', 'qc': qc}
+    if run_w3_preflight:
+        final_path = prefix.with_name(prefix.name + '_w3_final.stl')
+        cutter_path = prefix.with_name(prefix.name + '_w3_cutter.stl')
         try:
-            audit_final_context(d, result['w3']['artifact_paths']['outer_surface'], final_path, qc)
-        except (ValueError, HTTPException) as exc:
-            report['warnings'].append({'stage': 'FINAL_QC', 'reason': str(exc)})
-        audit_path = Path(result['w3']['artifact_paths']['manufacturing_qc'])
-        stored = json.loads(audit_path.read_text(encoding='utf-8'))
-        stored['qc'] = qc
-        audit_path.write_text(json.dumps(stored, ensure_ascii=False), encoding='utf-8')
-        report['thickness_audit_status'] = qc['FinalCrownThicknessAudit']['status']
-        if qc['FinalCrownThicknessAudit']['body_thin_face_sample_area_mm2'] > 0:
-            report['warnings'].append({'stage': 'THICKNESS', 'reason': 'ENGINEERING_MINIMUM_THICKNESS_VIOLATED'})
-            report['w3_preflight']['reason'] = 'ENGINEERING_MINIMUM_THICKNESS_VIOLATED'
-            report['status'] = 'REVIEW_REQUIRED'
-        artifacts.update(final=str(final_path), cutter=str(cutter_path), **result['w3']['artifact_paths'])
-    except (ValueError, MarginBuildError) as exc:
+            from .contact_measurement import thickness_protection_surfaces
+            protection = thickness_protection_surfaces(d) if parameters.get('enforce_minimum_thickness') else ()
+            _, _, _, result = finalize_crown(
+                outer_path, Path(support_ref['path']), final_path, cutter_path,
+                margin, axis, parameters,
+                prepared_support=prepared_support,
+                support_contract=support_contract,
+                protected_surfaces=protection,
+            )
+            qc = result['w3']['qc']
+            report['w3_preflight'] = {'status': 'CONSTRUCTED_ENGINEERING', 'qc': qc}
+            try:
+                audit_final_context(d, result['w3']['artifact_paths']['outer_surface'], final_path, qc)
+            except (ValueError, HTTPException) as exc:
+                report['warnings'].append({'stage': 'FINAL_QC', 'reason': str(exc)})
+            audit_path = Path(result['w3']['artifact_paths']['manufacturing_qc'])
+            stored = json.loads(audit_path.read_text(encoding='utf-8'))
+            stored['qc'] = qc
+            audit_path.write_text(json.dumps(stored, ensure_ascii=False), encoding='utf-8')
+            report['thickness_audit_status'] = qc['FinalCrownThicknessAudit']['status']
+            if qc['FinalCrownThicknessAudit']['body_thin_face_sample_area_mm2'] > 0:
+                report['warnings'].append({'stage': 'THICKNESS', 'reason': 'ENGINEERING_MINIMUM_THICKNESS_VIOLATED'})
+                report['w3_preflight']['reason'] = 'ENGINEERING_MINIMUM_THICKNESS_VIOLATED'
+                report['status'] = 'REVIEW_REQUIRED'
+            artifacts.update(final=str(final_path), cutter=str(cutter_path), **result['w3']['artifact_paths'])
+        except (ValueError, MarginBuildError) as exc:
+            report['w3_preflight'] = {
+                'status': 'BLOCKED',
+                'reason': str(exc),
+                'prep_margin_risk': final_construction_risk,
+            }
+            report['warnings'].append({'stage': 'INTAGLIO_FINAL', 'reason': str(exc)})
+            if report['status'] == 'PASS_ENGINEERING':
+                report['status'] = 'REVIEW_REQUIRED'
+    else:
         report['w3_preflight'] = {
-            'status': 'BLOCKED',
-            'reason': str(exc),
-            'prep_margin_risk': final_construction_risk,
+            'status': 'DEFERRED_TO_FINALIZE',
+            'reason': '候选阶段只求解外冠；内冠、布尔连接与最终厚度 QC 在采纳外冠后只执行一次',
         }
-        report['warnings'].append({'stage': 'INTAGLIO_FINAL', 'reason': str(exc)})
-        if report['status'] == 'PASS_ENGINEERING':
-            report['status'] = 'REVIEW_REQUIRED'
+        report['thickness_audit_status'] = 'DEFERRED_TO_FINALIZE'
 
     report['artifact_sha256'] = {key: file_digest(path) for key, path in artifacts.items()}
     return mesh, report, artifacts
