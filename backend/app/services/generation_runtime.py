@@ -29,7 +29,9 @@ from uuid import uuid4
 from ..config import CASE_DIR
 from ..geometry.io import load_mesh, save_mesh
 
-_LOG = logging.getLogger("crownflow.generation")
+# uvicorn.error is visible in the normal backend terminal without requiring an
+# extra logging configuration.  The same events are also persisted as JSONL.
+_LOG = logging.getLogger("uvicorn.error")
 _OBJECT_CACHE = OrderedDict()
 _CACHE_LOCK = threading.Lock()
 _OBJECT_CACHE_LIMIT = 16
