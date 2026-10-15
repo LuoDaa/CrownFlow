@@ -24,9 +24,6 @@ def _margin(rx=2.5, ry=2.0, z=0.0, n=96):
 
 
 def _crown():
-    # Multi-ring closed crown-like fixture.  The old cone fixture only contained
-    # one cervical ring + one apex, so a body-weighted global prefit could report a
-    # valid transform while having no intermediate side-wall vertices to move.
     profile = np.array([
         [0.0, 0.0],
         [1.95, 0.0],
@@ -59,6 +56,7 @@ def test_cervical_fit_moves_outer_rim_toward_margin_without_collapsing_vertices(
     assert report["seam_vertex_count"] > 0
     assert report["after_mm"]["median"] < report["before_mm"]["median"]
     assert report["after_mm"]["p95"] <= 0.05
+    assert report["full_loop_coverage"]["within_0_05mm_fraction"] >= 0.98
     assert report["duplicate_pairs_after"] == report["duplicate_pairs_before"]
     assert _duplicate_pairs(result.vertices) == before_duplicates
     assert np.isfinite(result.vertices).all()
@@ -67,8 +65,6 @@ def test_cervical_fit_moves_outer_rim_toward_margin_without_collapsing_vertices(
 
 def test_cervical_fit_uses_continuous_margin_segments_not_discrete_sample_snap():
     mesh = _crown()
-    # Deliberately sparse loop: discrete nearest-sample snapping would make many
-    # crown vertices share one target.  Continuous segment projection must not.
     margin = _margin(n=20)
     frame = _frame()
 
@@ -76,8 +72,31 @@ def test_cervical_fit_uses_continuous_margin_segments_not_discrete_sample_snap()
 
     assert report["projection"].startswith("continuous_closed_margin_segment")
     assert report["segment_count_used"] > 4
+    assert report["full_loop_anchor_count"] == len(margin)
+    assert report["full_loop_coverage"]["within_0_05mm_fraction"] >= 0.98
     assert report["duplicate_pairs_after"] == report["duplicate_pairs_before"]
     assert report["after_mm"]["p95"] <= 0.05
+    assert np.isfinite(result.vertices).all()
+
+
+def test_cervical_fit_covers_margin_arc_even_when_library_cervix_is_locally_high():
+    mesh = _crown()
+    vertices = np.asarray(mesh.vertices).copy()
+    lifted = (
+        (vertices[:, 0] > 0.0)
+        & (vertices[:, 1] > 0.0)
+        & (vertices[:, 2] < 1.25)
+    )
+    vertices[lifted, 2] += 0.75
+    mesh.vertices = vertices
+
+    margin = _margin(n=96)
+    result, report = cervical_fit_to_margin(mesh, _frame(), margin)
+
+    assert report["full_loop_anchor_count"] == len(margin)
+    assert report["full_loop_coverage"]["covered_samples"] >= int(0.98 * len(margin))
+    assert report["full_loop_coverage"]["reverse_p95_mm"] <= 0.05
+    assert report["duplicate_pairs_after"] == report["duplicate_pairs_before"]
     assert np.isfinite(result.vertices).all()
 
 
@@ -86,7 +105,6 @@ def test_global_prefit_expands_md_width_between_two_neighbors():
     margin = _margin()
     frame = _frame()
 
-    # Two solid neighbor blocks leave roughly 5.8 mm between their facing surfaces.
     mesial = trimesh.creation.box(extents=[1.0, 5.0, 8.0])
     mesial.apply_translation([3.4, 0.0, 3.0])
     distal = trimesh.creation.box(extents=[1.0, 5.0, 8.0])
@@ -128,7 +146,6 @@ def test_global_prefit_raises_height_toward_antagonist_without_moving_margin_piv
 
     assert report["height"]["applied"]
     assert after[:, 2].max() > before[:, 2].max()
-    # Cervical vertices remain substantially more stable than the occlusal top.
     low = before[:, 2] <= np.quantile(before[:, 2], 0.10)
     high = before[:, 2] >= np.quantile(before[:, 2], 0.90)
     assert np.mean(np.linalg.norm(after[low] - before[low], axis=1)) < np.mean(
