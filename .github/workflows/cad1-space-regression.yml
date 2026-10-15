@@ -38,6 +38,8 @@ jobs:
         run: |
           pytest tests/unit/geometry/test_patient_adaptation.py -q
           pytest tests/unit/geometry/test_occlusal_active_subset_acceptance.py -q
+      - name: Abutment support selection regression
+        run: pytest tests/unit/geometry/test_abutment_support_selection.py -q
       - name: Abutment and final-surface regressions
         run: |
           pytest tests/unit/services/test_abutment_fast.py -q
