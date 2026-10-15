@@ -257,16 +257,9 @@ def _desired_targets(reference, ids, cp, fids, signed, distance, valid,
 
 
 def _metric_value(report, stage, which):
-    """Metric used to decide whether a trial moves the crown toward its target.
-
-    ``deficit=max(0,target-signed)`` is zero when a crown is *too far* from the
-    antagonist, so it cannot recognize a successful height-seeking move.  The
-    symmetric target error works for both collision relief and under-height seek:
-    every accepted partial pass must reduce |signed-target|.
-    """
+    """Metric used to decide whether a trial moves the crown toward its target."""
     block = report.get("target_error") if isinstance(report, dict) else None
     if not block:
-        # Compatibility fallback for old/partial reports.
         block = report.get("deficit") if isinstance(report, dict) else None
     if not block:
         return None
@@ -293,6 +286,81 @@ def _is_better(before, after, stage):
             improved = True
         elif new_max < old_max - 1e-4:
             improved = True
+    return compared and improved
+
+
+def _active_subset_error(vertices, ids, surface, target):
+    """Measure target error only on the vertices selected for *this* correction pass.
+
+    A stage-wide p95/max cannot judge a local edit: OCCLUSAL intentionally edits a
+    compact contact patch (about 22% during height seek, or the penetrating set
+    during relief), so the untouched majority can keep the full-domain aggregate
+    almost unchanged even when every moved vertex improved substantially.
+    """
+    ids = np.unique(np.asarray(ids, dtype=int))
+    if not len(ids):
+        return {"status": "NOT_ASSESSED", "valid_count": 0}
+    _cp, _faces, signed, _distance, valid = surface.query(np.asarray(vertices)[ids])
+    signed = np.asarray(signed, dtype=float)
+    valid = np.asarray(valid, dtype=bool) & np.isfinite(signed)
+    if not np.any(valid):
+        return {"status": "NOT_ASSESSED", "valid_count": 0}
+    values = signed[valid]
+    error = np.abs(values - float(target))
+    penetration = np.maximum(0.0, float(target) - values)
+    return {
+        "status": "MEASURED_ENGINEERING",
+        "valid_count": int(valid.sum()),
+        "target_error": {
+            "median_mm": float(np.median(error)),
+            "p95_mm": float(np.quantile(error, 0.95)),
+            "max_mm": float(np.max(error)),
+        },
+        "signed_mm": {
+            "min_mm": float(np.min(values)),
+            "median_mm": float(np.median(values)),
+            "max_mm": float(np.max(values)),
+        },
+        "penetration": {
+            "p95_mm": float(np.quantile(penetration, 0.95)),
+            "max_mm": float(np.max(penetration)),
+        },
+    }
+
+
+def _active_subset_better(before, after):
+    """Acceptance criterion for local OCCLUSAL edits.
+
+    Compare the exact seed set that requested a correction.  p95 is the primary
+    criterion, median is the secondary criterion.  The full-domain measurement is
+    still recorded for QC/reporting, but it no longer vetoes a geometrically useful
+    local move merely because most occlusal vertices were intentionally untouched.
+    """
+    compared = False
+    improved = False
+    for side, old in before.items():
+        new = after.get(side)
+        if not isinstance(old, dict) or not isinstance(new, dict):
+            continue
+        if not old.get("valid_count") or not new.get("valid_count"):
+            continue
+        old_err = old.get("target_error") or {}
+        new_err = new.get("target_error") or {}
+        old_p95, new_p95 = old_err.get("p95_mm"), new_err.get("p95_mm")
+        old_med, new_med = old_err.get("median_mm"), new_err.get("median_mm")
+        if not all(np.isfinite(v) for v in (old_p95, new_p95, old_med, new_med)):
+            continue
+        compared = True
+        # Local edit must move its actual target patch closer overall.  A tiny
+        # median wobble is tolerated when p95 clearly improves; this is important
+        # for curved antagonist surfaces and Laplacian transition bands.
+        if new_p95 < old_p95 - 1e-4:
+            improved = True
+            continue
+        if new_med < old_med - 1e-4 and new_p95 <= old_p95 + 1e-4:
+            improved = True
+            continue
+        return False
     return compared and improved
 
 
@@ -341,6 +409,7 @@ def fit_stage(mesh, frame, margin, surfaces, targets, stage, *, protected=None,
         reference = np.asarray(current.vertices).copy()
         desired = reference.copy()
         seeds = set()
+        seed_sets = {}
 
         pass_before = {}
         for side, surface in surfaces.items():
@@ -351,14 +420,15 @@ def fit_stage(mesh, frame, margin, surfaces, targets, stage, *, protected=None,
             if query is None:
                 continue
             ids, cp, fids, signed, distance, valid = query
-            seed_ids, target_points, no_reachable = _desired_targets(
+            side_seed_ids, target_points, no_reachable = _desired_targets(
                 reference, ids, cp, fids, signed, distance, valid,
                 surface, targets[side], stage, side, frame, cut_only,
             )
             unreachable |= no_reachable
-            if len(seed_ids):
-                desired[seed_ids] = target_points
-                seeds.update(map(int, seed_ids))
+            if len(side_seed_ids):
+                desired[side_seed_ids] = target_points
+                seed_sets[side] = np.asarray(side_seed_ids, dtype=int)
+                seeds.update(map(int, side_seed_ids))
 
         if not seeds:
             base["passes"].append({
@@ -372,6 +442,10 @@ def fit_stage(mesh, frame, margin, surfaces, targets, stage, *, protected=None,
         free_ids = _free_band(adj, seeds, locked, rings)
         fixed = np.setdiff1d(np.arange(len(reference)), free_ids)
         seed_ids = np.asarray(sorted(seeds), int)
+        active_before = {
+            side: _active_subset_error(reference, ids, surfaces[side], targets[side])
+            for side, ids in seed_sets.items()
+        }
         accepted = None
 
         for alpha in ALPHAS:
@@ -397,6 +471,10 @@ def fit_stage(mesh, frame, margin, surfaces, targets, stage, *, protected=None,
                 for side, surface in surfaces.items()
             }
             after = {side: value[0] for side, value in measured_pairs.items()}
+            active_after = {
+                side: _active_subset_error(vertices, ids, surfaces[side], targets[side])
+                for side, ids in seed_sets.items()
+            }
             flips = int((np.einsum("ij,ij->i", current.face_normals, candidate.face_normals) <= 0).sum())
             safe = (
                 gate.ok
@@ -405,7 +483,11 @@ def fit_stage(mesh, frame, margin, surfaces, targets, stage, *, protected=None,
                 and float(moved.max(initial=0.0)) <= PER_PASS_MAX_MOVE_MM + 1e-6
                 and float(moved[locked].max(initial=0.0)) <= 1e-5
             )
-            better = _is_better(pass_before, after, stage)
+            better = (
+                _active_subset_better(active_before, active_after)
+                if stage == "OCCLUSAL"
+                else _is_better(pass_before, after, stage)
+            )
             trial = {
                 "pass": pass_no,
                 "alpha": float(alpha),
@@ -415,6 +497,9 @@ def fit_stage(mesh, frame, margin, surfaces, targets, stage, *, protected=None,
                 "all_flips": flips,
                 "maximum_displacement_mm": float(moved.max(initial=0.0)),
                 "improved": bool(better),
+                "acceptance_scope": "ACTIVE_SEED_SUBSET" if stage == "OCCLUSAL" else "FROZEN_STAGE_DOMAIN",
+                "active_before": active_before if stage == "OCCLUSAL" else None,
+                "active_after": active_after if stage == "OCCLUSAL" else None,
                 "after": after,
                 "accepted": bool(safe and better),
             }
@@ -428,6 +513,7 @@ def fit_stage(mesh, frame, margin, surfaces, targets, stage, *, protected=None,
                 "pass": pass_no,
                 "seed_count": int(len(seed_ids)),
                 "status": "CONSTRAINT_CONFLICT",
+                "acceptance_scope": "ACTIVE_SEED_SUBSET" if stage == "OCCLUSAL" else "FROZEN_STAGE_DOMAIN",
             })
             break
 
@@ -438,6 +524,7 @@ def fit_stage(mesh, frame, margin, surfaces, targets, stage, *, protected=None,
             "seed_count": int(len(seed_ids)),
             "status": "PASS_ENGINEERING",
             "accepted_alpha": trial["alpha"],
+            "acceptance_scope": trial["acceptance_scope"],
             "after": pass_after,
         })
 
