@@ -59,12 +59,11 @@ def test_one_sided_neighbor_expands_only_that_side_without_whole_crown_translati
     assert report["md"]["mesial_scale"] > 1.0
     assert abs(report["md"]["distal_scale"] - 1.0) < 0.05
     assert np.quantile(after[:, 0], .98) > np.quantile(before[:, 0], .98) + 0.5
-    # Margin/cervical pivot is faded; the opposite side must not simply translate.
     distal = before[:, 0] < np.quantile(before[:, 0], .15)
     assert np.median(np.abs(after[distal, 0] - before[distal, 0])) < 0.15
 
 
-def test_support_fallback_and_material_envelope_can_make_embryo_larger_before_finalization():
+def test_support_fallback_and_material_envelope_expand_width_without_forcing_unneeded_height():
     mesh = _crown()
     frame = _frame()
     margin = _margin()
@@ -87,10 +86,11 @@ def test_support_fallback_and_material_envelope_can_make_embryo_larger_before_fi
     assert report["md"]["mesial_scale"] > 1.0
     assert report["md"]["distal_scale"] > 1.0
     assert report["bl"]["buccal_scale"] > 1.0
-    assert report["height_floor"]["applied"]
+    # This fixture's support top + material floor is below the embryo top, so the
+    # correct behaviour is width growth without artificial extra crown height.
+    assert report["height_floor"]["applied"] is False
     assert np.ptp(after[:, 0]) > np.ptp(before[:, 0])
     assert np.ptp(after[:, 1]) > np.ptp(before[:, 1])
-    assert np.max(after[:, 2]) > np.max(before[:, 2])
     assert np.isfinite(after).all()
 
 
@@ -98,8 +98,6 @@ def test_actual_intaglio_preview_does_not_double_count_cement_gap():
     mesh = _crown()
     frame = _frame()
     margin = _margin()
-    # This represents the already-gapped cutter/intaglio preview.  Cement gap is
-    # geometrically baked into it, so only minimum thickness may be added outside.
     intaglio = trimesh.creation.cylinder(radius=2.25, height=4.2, sections=96)
     intaglio.apply_translation([0.0, 0.0, 2.1])
 
@@ -114,13 +112,33 @@ def test_actual_intaglio_preview_does_not_double_count_cement_gap():
     assert shell["source"] == "ACTUAL_BLOCKOUT_GAP_INTAGLIO_PREVIEW"
     assert shell["actual_intaglio_preview_used"] is True
     assert abs(shell["required_outer_to_intaglio_mm"] - 0.80) < 1e-9
-    audit = audit_inner_envelope_clearance(
-        result, intaglio, frame, margin, 0.80,
-    )
+    audit = audit_inner_envelope_clearance(result, intaglio, frame, margin, 0.80)
     assert audit["status"] in ("PASS_ENGINEERING", "REVIEW_REQUIRED")
     assert audit["sample_count"] > 50
     assert np.isfinite(audit["min_clearance_mm"])
     assert np.isfinite(np.asarray(result.vertices)).all()
+
+
+def test_tall_actual_intaglio_sets_vertical_outer_floor_before_antagonist_fitting():
+    mesh = _crown()
+    frame = _frame()
+    margin = _margin()
+    intaglio = trimesh.creation.cylinder(radius=1.8, height=5.7, sections=96)
+    intaglio.apply_translation([0.0, 0.0, 2.85])
+
+    before_top = float(np.max(mesh.vertices[:, 2]))
+    result, report = space_driven_embryo_prefit(
+        mesh, frame, margin,
+        inner_envelope_mesh=intaglio,
+        minimum_thickness_mm=0.80,
+        cement_gap_mm=0.05,
+    )
+    after_top = float(np.max(result.vertices[:, 2]))
+
+    assert report["height_floor"]["applied"] is True
+    assert report["height_floor"]["inner_top_mm"] > 5.5
+    assert report["height_floor"]["desired_top_mm"] > before_top
+    assert after_top > before_top + 0.2
 
 
 def test_proximal_domain_is_not_allowed_to_collapse_to_a_handful_of_vertices():
@@ -131,9 +149,7 @@ def test_proximal_domain_is_not_allowed_to_collapse_to_a_handful_of_vertices():
     mesial.apply_translation([3.7, 0.0, 3.0])
     surface = FitSurface(mesial)
 
-    masks, _locked, quality = build_proximal_domains(
-        mesh, frame, margin, {"mesial": surface},
-    )
+    masks, _locked, quality = build_proximal_domains(mesh, frame, margin, {"mesial": surface})
 
     assert quality["mesial"]["status"] == "READY"
     assert int(masks["mesial"].sum()) >= 40
@@ -141,8 +157,6 @@ def test_proximal_domain_is_not_allowed_to_collapse_to_a_handful_of_vertices():
 
 
 def test_open_curved_contact_sign_uses_local_face_orientation_not_global_dot_gate():
-    # One large slanted open patch.  Its normal has |dot(outward)| ~= .34, so the
-    # old > .5 global-normal rule rejected it even at the patch center.
     outward = np.array([-1.0, 0.0, 0.0])
     normal = np.array([-0.342, 0.0, 0.940])
     normal /= np.linalg.norm(normal)
