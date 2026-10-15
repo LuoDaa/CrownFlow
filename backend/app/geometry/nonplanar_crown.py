@@ -127,25 +127,56 @@ def fitting_support_above_margin(support,margin,axis,*,prepared=False):
         'method':'3d_margin_curtain_above_domain_no_model_base_projection','scan_adherence':scan}
 
 
+def _single_open_surface_above_margin(source, curtain, transition_mm, role, *, invert=False):
+    """Extract one open cervical surface directly from a trusted source mesh.
+
+    Boolean difference is useful for manufacturing collision truth, but it is a
+    poor *surface separator* when tiny bridges keep the outer and inner skins in a
+    single connected component.  Both authoritative source skins already exist:
+    ``outer`` and the directional-gap ``cutter``.  Clipping either source above
+    the same non-planar Margin curtain yields the surface needed by the stitcher.
+    """
+    values=-curtain.axial_above(source.vertices)
+    vertices,faces,_=_clip_by_scalar(source.vertices,source.faces,values,level=-float(transition_mm))
+    clipped=trimesh.Trimesh(vertices,faces,process=False)
+    clipped.remove_unreferenced_vertices()
+    parts=list(clipped.split(only_watertight=False))
+    eligible=[p for p in parts if len(p.faces)>=3 and len(_boundary_loops(p.faces))==1]
+    if not eligible:
+        raise MarginBuildError(f'{role} 在 Margin 过渡面以上不能提取单一开放颈环面')
+    chosen=max(eligible,key=lambda p: float(p.area))
+    discarded_area=float(sum(float(p.area) for p in parts if p is not chosen))
+    chosen.remove_unreferenced_vertices()
+    if invert:
+        chosen.invert()
+    return chosen,{
+        'role':role,
+        'source_faces':int(len(source.faces)),
+        'clipped_faces':int(len(clipped.faces)),
+        'component_count':int(len(parts)),
+        'eligible_single_loop_components':int(len(eligible)),
+        'selected_faces':int(len(chosen.faces)),
+        'selected_area_mm2':float(chosen.area),
+        'discarded_component_area_mm2':discarded_area,
+        'boundary_loop_count':int(len(_boundary_loops(chosen.faces))),
+        'inverted_for_material_orientation':bool(invert),
+    }
+
+
 def build_nonplanar_crown(outer,cutter,support,margin,axis,*,transition_mm,prepared_support=False,parameters=None,protected_surfaces=(),quality_mode='DESIGN'):
     curtain=MarginCurtain(margin,axis)
     if not np.isfinite(transition_mm) or transition_mm<=0:
         raise MarginBuildError('三维颈部过渡高度 margin_band_mm 必须为正值')
     scan=audit_margin_on_scan(support,curtain.points,expected_margin_boundary=prepared_support)
-    # 生成出口拓扑校验（只读）：定位 duplicate vertex 首次出现的阶段
     from .topology_validation import record_topology
     record_topology('01_input_outer',outer)
     record_topology('02_input_cutter',cutter)
     boolean=crown_minus_cutter(outer,cutter)
     record_topology('03_boolean_crown_minus_cutter',boolean)
-    # **boolean 输出后的安全愈合**（新增阶段）：boolean 是 duplicate vertex 的首个来源
-    # （1,466 对 <0.01mm、最小边 1.2e-05mm）。这里做逐条 tiny edge 的 link-condition 折叠
-    # + 删退化面 + 重建邻接 + 重定向法向，每一步校验 boundary/nonmanifold/components/watertight，
-    # 任一变化立即回退（不用简单 merge vertices）。
     from .boolean_healing import boolean_healing_stage
     try:
         boolean,boolean_healing=boolean_healing_stage(boolean)
-    except Exception as exc:      # 安全网：愈合阶段有 bug 时绝不拖垮 finalize，如实记录并退回原始 boolean
+    except Exception as exc:
         boolean_healing={'status':'ERROR_REVERTED','error':str(exc)[:200],
                          'note':'boolean healing 抛错 ⇒ 使用未愈合的 boolean（不劣化）'}
     values=-curtain.axial_above(boolean.vertices)
@@ -153,16 +184,37 @@ def build_nonplanar_crown(outer,cutter,support,margin,axis,*,transition_mm,prepa
     body=trimesh.Trimesh(vertices,faces,process=False)
     body.remove_unreferenced_vertices()
     record_topology('04_after_transition_clip',body)
-    parts=body.split(only_watertight=False)
-    if len(parts)!=2 or any(len(_boundary_loops(p.faces))!=1 for p in parts):
-        raise MarginBuildError('布尔主体不能分离为两个单颈环面；请检查薄壁、破损或过渡范围')
-    scores=[]
-    for p in parts:
-        sample=np.asarray(p.triangles_center)[np.linspace(0,len(p.faces)-1,min(128,len(p.faces)),dtype=int)]
-        scores.append(float(closest_point(outer,sample)[1].mean()-closest_point(cutter,sample)[1].mean()))
-    if min(scores)>=0 or max(scores)<=0:
-        raise MarginBuildError('内外面来源无法可靠区分')
-    outside,inside=parts[int(np.argmin(scores))],parts[int(np.argmax(scores))]
+    parts=list(body.split(only_watertight=False))
+
+    surface_extraction={
+        'method':'BOOLEAN_SPLIT',
+        'boolean_component_count':int(len(parts)),
+        'boolean_boundary_loops':[int(len(_boundary_loops(p.faces))) for p in parts],
+        'fallback_used':False,
+    }
+    if len(parts)==2 and all(len(_boundary_loops(p.faces))==1 for p in parts):
+        scores=[]
+        for p in parts:
+            sample=np.asarray(p.triangles_center)[np.linspace(0,len(p.faces)-1,min(128,len(p.faces)),dtype=int)]
+            scores.append(float(closest_point(outer,sample)[1].mean()-closest_point(cutter,sample)[1].mean()))
+        if min(scores)<0<max(scores):
+            outside,inside=parts[int(np.argmin(scores))],parts[int(np.argmax(scores))]
+            surface_extraction['boolean_source_scores']=scores
+        else:
+            surface_extraction['fallback_reason']='BOOLEAN_SOURCE_CLASSIFICATION_AMBIGUOUS'
+            outside,outer_extract=_single_open_surface_above_margin(outer,curtain,transition_mm,'OUTER',invert=False)
+            inside,inner_extract=_single_open_surface_above_margin(cutter,curtain,transition_mm,'INTAGLIO',invert=True)
+            surface_extraction.update(method='DIRECT_SOURCE_CLIP',fallback_used=True,outer=outer_extract,intaglio=inner_extract)
+    else:
+        # Real IOS cases can leave tiny Boolean bridges between outer and intaglio
+        # after clipping.  Rejecting the whole crown here made final_path empty even
+        # though both source surfaces were valid.  Recover the two authoritative
+        # skins directly and let stitch/QC judge the resulting shell.
+        surface_extraction['fallback_reason']='BOOLEAN_NOT_TWO_SINGLE_LOOP_SURFACES'
+        outside,outer_extract=_single_open_surface_above_margin(outer,curtain,transition_mm,'OUTER',invert=False)
+        inside,inner_extract=_single_open_surface_above_margin(cutter,curtain,transition_mm,'INTAGLIO',invert=True)
+        surface_extraction.update(method='DIRECT_SOURCE_CLIP',fallback_used=True,outer=outer_extract,intaglio=inner_extract)
+
     record_topology('05_split_outside',outside)
     record_topology('06_split_inside',inside)
     parameters=parameters or {};enforcement=None;border=None
@@ -176,12 +228,6 @@ def build_nonplanar_crown(outer,cutter,support,margin,axis,*,transition_mm,prepa
     if parameters.get('border_horizontal_mm'):
         from .crown_border import build_crown_border
         outside,border=build_crown_border(outside,curtain.points,axis,parameters,float(transition_mm))
-    # Finalize 前的颈缘处理阶段：**当前只诊断、不改几何**。
-    # 实测（两轮）：(a) 直接清理输入 mesh（bulk 顶点合并）会破坏 watertight；
-    # (b) 用"弧长等距重采样 + collar 带"替换颈环更糟 —— 原颈环本身比目标采样**更密**
-    #     （329 点 / 中位间距 ~0.067mm），降到 128 点等于要求 collar 做抽稀：
-    #     self_intersections 5 → 113，并新增 98 个退化面（A_margin 94 / OUTER+OUTER 7）。
-    # 因此两者都不启用，几何保持不动；只输出诊断，等确定"不劣化"的方案。
     from .cervical_cleanup import mesh_diagnostics
     cervical_ring_report={'status':'DIAGNOSTIC_ONLY_GEOMETRY_UNCHANGED',
         'reason':'bulk weld breaks watertight; coarse ring+collar regresses (5 -> 113 self-intersections, 98 degenerate faces)',
@@ -189,7 +235,6 @@ def build_nonplanar_crown(outer,cutter,support,margin,axis,*,transition_mm,prepa
         'inner_before':mesh_diagnostics(inside,curtain.points),
         'scope':'CROWN_CERVICAL_REGION_ONLY','margin_curve_untouched':True}
     final,seam=stitch_cervical_surfaces(outside,inside,curtain.points,quality_mode=quality_mode)
-    # Recover the two open surfaces using the same shared Margin vertex indices.
     n_outer=len(outside.vertices);n_inner=len(inside.vertices);seam_start=n_outer+n_inner
     f=np.asarray(final.faces)
     outer_faces=f[~np.any((f>=n_outer)&(f<seam_start),axis=1)]
@@ -198,7 +243,7 @@ def build_nonplanar_crown(outer,cutter,support,margin,axis,*,transition_mm,prepa
     for fs in (outer_faces,inner_faces):
         mesh=trimesh.Trimesh(np.asarray(final.vertices).copy(),fs,process=False)
         mesh.remove_unreferenced_vertices();surfaces.append(mesh)
-    report={'status':'ENGINEERING_ONLY','method':'directional_boolean_body_and_3d_cervical_dp_stitch',
+    report={'status':'ENGINEERING_ONLY','method':'directional_source_surfaces_and_3d_cervical_dp_stitch',
         'margin':margin_plane_diagnostics(curtain.points),'scan_adherence':scan,'seam':seam,
         'transition_mm':float(transition_mm),'body_vertices_moved':int(np.sum(preservation>1e-6)),'body_outer_vertex_count':body_outer_count,'source_body_face_count':len(body.faces),
         'body_to_original_outer_p95_mm':float(np.quantile(preservation,.95)),
@@ -206,5 +251,8 @@ def build_nonplanar_crown(outer,cutter,support,margin,axis,*,transition_mm,prepa
         'geometry_above_cervical_transition_preserved':not bool(enforcement and enforcement['max_displacement_mm']>1e-9),
         'margin_profile':'PARAMETRIC_BORDER_ENGINEERING' if border else 'SHARED_KNIFE_EDGE_NOT_MANUFACTURING_APPROVED',
         'crown_border':border,'minimum_thickness_enforcement':enforcement,
-        'cervical_cleanup':cervical_ring_report,'boolean_healing':boolean_healing,'quality_mode':quality_mode,'design_mode_exception':seam.get('design_mode_exception'),'stitch_warnings':([] if not seam.get('design_mode_exception') else ['Cervical stitch minor self intersection'])}
+        'cervical_cleanup':cervical_ring_report,'boolean_healing':boolean_healing,
+        'surface_extraction':surface_extraction,'quality_mode':quality_mode,
+        'design_mode_exception':seam.get('design_mode_exception'),
+        'stitch_warnings':([] if not seam.get('design_mode_exception') else ['Cervical stitch minor self intersection'])}
     return NonplanarCrownBuild(final,surfaces[0],surfaces[1],report)
