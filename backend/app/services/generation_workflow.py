@@ -126,8 +126,8 @@ def generate_candidate(d,kind):
     # One-click AUTO is an idempotent build from the same confirmed inputs.
     # Never use a previously accepted outer as the next automatic baseline:
     # doing so compounds proximal/occlusal deformation every time the user clicks
-    # Generate (and the former three-pass UI amplified it further). Manual edits
-    # remain revisions of the accepted outer in the sculpt workflow, not here.
+    # Generate.  The same generation job now also builds the intaglio + stitched
+    # watertight final so Step 5 starts from a complete crown, not a solid outer.
     placement,baseline=initialize_draft_outer(
         d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
     if kind=='AUTO':
@@ -140,7 +140,7 @@ def generate_candidate(d,kind):
         effective_params.setdefault('occlusal_target_mm',state['occlusal_target_mm'])
         effective['parameters_json']=json.dumps(effective_params,ensure_ascii=False)
         frame,ref=frame_from(effective);_,report,artifacts=propose(
-            effective,frame,ref,state['automatic_mode'],baseline_path=baseline,run_w3_preflight=False)
+            effective,frame,ref,state['automatic_mode'],baseline_path=baseline,run_w3_preflight=True)
         artifacts['baseline']=str(baseline);report['candidate_kind']='AUTO_FIT_CANDIDATE'
         report['baseline_source']=placement.get('placement_path') or 'TEMPLATE_INITIALIZATION'
         report['resolved_contact_targets']={
@@ -149,11 +149,19 @@ def generate_candidate(d,kind):
             'proximal_source':state['proximal_target_source'],
             'occlusal_source':state['occlusal_target_source'],
         }
+        final_ready=(report.get('w3_preflight') or {}).get('status')=='CONSTRUCTED_ENGINEERING' \
+            and bool(artifacts.get('final')) and bool(artifacts.get('cutter'))
+        report['complete_crown_ready']=bool(final_ready)
+        if not final_ready:
+            report['warnings'].append({'stage':'FINAL_CONSTRUCTION','reason':
+                (report.get('w3_preflight') or {}).get('reason') or 'FINAL_OR_INTAGLIO_NOT_CONSTRUCTED'})
+            report['status']='REVIEW_REQUIRED'
     else:
         report={'type':'template_draft','candidate_kind':'TEMPLATE_ONLY_DRAFT','status':'TEMPLATE_REVIEW_REQUIRED',
             'stages':[{'stage':'TEMPLATE','status':'PLACED'},{'stage':'PROXIMAL','status':'NOT_ASSESSED'},
                       {'stage':'OCCLUSAL','status':'NOT_ASSESSED'}],
-            'w3_preflight':{'status':'INPUT_CHECKED','reason':'预备体输入检查通过；内冠与壁厚仍需最终构建检查'}}
+            'w3_preflight':{'status':'NOT_ASSESSED','reason':'模板草稿不生成最终内冠；请使用一键自动生成完成冠体'},
+            'complete_crown_ready':False}
         artifacts={'outer':str(baseline),'baseline':str(baseline)}
     report.update(eligibility=state,input_diagnostics=diagnostics,
         completed_stages=[s['stage'] for s in report['stages'] if s['status'] in ('PLACED','PASS_ENGINEERING')],
