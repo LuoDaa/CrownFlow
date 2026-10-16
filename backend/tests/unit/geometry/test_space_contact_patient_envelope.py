@@ -56,7 +56,7 @@ def test_bilateral_neighbors_define_width_and_both_contact_cores_reach_zero():
         crown, _frame(), _margin(), surfaces, 0.0,
     )
 
-    assert report["solver"] == "SPACE_DRIVEN_PROXIMAL_HARD_CONSTRAINT_V4"
+    assert report["solver"] == "SPACE_DRIVEN_PROXIMAL_BOUNDED_FRAME_V6_PHYSICAL_SIDE"
     assert report["status"] == "PASS_ENGINEERING"
     assert np.ptp(np.asarray(fitted.vertices)[:, 0]) > np.ptp(before[:, 0]) + 1.0
     for side in ("mesial", "distal"):
@@ -118,3 +118,22 @@ def test_oblique_posterior_neighbors_use_actual_patient_vectors_not_global_x():
     assert report["physical_after"]["mesial"]["target_reached"] is True
     assert report["physical_after"]["distal"]["target_reached"] is True
     assert np.isfinite(np.asarray(fitted.vertices)).all()
+
+
+def test_swapped_clinical_label_cannot_flip_physical_proximal_side():
+    """A +X tooth stays a +X constraint even when upstream calls it distal."""
+    crown = _crown()
+    surface = _neighbor([4.55, 0.0, 3.0])
+    _fitted, report, domains = fit_proximal_envelopes(
+        crown, _frame(), _margin(), {"distal": surface}, 0.0,
+    )
+    diag = report["domain_quality"]["distal"]
+    assert diag["physical_sign"] == 1, diag
+    assert diag["clinical_label_matches_physical_side"] is False, diag
+    direction = np.asarray(diag["direction_world"])
+    assert direction[0] > 0.80, diag
+    ids = np.flatnonzero(domains["distal"])
+    assert len(ids) >= 48, diag
+    # The selected crown domain itself must be physically on +X, proving the
+    # solver did not merely fix a report field while still deforming the left side.
+    assert float(np.median(np.asarray(crown.vertices)[ids, 0])) > 0.0, diag
