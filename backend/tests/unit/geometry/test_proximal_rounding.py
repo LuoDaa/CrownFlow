@@ -2,7 +2,10 @@ import numpy as np
 import trimesh
 
 from app.geometry.crown_outer.patient_frame import PatientFrame
-from app.geometry.crown_outer.proximal_rounding import round_proximal_contacts
+from app.geometry.crown_outer.proximal_rounding import (
+    ProximalRoundingConfig,
+    round_proximal_contacts,
+)
 from app.geometry.crown_outer.sectional_v1 import SectionalV1Config, build_sectional_outer
 
 
@@ -70,6 +73,16 @@ def _config():
     )
 
 
+def _surface_config():
+    # Boxes are intentionally sparse compared with IOS triangles.  The live
+    # Crown 1.0 service uses the same wider Y/Z query for stable patch fitting.
+    return ProximalRoundingConfig(
+        facing_query_radius_mm=2.80,
+        facing_k=20,
+        contact_band_pad_mm=0.30,
+    )
+
+
 def test_neighbor_facing_surface_broadens_contact_without_touching_margin_or_blue_cap():
     margin = _margin()
     frame = _frame()
@@ -91,6 +104,7 @@ def test_neighbor_facing_surface_broadens_contact_without_touching_margin_or_blu
         frame,
         neighbors=neighbors,
         sectional_config=config,
+        config=_surface_config(),
     )
     after = np.asarray(rounded.vertices, float)
 
@@ -157,6 +171,7 @@ def test_facing_surface_targets_real_inner_neighbor_faces_at_contact_height():
         frame,
         neighbors=neighbors,
         sectional_config=config,
+        config=_surface_config(),
     )
 
     # Mesial box inward face is x=+5.05; distal is x=-4.95.  The broad band is
@@ -199,6 +214,7 @@ def test_proximal_surface_does_not_invent_contact_for_absent_neighbor():
         frame,
         neighbors=neighbors,
         sectional_config=config,
+        config=_surface_config(),
     )
 
     assert report["per_side"]["distal"]["status"] == "NOT_ASSESSED"
