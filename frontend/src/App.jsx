@@ -7,22 +7,36 @@ import CasePage from "./app/pages/CasePage";
 import MarginAxisPage from "./app/pages/MarginAxisPage";
 import SetupPage from "./app/pages/SetupPage";
 import DesignPage from "./app/pages/DesignPage";
-import ReviewPage from "./app/pages/ReviewPage";
 import "./styles/app.css";
 import "./styles/order-page.css";
 
 const ABUTMENT_FLOW = [
   { ...FLOW.find((item) => item.id === S.HOME), n: 1, label: "首页" },
   { ...FLOW.find((item) => item.id === S.CASE), n: 2, label: "订单" },
-  { ...FLOW.find((item) => item.id === S.DESIGN), n: 3, label: "自动设计" },
-  { ...FLOW.find((item) => item.id === S.REVIEW), n: 4, label: "检查 / 导出" },
+  { ...FLOW.find((item) => item.id === S.DESIGN), n: 3, label: "自动设计 / 导出" },
 ];
 
-/** 每一步底部的主动作：只有这一步真的做完了，才允许往下走。 */
-function primaryOf(wf, step, fastAbutment) {
+function openFinalAfterSync(wf) {
+  const popup = window.open("about:blank", "_blank");
+  return (async () => {
+    if (!wf.hasFinal) {
+      const result = await wf.finalize(true);
+      if (result === false) {
+        if (popup) popup.close();
+        return false;
+      }
+    }
+    const url = `/api/designs/${wf.design.id}/final.stl`;
+    if (popup) popup.location.href = url;
+    else window.location.href = url;
+    return true;
+  })();
+}
+
+/** 每一步底部的主动作：生成页自己拥有“牙冠生成”，微调页直接拥有导出。 */
+function primaryOf(wf, step) {
   switch (step) {
     case S.CASE:
-      // 病例页自己的底部动作区已经包含完整主动作，不再使用全局 footer。
       return null;
     case S.MARGIN:
       if (!wf.marginConfirmed) return { label: "确认当前 Margin", disabled: !wf.canConfirmMargin, run: wf.confirmMargin };
@@ -30,28 +44,13 @@ function primaryOf(wf, step, fastAbutment) {
       if (!wf.frameConfirmed) return { label: "确认近中 / 颊侧方向", disabled: !wf.canConfirmMargin, run: wf.confirmFrame };
       return { label: "下一步：选择牙型", disabled: false, run: () => wf.go(S.SETUP) };
     case S.SETUP:
-      return { label: wf.hasOuter ? "下一步：牙冠设计" : "请先自动生成并采纳牙冠", disabled: !wf.hasOuter,
-        run: () => wf.go(S.DESIGN) };
+      // SetupPage 右下角明确的“牙冠生成”按钮是唯一生成入口。
+      return null;
     case S.DESIGN:
       return {
-        label: "下一步：检查 / 导出",
+        label: wf.hasFinal ? "导出 Final Crown STL" : "同步完整冠并导出",
         disabled: !wf.hasOuter,
-        run: async () => {
-          // 一键生成进入微调前已经有 intaglio + cervical stitch + final。
-          // 若用户在 Step 5 改了外表面，服务端会把旧 final 标为 stale；这里在离开
-          // 微调页时只做一次内部同步，不再暴露“生成内冠/缝合”的第二流程。
-          if (!wf.hasFinal) {
-            const result = await wf.finalize(true);
-            if (result === false) return;
-          }
-          wf.setStep(S.REVIEW);
-        },
-      };
-    case S.REVIEW:
-      return {
-        label: "导出 Final Crown STL",
-        disabled: !wf.hasFinal,
-        run: () => wf.hasFinal && window.open(`/api/designs/${wf.design.id}/final.stl`, "_blank"),
+        run: () => openFinalAfterSync(wf),
       };
     default:
       return null;
@@ -63,8 +62,9 @@ function Page({ wf, step }) {
     case S.CASE: return <CasePage wf={wf} />;
     case S.MARGIN: return <MarginAxisPage wf={wf} />;
     case S.SETUP: return <SetupPage wf={wf} />;
-    case S.DESIGN: return <DesignPage wf={wf} />;
-    case S.REVIEW: return <ReviewPage wf={wf} />;
+    case S.DESIGN:
+    case S.REVIEW:
+      return <DesignPage wf={wf} />;
     default: return <HomePage wf={wf} />;
   }
 }
@@ -73,15 +73,18 @@ function previousOf(step, fastAbutment) {
   if (!fastAbutment) return prevStep(step);
   if (step === S.CASE) return S.HOME;
   if (step === S.DESIGN) return S.CASE;
-  if (step === S.REVIEW) return S.DESIGN;
   return null;
 }
 
 export default function App() {
   const wf = useWorkflow();
   const fastAbutment = (wf.design?.support_type || wf.supportType) === "abutment";
-  const displayStep = fastAbutment && [S.MARGIN, S.SETUP].includes(wf.step) ? S.CASE : wf.step;
-  const primary = primaryOf(wf, displayStep, fastAbutment);
+  // Legacy completed designs may still resume with step="review". 1.0 now maps
+  // that state back to the sculpt/export workspace instead of exposing a sixth
+  // mandatory page.
+  const legacyNormalizedStep = wf.step === S.REVIEW ? S.DESIGN : wf.step;
+  const displayStep = fastAbutment && [S.MARGIN, S.SETUP].includes(legacyNormalizedStep) ? S.CASE : legacyNormalizedStep;
+  const primary = primaryOf(wf, displayStep);
   const previous = previousOf(displayStep, fastAbutment);
   const title = stepOf(displayStep).title;
   const flow = fastAbutment ? ABUTMENT_FLOW : FLOW;
