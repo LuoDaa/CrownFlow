@@ -26,9 +26,9 @@ def _margin(n=64):
 
 
 def _prep():
-    # Broad cervical base, narrower toward the top; Margin itself remains external.
-    mesh = trimesh.creation.conical_frustum(radius_base=2.55, radius_top=1.85, height=4.0, sections=64)
-    return mesh
+    # Portable trimesh primitive: base at z=0, apex at z=4; enough to exercise
+    # the RED minimum-wall floor without depending on optional creation helpers.
+    return trimesh.creation.cone(radius=2.55, height=4.0, sections=64)
 
 
 def _neighbors():
