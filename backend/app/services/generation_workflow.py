@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import HTTPException
 from .design_dependencies import confirmed_inputs, dependency_digest, file_digest, require_current_outer
 
-LATEST_AUTO_NEIGHBOR_SCOPE = 'AUTO_CAD1_CORONAL_MD_NEIGHBOR_V4'
+LATEST_AUTO_NEIGHBOR_SCOPE = 'AUTO_CAD1_CORONAL_MD_NEIGHBOR_V5'
 CAD1_DEFAULT_PROXIMAL_TARGET_MM = -0.02
 CAD1_DEFAULT_OCCLUSAL_TARGET_MM = 0.02
 
