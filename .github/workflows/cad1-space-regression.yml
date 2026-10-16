@@ -60,6 +60,7 @@ jobs:
           pytest tests/unit/geometry/test_space_driven_embryo.py -q
           pytest tests/unit/geometry/test_patient_space_envelope.py -q
           pytest tests/unit/geometry/test_space_contact_patient_envelope.py -q
+          pytest tests/unit/geometry/test_cad1_proximal_guardrails.py -q
       - name: Margin and occlusion regressions
         run: |
           pytest tests/unit/geometry/test_patient_adaptation.py -q
