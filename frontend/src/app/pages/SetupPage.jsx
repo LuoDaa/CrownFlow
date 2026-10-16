@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import adapter from "../../domain/adapter";
 import { Notice, PageHead, Panel, StatusPill } from "../ui";
 import { ADVANCED_PARAMS, CORE_PARAMS, DEFAULT_PARAMS } from "../../domain/useWorkflow";
 
@@ -61,12 +62,13 @@ function StageReport({ candidate }) {
     {!changed && assessed.length > 0 && conflicts.length === 0 && <small>
       本候选没有移动网格。只有当各约束原本已满足目标时这才是正常结果；否则不要把“模板已放到基台上”当作自动设计完成。
     </small>}
-    {conflicts.length > 0 && <small>存在约束冲突：当前候选只可用于诊断，不应当作完成的自动牙冠。</small>}
+    {conflicts.length > 0 && <small>存在约束冲突：当前候选仍会保留并进入微调画布，但需要人工复核。</small>}
   </div>;
 }
 
 export default function SetupPage({ wf }) {
   const [advanced, setAdvanced] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const libraries = wf.templates.libraries || [];
   const eligibility = wf.templates.eligibility;
   const candidate = wf.generatedCandidate;
@@ -79,17 +81,64 @@ export default function SetupPage({ wf }) {
     };
   }, [candidate]);
 
+  const generateCompleteCrown = async () => {
+    if (generating || wf.busy) return;
+    if (!wf.design?.id) { wf.setMsg("请先创建设计"); return; }
+    if (!wf.library) { wf.setMsg("请先选择一个牙冠模板"); return; }
+    if (eligibility?.template_allowed === false) {
+      wf.setMsg((eligibility.blockers || []).map((blocker) => blocker.message).join("；") || "当前输入还不能生成牙冠");
+      return;
+    }
+
+    setGenerating(true);
+    wf.setMsg("正在生成完整牙冠：外冠、邻接、咬合与内冠会在一次操作中完成…");
+    let finalWarning = null;
+    try {
+      // 参数和牙库选择只在用户明确点击“牙冠生成”后写入/计算。
+      await adapter.saveProfile(wf.design.id, wf.params);
+
+      if (wf.selectedTemplate?.library !== wf.library) {
+        const templateCandidate = await adapter.selectCrownTemplate(wf.design.id, wf.library);
+        await adapter.confirmTemplateReference(wf.design.id, templateCandidate.id);
+      }
+
+      const generated = await adapter.generateInitialCrown(wf.design.id, { kind: "AUTO" });
+      await adapter.confirmCrownCandidate(wf.design.id, generated.id);
+
+      // Candidate 阶段已经带 design intaglio；这里做一次且只做一次 exact
+      // finalize，把 cutter / cervical stitch / final crown 同步好再进入微调。
+      try {
+        await adapter.finalize(wf.design.id, { preserveCervical: true });
+      } catch (error) {
+        // 1.0 generation-first：final 构造失败不能把已经生成的 outer/intaglio
+        // 从用户眼前拿走。进入微调后仍可看到并继续处理。
+        finalWarning = error?.message || "最终闭合暂未完成";
+      }
+
+      await wf.resumeDesign(wf.design.id, wf.caseId);
+      wf.setStep("design");
+      wf.reloadMeshes();
+      wf.setMsg(finalWarning
+        ? `外冠与内冠预览已生成并进入微调；最终闭合提示：${finalWarning}`
+        : "完整牙冠已生成：外冠、内冠、邻接和咬合已同步，可直接微调或导出。");
+    } catch (error) {
+      wf.setMsg(`牙冠生成失败：${error?.message || "请检查输入后重试"}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return <div className="cd-page">
     <PageHead eyebrow="STEP 4" title="CAD 1.0 自动牙冠设计"
-      hint="牙库只提供初始解剖形态；邻牙控制近远中形态与接触，对颌控制冠高与咬合面空间，基台在最终阶段生成内冠。" />
+      hint="先选牙位参数和参考牙库；只有点击右下角“牙冠生成”才开始计算。一次生成同时完成外冠、邻接/咬合适配与内冠。" />
 
     <div className="cd-grid setup">
-      <Panel title={`参考牙库 · FDI ${wf.fdi || "—"}`} subtitle="模板不是结果，只是可变形的解剖先验">
+      <Panel title={`参考牙库 · FDI ${wf.fdi || "—"}`} subtitle="点击模板只选择牙型，不会立即开始生成">
         {libraries.length > 0
           ? <div className="cd-templates">
             {libraries.map((library) => <button key={library.name} type="button"
-              className={`cd-template ${wf.library === library.name ? "active" : ""}`} disabled={wf.busy}
-              onClick={() => { wf.setLibrary(library.name); wf.previewTemplate(library.name); }}>
+              className={`cd-template ${wf.library === library.name ? "active" : ""}`} disabled={wf.busy || generating}
+              onClick={() => wf.setLibrary(library.name)}>
               <div className="cd-template-shape">{wf.fdi || "—"}</div>
               <b>{library.label || library.name}</b>
               <small>{library.name}</small>
@@ -98,61 +147,54 @@ export default function SetupPage({ wf }) {
           : <Notice>{wf.busy ? "正在读取牙库…" : "当前牙位没有可用牙冠模板，无法开始 CAD 1.0 自动设计。"}</Notice>}
 
         <div className="cd-btn-row">
-          <button type="button" className="cd-btn ghost" disabled={wf.busy || !libraries.length} onClick={wf.loadTemplates}>刷新牙库</button>
-          <button type="button" className="cd-btn secondary" disabled={wf.busy || !wf.templateCandidate?.id} onClick={wf.acceptTemplate}>
-            选定参考牙型
-          </button>
-          <button type="button" className="cd-btn primary"
-            disabled={wf.busy || !eligibility?.automatic_mode || !wf.selectedTemplate || !!wf.templateCandidate}
-            onClick={() => wf.generateCrown("AUTO")}>
-            运行 CAD 1.0 自动设计
-          </button>
+          <button type="button" className="cd-btn ghost" disabled={wf.busy || generating || !libraries.length} onClick={wf.loadTemplates}>刷新牙库</button>
         </div>
 
         {eligibility && !eligibility.template_allowed && <Notice tone="warn">
           {(eligibility.blockers || []).map((blocker) => blocker.message).join("；")}
         </Notice>}
         {eligibility?.automatic_mode && <Notice>
-          本次自动设计范围：{{ BOTH: "邻牙 + 对颌", PROXIMAL_ONLY: "仅邻牙形态 / 接触", OCCLUSAL_ONLY: "仅对颌高度 / 咬合面" }[eligibility.automatic_mode]}。
-          算法会保留牙库牙尖、窝沟与轴面解剖，只对受约束区域做局部几何形变。
+          本次自动设计范围：{{ BOTH: "邻牙 + 对颌", PROXIMAL_ONLY: "仅邻牙形态 / 接触", OCCLUSAL_ONLY: "仅对颌高度 / 咬合面", SPACE_ONLY: "患者空间 + 牙库形态" }[eligibility.automatic_mode] || eligibility.automatic_mode}。
+          已成功的 Margin、另一侧邻接和咬合形态会继续作为保护区，不因其它方向微调被重新破坏。
         </Notice>}
-        {wf.templateCandidate?.id && <Notice tone="ok">
-          已生成参考牙型就位预览（<b>{wf.templateCandidate.id.slice(0, 8)}</b>）。这里只检查牙位、方向和基础尺寸；它还不是自动设计结果。
-        </Notice>}
-        {wf.selectedTemplate && !wf.templateCandidate && <Notice tone="ok">
-          已选定牙库：{wf.selectedTemplate.library}。下一步会真正读取邻牙和对颌几何并改变模板网格。
+        {wf.library && <Notice tone="ok">
+          已选择牙库：{wf.library}。当前只记录选择；点击“牙冠生成”后才会完成模板确认和几何求解。
         </Notice>}
 
         <StageReport candidate={candidate} />
         {candidate?.id && <Notice tone={stageFacts.conflicts || !stageFacts.changed ? "warn" : "ok"}>
-          {stageFacts.conflicts ? "自动约束没有完整求解，请先检查执行结果，不建议直接采纳。"
-            : stageFacts.changed ? "候选已经发生邻牙 / 对颌驱动的真实几何形变，请在 3D 中复核后采纳。"
-            : "候选目前看起来仍接近模板。只有执行结果明确显示各目标原本已满足时才建议采纳。"}
-          <button type="button" className="cd-link" disabled={wf.busy} onClick={wf.acceptGenerated}>采纳候选</button>
+          {stageFacts.conflicts ? "自动约束存在提示，但候选仍会保留并显示。"
+            : stageFacts.changed ? "候选已经发生邻牙 / 对颌驱动的真实几何形变。"
+            : "候选目前接近模板，建议在微调画布继续检查。"}
         </Notice>}
 
         {!wf.frameConfirmed && <Notice tone="warn">请先确认近中 / 颊侧方向：邻接面形变必须绑定真实牙位坐标帧。</Notice>}
-        {wf.selectedTemplate && eligibility?.template_allowed && !eligibility?.automatic_mode && <Notice tone="warn">
-          尚无可执行的自动设计。至少需要确认真实邻牙或静态咬合位姿，并设置相应目标距离。
-        </Notice>}
       </Panel>
 
       <Panel title="CAD 1.0 设计参数" subtitle="这些目标用于约束形变，而不是缩放一颗模板牙">
         {CORE_PARAMS.filter((spec) => !spec.fixed).map((spec) => <ParamRow key={spec.key} spec={spec} value={wf.params[spec.key]}
-          disabled={wf.busy} onChange={(value) => wf.setParams((params) => ({ ...params, [spec.key]: value }))} />)}
+          disabled={wf.busy || generating} onChange={(value) => wf.setParams((params) => ({ ...params, [spec.key]: value }))} />)}
 
         <details className="cd-advanced" open={advanced} onToggle={(event) => setAdvanced(event.target.open)}>
           <summary>高级参数</summary>
           {ADVANCED_PARAMS.filter((spec) => !spec.fixed).map((spec) => <ParamRow key={spec.key} spec={spec} value={wf.params[spec.key]}
-            disabled={wf.busy} onChange={(value) => wf.setParams((params) => ({ ...params, [spec.key]: value }))} />)}
+            disabled={wf.busy || generating} onChange={(value) => wf.setParams((params) => ({ ...params, [spec.key]: value }))} />)}
         </details>
 
         <div className="cd-btn-row">
-          <button type="button" className="cd-btn ghost" disabled={wf.busy} onClick={() => wf.setParams({ ...DEFAULT_PARAMS })}>恢复默认</button>
-          <button type="button" className="cd-btn primary" disabled={wf.busy} onClick={wf.applyParams}>应用参数</button>
+          <button type="button" className="cd-btn ghost" disabled={wf.busy || generating} onClick={() => wf.setParams({ ...DEFAULT_PARAMS })}>恢复默认</button>
+          <button type="button" className="cd-btn secondary" disabled={wf.busy || generating} onClick={wf.applyParams}>保存参数</button>
         </div>
-        {wf.profileConfirmed && <Notice tone="ok">参数已写入设计修订，自动设计和最终内冠都会引用这一版。</Notice>}
+        {wf.profileConfirmed && <Notice tone="ok">参数已写入设计修订；点击“牙冠生成”会以当前参数重新计算完整牙冠。</Notice>}
       </Panel>
+    </div>
+
+    <div className="cd-btn-row end" style={{ justifyContent:"flex-end", marginTop:16 }}>
+      <button type="button" className="cd-btn primary"
+        disabled={wf.busy || generating || !libraries.length || !wf.library || eligibility?.template_allowed === false}
+        onClick={generateCompleteCrown}>
+        {generating ? "正在生成完整牙冠…" : "牙冠生成"}
+      </button>
     </div>
   </div>;
 }
