@@ -1,17 +1,8 @@
 """Runtime audit + reuse cache for CAD-1 automatic crown generation.
 
-This module deliberately keeps two concerns together because they must be audited
-as one performance story:
-
-* every expensive generation stage emits a durable JSONL timing event and a
-  human-readable backend log line;
-* patient geometry that is invariant across automatic correction rounds is
-  cached by content-derived keys instead of rebuilt on every request.
-
-The cache is an optimisation only. Keys include the geometry/provenance inputs
-that own the result; a key miss always rebuilds from source geometry.  Cached
-meshes are persisted under the case directory so sequential requests, process
-restarts and later review can all explain what was reused.
+Every expensive stage is durably timed and invariant patient geometry is cached
+by content-derived keys.  Runtime/candidate revision ids never belong in a
+geometry cache key.
 """
 from __future__ import annotations
 
@@ -29,8 +20,6 @@ from uuid import uuid4
 from ..config import CASE_DIR
 from ..geometry.io import load_mesh, save_mesh
 
-# uvicorn.error is visible in the normal backend terminal without requiring an
-# extra logging configuration.  The same events are also persisted as JSONL.
 _LOG = logging.getLogger("uvicorn.error")
 _OBJECT_CACHE = OrderedDict()
 _CACHE_LOCK = threading.Lock()
@@ -46,11 +35,43 @@ def stable_key(payload) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def intaglio_cache_payload(*, support_sha256, margin, axis, parameters, prepared_support=None):
-    """Only include parameters that can change the blockout/gap envelope.
+def _rounded_geometry(value, digits=8):
+    """Canonicalise numeric geometry without adding revision/runtime metadata."""
+    if isinstance(value, dict):
+        return {str(k): _rounded_geometry(v, digits) for k, v in sorted(value.items())}
+    if isinstance(value, (list, tuple)):
+        return [_rounded_geometry(v, digits) for v in value]
+    if isinstance(value, float):
+        return round(value, digits)
+    return value
 
-    Contact or occlusal targets intentionally do not invalidate this cache.
+
+def _stable_support_fingerprint(prepared_support):
+    """Strip volatile contract/revision fields from the intaglio cache owner.
+
+    ``PreparedSurfaceContract.as_report`` includes design/source revision ids that
+    legitimately change after each accepted outer candidate even though the
+    conditioned abutment mesh does not.  FDI46 exposed this as three guaranteed
+    cache misses.  Only conditioned geometry + extraction algorithm/selection own
+    the actual intaglio preview.
     """
+    if not isinstance(prepared_support, dict):
+        return prepared_support
+    geometry = prepared_support.get("geometry") or {}
+    provenance = prepared_support.get("provenance") or {}
+    diagnostics = prepared_support.get("diagnostics") or {}
+    return {
+        "conditioned_mesh_sha256": geometry.get("conditioned_mesh_sha256")
+            or provenance.get("conditioned_support_sha256"),
+        "algorithm_version": provenance.get("algorithm_version")
+            or diagnostics.get("algorithm_version"),
+        "support_region_selection": provenance.get("support_region_selection")
+            or diagnostics.get("support_region_selection"),
+    }
+
+
+def intaglio_cache_payload(*, support_sha256, margin, axis, parameters, prepared_support=None):
+    """Inputs that can actually change blockout/gap geometry, and nothing else."""
     keys = (
         "cement_gap_mm", "cement_gap_start_mm", "cement_gap_top_mm",
         "margin_gap_mm", "margin_extension_mm", "untouchable_zone_mm",
@@ -59,12 +80,12 @@ def intaglio_cache_payload(*, support_sha256, margin, axis, parameters, prepared
         "border_vertical_mm", "tool_radius_mm", "tool_compensation_enabled",
     )
     return {
-        "version": "intaglio-preview-cache/v1",
+        "version": "intaglio-preview-cache/v2-stable-geometry-owner",
         "support_sha256": support_sha256,
-        "margin": margin,
-        "axis": axis,
-        "parameters": {key: parameters.get(key) for key in keys},
-        "prepared_support": prepared_support,
+        "margin": _rounded_geometry(margin),
+        "axis": _rounded_geometry(axis),
+        "parameters": {key: _rounded_geometry(parameters.get(key)) for key in keys},
+        "prepared_support": _rounded_geometry(_stable_support_fingerprint(prepared_support)),
     }
 
 
@@ -93,11 +114,6 @@ def _cache_dir(case_id: str) -> Path:
 
 
 def cached_mesh(case_id: str, namespace: str, payload, builder, *, trace=None):
-    """Disk-backed immutable mesh cache.
-
-    ``builder`` returns ``(mesh, metadata)``.  A copy is returned so callers can
-    mutate their working mesh without corrupting the cache.
-    """
     key = stable_key(payload)
     root = _cache_dir(case_id)
     mesh_path = root / f"{namespace}_{key}.stl"
@@ -110,7 +126,6 @@ def cached_mesh(case_id: str, namespace: str, payload, builder, *, trace=None):
                 trace.cache(namespace, True, key, path=str(mesh_path))
             return mesh.copy(), metadata, True, mesh_path
         except Exception:
-            # Corrupt/partial cache is never trusted; rebuilding is safer.
             pass
     started = time.perf_counter()
     mesh, metadata = builder()
@@ -122,12 +137,6 @@ def cached_mesh(case_id: str, namespace: str, payload, builder, *, trace=None):
 
 
 def cached_object(namespace: str, payload, builder, *, trace=None):
-    """Small in-process cache for immutable acceleration/query objects.
-
-    FitSurface construction creates reusable search/sign structures.  These
-    objects are not serialised; the underlying transformed meshes are separately
-    disk-cached when useful.
-    """
     key = f"{namespace}:{stable_key(payload)}"
     with _CACHE_LOCK:
         value = _OBJECT_CACHE.get(key)
@@ -137,11 +146,9 @@ def cached_object(namespace: str, payload, builder, *, trace=None):
         if trace is not None:
             trace.cache(namespace, True, key.split(":", 1)[1], memory=True)
         return value, True
-    started = time.perf_counter()
-    value = builder()
+    started = time.perf_counter(); value = builder()
     with _CACHE_LOCK:
-        _OBJECT_CACHE[key] = value
-        _OBJECT_CACHE.move_to_end(key)
+        _OBJECT_CACHE[key] = value; _OBJECT_CACHE.move_to_end(key)
         while len(_OBJECT_CACHE) > _OBJECT_CACHE_LIMIT:
             _OBJECT_CACHE.popitem(last=False)
     if trace is not None:
@@ -154,25 +161,16 @@ class GenerationTrace:
     """Append-only per-design audit plus per-candidate timing snapshot."""
 
     def __init__(self, case_id: str, design_id: str, *, baseline_sha256: str | None = None):
-        self.case_id = case_id
-        self.design_id = design_id
-        self.run_id = uuid4().hex
-        self.baseline_sha256 = baseline_sha256
-        self.started_at = _utc_now()
-        self._started = time.perf_counter()
+        self.case_id = case_id; self.design_id = design_id; self.run_id = uuid4().hex
+        self.baseline_sha256 = baseline_sha256; self.started_at = _utc_now(); self._started = time.perf_counter()
         self.events = []
         self.audit_path = CASE_DIR / case_id / f"{design_id}_generation_audit.jsonl"
         self.audit_path.parent.mkdir(parents=True, exist_ok=True)
         self.event("RUN_START", status="STARTED", baseline_sha256=baseline_sha256)
 
     def _append(self, event: dict):
-        payload = {
-            "run_id": self.run_id,
-            "case_id": self.case_id,
-            "design_id": self.design_id,
-            "timestamp": _utc_now(),
-            **event,
-        }
+        payload = {"run_id": self.run_id, "case_id": self.case_id, "design_id": self.design_id,
+                   "timestamp": _utc_now(), **event}
         self.events.append(payload)
         with self.audit_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
@@ -186,57 +184,38 @@ class GenerationTrace:
         return self._append({"stage": stage, "status": status, **metadata})
 
     def cache(self, namespace: str, hit: bool, key: str, **metadata):
-        return self.event(
-            f"CACHE_{namespace.upper()}",
-            status="HIT" if hit else "MISS",
-            cache_key=key,
-            **metadata,
-        )
+        return self.event(f"CACHE_{namespace.upper()}", status="HIT" if hit else "MISS",
+                          cache_key=key, **metadata)
 
     @contextmanager
     def span(self, stage: str, **metadata):
-        started = time.perf_counter()
-        self.event(stage, status="STARTED", **metadata)
+        started = time.perf_counter(); self.event(stage, status="STARTED", **metadata)
         try:
             yield
         except Exception as exc:
-            self._append({
-                "stage": stage,
-                "status": "ERROR",
-                "elapsed_s": time.perf_counter() - started,
-                "error": str(exc),
-                **metadata,
-            })
+            self._append({"stage": stage, "status": "ERROR", "elapsed_s": time.perf_counter() - started,
+                          "error": str(exc), **metadata})
             raise
         else:
-            self._append({
-                "stage": stage,
-                "status": "DONE",
-                "elapsed_s": time.perf_counter() - started,
-                **metadata,
-            })
+            self._append({"stage": stage, "status": "DONE", "elapsed_s": time.perf_counter() - started,
+                          **metadata})
 
     def summary(self):
-        completed = [event for event in self.events if event.get("status") in ("DONE", "ERROR")]
+        completed = [e for e in self.events if e.get("status") in ("DONE", "ERROR")]
         stage_seconds = {}
         for event in completed:
             if isinstance(event.get("elapsed_s"), (int, float)):
                 stage_seconds[event["stage"]] = stage_seconds.get(event["stage"], 0.0) + float(event["elapsed_s"])
-        return {
-            "run_id": self.run_id,
-            "started_at": self.started_at,
-            "total_elapsed_s": float(time.perf_counter() - self._started),
-            "stage_elapsed_s": stage_seconds,
-            "cache_hits": sum(1 for event in self.events if event.get("status") == "HIT"),
-            "cache_misses": sum(1 for event in self.events if event.get("status") == "MISS"),
-            "audit_jsonl": str(self.audit_path),
-        }
+        return {"run_id": self.run_id, "started_at": self.started_at,
+                "total_elapsed_s": float(time.perf_counter() - self._started),
+                "stage_elapsed_s": stage_seconds,
+                "cache_hits": sum(1 for e in self.events if e.get("status") == "HIT"),
+                "cache_misses": sum(1 for e in self.events if e.get("status") == "MISS"),
+                "audit_jsonl": str(self.audit_path)}
 
     def snapshot(self, path: Path, *, extra=None) -> Path:
-        summary = self.summary()
-        self.event("RUN_END", status="DONE", total_elapsed_s=summary["total_elapsed_s"])
+        summary = self.summary(); self.event("RUN_END", status="DONE", total_elapsed_s=summary["total_elapsed_s"])
         payload = {"summary": self.summary(), "events": self.events}
-        if extra:
-            payload["extra"] = extra
+        if extra: payload["extra"] = extra
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
         return path
