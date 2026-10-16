@@ -6,6 +6,7 @@ from scipy.interpolate import RBFInterpolator
 
 
 DEFAULT_CERVICAL_PADDING_MM = 0.20
+DEFAULT_CERVICAL_TRANSITION_MM = 2.20
 
 
 def kabsch(source_points, target_points):
@@ -64,21 +65,47 @@ def rigid_then_rbf(mesh, template_points, patient_points,
     return m, matrix
 
 
+def _smoothstep01(value):
+    x = np.clip(np.asarray(value, dtype=float), 0.0, 1.0)
+    return x * x * (3.0 - 2.0 * x)
+
+
+def _tapered_cervical_scale(local, ring_xy, factor, cervical_z, transition_mm):
+    """Fit the cervical footprint without globally scaling coronal anatomy.
+
+    Margin geometry owns the emergence/root footprint only.  Scaling the full
+    crown in X/Y by the cervical factor couples a narrow preparation to the whole
+    bucco-lingual and mesio-distal anatomy and is a direct flattening mechanism.
+    Apply the full factor at the cervical reference, then smoothly release it to
+    identity over the emergence zone.  The coronal two thirds therefore remain a
+    morphology prior unless patient-space constraints later require compression.
+    """
+    out = np.asarray(local, dtype=float).copy()
+    center = np.asarray(ring_xy, dtype=float).mean(axis=0)
+    height = np.maximum(out[:, 2] - float(cervical_z), 0.0)
+    release = _smoothstep01(height / max(float(transition_mm), 1e-6))
+    cervical_weight = 1.0 - release
+    per_vertex_factor = 1.0 + cervical_weight[:, None] * (np.asarray(factor, float)[None, :] - 1.0)
+    out[:, :2] = center + (out[:, :2] - center) * per_vertex_factor
+    return out, cervical_weight
+
+
 def initialize_from_margin(template, margin_points, insertion_axis, *, template_cervical_points=None,
-                           patient_frame=None, cervical_padding_mm=DEFAULT_CERVICAL_PADDING_MM):
-    """Place and size a library tooth as the *initial* CAD-1 anatomy.
+                           patient_frame=None, cervical_padding_mm=DEFAULT_CERVICAL_PADDING_MM,
+                           cervical_transition_mm=DEFAULT_CERVICAL_TRANSITION_MM):
+    """Place a library tooth while keeping cervical and coronal ownership separate.
 
     Responsibilities stop deliberately at initial anatomy placement:
 
     * +Z template axis -> confirmed insertion axis;
     * template X/Y -> confirmed mesial/buccal patient frame;
-    * cervical footprint -> patient Margin footprint;
+    * cervical footprint -> patient Margin footprint, with a tapered emergence fit;
     * cervical reference -> Margin centroid/height.
 
-    Antagonist height, occlusal relief and proximal contact are **not** solved
-    here.  They are patient-specific constraints and must be handled by AutoFit.
-    This separation prevents a successful template placement from being confused
-    with a completed automatic crown design.
+    Crucially, the Margin footprint is **not** a requested whole-crown M/D or B/L
+    size.  Its scale fades to identity through the emergence zone so a narrow
+    preparation cannot flatten the buccal/lingual or occlusal anatomy.  Adjacent
+    teeth and antagonist remain downstream feasibility/contact constraints.
     """
     margin = np.asarray(margin_points, dtype=float)
     axis = np.asarray(insertion_axis, dtype=float)
@@ -88,6 +115,9 @@ def initialize_from_margin(template, margin_points, insertion_axis, *, template_
         raise ValueError("就位方向无效")
     if not np.isfinite(cervical_padding_mm) or cervical_padding_mm < 0 or cervical_padding_mm > 1.0:
         raise ValueError("cervical_padding_mm 必须位于 0–1 mm")
+    if (not np.isfinite(cervical_transition_mm)
+            or cervical_transition_mm < 0.5 or cervical_transition_mm > 5.0):
+        raise ValueError("cervical_transition_mm 必须位于 0.5–5.0 mm")
 
     axis /= np.linalg.norm(axis)
     m = template.copy()
@@ -97,8 +127,6 @@ def initialize_from_margin(template, margin_points, insertion_axis, *, template_
     center = margin.mean(axis=0)
     projection = vertices @ axis
 
-    # Fit cervical footprint only.  Occlusal/neighbor dimensions belong to the
-    # downstream functional constraint solver, not this initialization step.
     if patient_frame is not None:
         basis = np.asarray(patient_frame.matrix(), dtype=float)
         if basis.shape != (3, 3):
@@ -123,11 +151,14 @@ def initialize_from_margin(template, margin_points, insertion_axis, *, template_
     local = vertices @ basis
     ring = local[local[:, 2] <= local[:, 2].min() + .1, :2]
     cuff = None
+    cuff_local = None
     if template_cervical_points is not None:
         cuff = np.asarray(template_cervical_points, float)
         if cuff.ndim != 2 or cuff.shape[1] != 3 or len(cuff) < 3 or not np.isfinite(cuff).all():
             raise ValueError("模板颈缘必须为有效三维闭环点")
-        ring = (trimesh.transform_points(cuff, transform) @ basis)[:, :2]
+        cuff_world = trimesh.transform_points(cuff, transform)
+        cuff_local = cuff_world @ basis
+        ring = cuff_local[:, :2]
 
     target = margin @ basis
     if len(ring) >= 3:
@@ -135,13 +166,13 @@ def initialize_from_margin(template, margin_points, insertion_axis, *, template_
         target_extent = np.ptp(target[:, :2], axis=0)
         if np.any(extent < .1) or np.any(target_extent < .1):
             raise ValueError("模板或 Margin 颈缘尺寸退化")
-        # Previous code hid +0.4 mm inside this formula.  Make the same total
-        # allowance explicit as 0.20 mm per side so it can later become a profile
-        # value without changing placement mathematics.
         factor = (target_extent + 2.0 * float(cervical_padding_mm)) / extent
         if np.any(factor < .4) or np.any(factor > 2.5):
             raise ValueError("模板与基牙尺寸差异过大，请检查模板朝向和 Margin")
-        local[:, :2] = (local[:, :2] - ring.mean(0)) * factor + ring.mean(0)
+        cervical_z = float(np.mean(cuff_local[:, 2])) if cuff_local is not None else float(local[:, 2].min())
+        local, _cervical_weight = _tapered_cervical_scale(
+            local, ring, factor, cervical_z, float(cervical_transition_mm)
+        )
         m.vertices = local @ basis.T
         vertices = np.asarray(m.vertices)
         projection = vertices @ axis
@@ -149,7 +180,6 @@ def initialize_from_margin(template, margin_points, insertion_axis, *, template_
     horizontal = vertices.mean(axis=0) - axis * projection.mean()
     cervical_height = float(projection.min())
     if cuff is not None:
-        cuff_world = trimesh.transform_points(cuff, transform)
         horizontal = ring.mean(0) @ basis[:, :2].T
         cervical_height = float((cuff_world @ axis).mean())
 
