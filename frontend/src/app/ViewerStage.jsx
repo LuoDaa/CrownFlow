@@ -8,7 +8,8 @@ import ViewTools, { useViewTools } from "../components/ViewTools";
  *
  * 1.0 预览策略：渲染与审核彻底解耦。只要本轮生成出了候选几何，画布
  * 就优先展示 candidatePreview；是否 PASS/REVIEW_REQUIRED/是否已采纳都
- * 不能阻止用户先看到结果。final 模式在最终冠尚未生成时也回退到最新
+ * 不能阻止用户先看到结果。AUTO 候选同时发布 intaglio artifact，因此
+ * 外冠出来时内冠也立即显示；final 模式在最终冠尚未生成时仍回退到最新
  * candidate/outer，而不是显示空画布。
  */
 export default function ViewerStage({
@@ -35,6 +36,15 @@ export default function ViewerStage({
     : wf.candidatePreview ? "candidate"
       : wf.outer ? "accepted" : "none";
 
+  // AUTO generation stores the best available inner surface under the candidate
+  // artifact label `intaglio`: final W3 intaglio when available, otherwise the
+  // design-time intaglio preview.  Derive that URL from the already-authoritative
+  // candidate URL so the inner crown is visible before acceptance as well.
+  const candidateInner = !hasFinal && wf.candidatePreview
+    ? wf.candidatePreview.replace(/\/candidate\.stl(?:\?.*)?$/, "/artifact/intaglio")
+    : null;
+  const activeInner = candidateInner || wf.innerCrown || null;
+
   return <section className="cd-viewport-card">
     <div className="cd-viewport-head">
       <div className="cd-viewport-tabs">
@@ -43,6 +53,7 @@ export default function ViewerStage({
       <small>
         右键旋转 · 滚轮缩放 · 左右键平移
         {previewSource === "candidate" ? " · 正在显示本次生成候选（审核不阻止预览）" : ""}
+        {candidateInner ? " · 同步显示本次生成内冠" : ""}
         {mode === "final" && previewSource !== "final" && previewSource !== "none"
           ? " · 最终冠未完成，显示最新可用外冠" : ""}
       </small>
@@ -59,7 +70,7 @@ export default function ViewerStage({
         support={renderSupport && visible.support ? wf.support : null}
         outer={activeOuter}
         finalMesh={activeFinal}
-        cutter={wf.innerCrown}
+        cutter={activeInner}
         insertionAxis={wf.axis}
         showAxis={wf.step === "margin"}
         onAxisChange={wf.setAxis}
@@ -84,7 +95,7 @@ export default function ViewerStage({
         headlight={headlight}
         editorScene={editorScene}
         onRetryMesh={wf.reloadMeshes}
-        sceneKey={`${wf.caseId}:${mode}:${wf.meshVersion}:${wf.candidatePreview || ""}:${wf.finalCrown || ""}`}
+        sceneKey={`${wf.caseId}:${mode}:${wf.meshVersion}:${wf.candidatePreview || ""}:${wf.finalCrown || ""}:${activeInner || ""}`}
       />
       {!wf.upper && !wf.lower && !wf.support && !activeOuter && !activeFinal
         && <div className="cd-empty">导入病例文件后，这里显示牙列与牙冠</div>}
