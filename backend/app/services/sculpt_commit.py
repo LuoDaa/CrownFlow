@@ -17,6 +17,21 @@ from .sculpt_session import reorder_state,measure_contacts
 from .design_dependencies import file_digest,dependency_digest,publish_artifacts,require_current_final
 
 
+CONTACT_AUDIT_SAMPLES=1024
+
+
+def contact_audit(design,mesh,frame,ref):
+    """Cheap provenance audit; full contact maps remain on the analysis endpoint."""
+    total=int(len(mesh.vertices))
+    ids=None if total<=CONTACT_AUDIT_SAMPLES else np.linspace(0,total-1,CONTACT_AUDIT_SAMPLES,dtype=int)
+    measured=measure_contacts(design,mesh,frame,ref,sample_ids=ids)
+    measured['audit_sampled']=ids is not None
+    measured['vertex_count']=total
+    measured['audit_sample_count']=int(len(measured.get('sample_ids') or []))
+    measured['audit_note']=('采样审计测量（每 %d 点取 1）'%max(total//CONTACT_AUDIT_SAMPLES,1)) if ids is not None else '全量逐顶点'
+    return measured
+
+
 def region_masks(mesh,weights,lock,*,fixed_weights=None):
     moving=(np.asarray(weights)>.5)&(lock>0)
     masks=np.full(len(mesh.vertices),'FIXED',dtype='<U7');masks[moving]='MOVING'
@@ -84,7 +99,7 @@ def commit_edit(d,p,mesh,frame,ref,state,expected,*,annotation_state=None):
     # produced a current, closed final crown and intaglio.
     require_current_final(d)
     margin=json.loads(d['margin_json']);before_sha=file_digest(d['outer_path'])
-    before=measure_contacts(d,mesh,frame,ref)
+    before=contact_audit(d,mesh,frame,ref)
     metadata={};state={**state};region_source=None
 
     if annotation_state is not None:
@@ -177,7 +192,7 @@ def commit_edit(d,p,mesh,frame,ref,state,expected,*,annotation_state=None):
     final_path=CASE_DIR/d['case_id']/f"{d['id']}_final_sculpt_{uuid4().hex}.stl"
     outer_surface_path=CASE_DIR/d['case_id']/f"{d['id']}_outer_surface_sculpt_{uuid4().hex}.stl"
     save_mesh(final_mesh,final_path);save_mesh(outer_surface_mesh,outer_surface_path)
-    after=measure_contacts(d,persisted,frame,ref)
+    after=contact_audit(d,persisted,frame,ref)
     state.update(outer_sha256=file_digest(outer_path),frame_revision_id=ref['revision_id'])
     state_path=outer_path.with_suffix('.sculpt.json')
     state_path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8')

@@ -52,6 +52,7 @@ export const api={
   editOuter:(id,p)=>req(`/api/designs/${id}/edit-outer`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}),
   adaptOcclusal:(id,p)=>req(`/api/designs/${id}/adapt-occlusal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p||{})}),
   sculptSession:id=>req(`/api/designs/${id}/sculpt-session`),
+  sculptSessionLight:id=>req(`/api/designs/${id}/sculpt-session?light=1`),
   // 开发态叠加用：额外下发逐顶点语义权重（正式工作流不需要它）
   sculptSessionRegions:id=>req(`/api/designs/${id}/sculpt-session?regions=1`),
   sculptContactPreview:(id,p)=>req(`/api/designs/${id}/sculpt-contact-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}),

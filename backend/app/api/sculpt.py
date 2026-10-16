@@ -25,9 +25,9 @@ def checked(design_id,request):
 
 
 @router.get('/{design_id}/sculpt-session')
-def get_session(design_id:str,regions:bool=False):
-    """``regions=1`` 时额外下发逐顶点语义权重（前端开发态叠加显示用）。"""
-    return session_report(design_row(design_id),include_regions=regions)
+def get_session(design_id:str,regions:bool=False,light:bool=False):
+    """``regions=1`` 额外下发逐顶点语义权重；``light=1`` 跳过显示类诊断（微调保存后的后台刷新用）。"""
+    return session_report(design_row(design_id),include_regions=regions,light=light)
 
 
 @router.post('/{design_id}/sculpt-contact-preview')
