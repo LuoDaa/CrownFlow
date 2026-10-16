@@ -15,7 +15,10 @@ from uuid import uuid4
 import numpy as np
 
 from ..config import CASE_DIR
-from ..geometry.crown_outer.proximal_rounding import round_proximal_contacts
+from ..geometry.crown_outer.proximal_rounding import (
+    ProximalRoundingConfig,
+    round_proximal_contacts,
+)
 from ..geometry.crown_outer.sectional_v1 import SectionalV1Config, build_sectional_outer
 from ..geometry.io import load_mesh, save_mesh
 from .design_dependencies import file_digest
@@ -138,16 +141,26 @@ def build_sectional_baseline(d, frame, frame_ref, support_mesh, margin_points):
         config=config,
     )
 
-    # GREEN-only surface stage.  Confirmed neighbour triangles are queried as a
-    # real facing surface in PatientFrame Y/Z; only middle side-ring X/Y vertices
-    # can move.  Margin, every axial height, occlusal rim/cap and W3 intaglio are
-    # protected by hard invariants inside round_proximal_contacts().
+    # GREEN-only surface stage.  Real IOS neighbour patches can be dense, sparse,
+    # or locally uneven depending on the click region.  A ~2.8-mm Y/Z query radius
+    # is deliberately wider than the old ray band, but the actual movement is
+    # still bounded by the measured facing X surface and max_proximal_extension.
+    proximal_config = ProximalRoundingConfig(
+        facing_query_radius_mm=2.80,
+        facing_k=20,
+        contact_band_pad_mm=0.30,
+        bl_width_scale=0.94,
+        bl_strength=0.72,
+        smoothing_passes=4,
+        smoothing_alpha=0.16,
+    )
     mesh, proximal_surface = round_proximal_contacts(
         mesh,
         margin_points,
         frame,
         neighbors=neighbors,
         sectional_config=config,
+        config=proximal_config,
     )
     geometry["green_surface"] = proximal_surface
     # Compatibility key retained for existing reports/UI consumers.
