@@ -22,9 +22,29 @@ from .models import (
     CrownOuterConfig,
     CrownOuterResult,
 )
-from .patient_frame import PatientFrame, build_patient_frame
+from .patient_frame import PatientFrame, build_patient_frame, validate_patient_frame
 from .placement import patient_margin_perimeter, place_template
 from .template import CrownTemplate
+
+
+def _patient_frame_for_generation(patient_frame, margin, insertion_axis):
+    """Resolve and validate the frame used by CrownOuter generation.
+
+    A supplied confirmed frame is a truth source, not a hint: it must remain a
+    strict right-handed orthonormal frame and its +Z must agree with the explicit
+    insertion axis.  We intentionally do not project/orthogonalize a bad frame.
+    """
+    if patient_frame is None:
+        return build_patient_frame(margin, insertion_axis)
+    validate_patient_frame(patient_frame)
+    axis = np.asarray(insertion_axis, dtype=float)
+    norm = float(np.linalg.norm(axis))
+    if norm < 1e-9 or not np.isfinite(norm):
+        raise ValueError("insertion_axis 是零向量或无效向量")
+    axis = axis / norm
+    if float(axis @ np.asarray(patient_frame.z, float)) < 1.0 - 1e-6:
+        raise ValueError("patient_frame.z 与 insertion_axis 不一致，拒绝混用不同确认方向")
+    return patient_frame
 
 
 def generate_crown_outer_v0(
@@ -58,7 +78,7 @@ def generate_crown_outer_v0(
         perim = patient_margin_perimeter(margin)
 
         # ---- C: patient frame + similarity placement
-        pf = patient_frame if patient_frame is not None else build_patient_frame(margin, insertion_axis)
+        pf = _patient_frame_for_generation(patient_frame, margin, insertion_axis)
         placement = place_template(template, pf, perim)
         if md_scale is not None:
             sv = placement.svec().copy()
@@ -86,10 +106,16 @@ def generate_crown_outer_v0(
         loop_idx = template.margin_loop_indices
         root_idx = np.flatnonzero(template.root_vertex_mask)
         crown_idx = np.flatnonzero(template.crown_vertex_mask)
-        # 咬合弱锚：冠部 z 高分位（不含颈环顶点）
-        z_thr = np.percentile(placed[crown_idx, 2],
-                              config.occlusal_anchor_percentile)
-        occ_idx = crown_idx[placed[crown_idx, 2] >= z_thr]
+        # 咬合弱锚：必须沿**确认 Patient Frame 的 +Z**取高分位，不能看 world-Z。
+        # 否则同一病例整体旋转后会换一批锚点，破坏 rigid-transform equivariance。
+        axial = (placed - np.asarray(pf.origin, float)) @ np.asarray(pf.z, float)
+        z_thr = np.percentile(axial[crown_idx], config.occlusal_anchor_percentile)
+        occ_idx = crown_idx[axial[crown_idx] >= z_thr]
+        res.mesh_qc["occlusal_anchor"] = {
+            "frame": "patient_z",
+            "percentile": float(config.occlusal_anchor_percentile),
+            "count": int(len(occ_idx)),
+        }
         deformed, solve_info = solve_laplacian(DeformInputs(
             vertices_placed=placed, faces=template.faces,
             margin_vertex_indices=loop_idx, margin_targets=targets,
