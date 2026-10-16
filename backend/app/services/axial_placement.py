@@ -227,7 +227,7 @@ def plan_axial_placement(envelope, *, crown_top_mm, crown_bottom_mm=None,
     Crown 1.0 约束：
     - 太高：缩到 ``upper``；
     - 太低或虽然可行但仍离对颌明显：在不动颈缘带的前提下增高到 ``upper``；
-    - 只有距 ``upper`` 已进入 deadband 才不再动。
+    - 只有距 ``upper`` 已进入 deadband 且已经满足 ``lower`` 才不再动。
 
     这样初始 crown 不会停在可行区间下半部而“咬不到”；随后现有 occlusal adaptation
     只需要处理局部穿透/凹凸，不必凭空把整颗牙往上长。
@@ -264,9 +264,9 @@ def plan_axial_placement(envelope, *, crown_top_mm, crown_bottom_mm=None,
                 "target_top_mm": float(upper), "anchor_mm": anchor,
                 "reason": "颈缘被钉住：把颈缘带以上的冠体轴向压到对颌安全上界"}
 
-    # 已经真正到达对颌目标附近：不为几十微米反复改形。
+    # 只有“已经满足最小高度”且进入 deadband 才能不动；否则会把略低于 lower 的冠误判为到位。
     gap_to_target = upper - top
-    if gap_to_target <= float(contact_deadband_mm):
+    if top >= lower and gap_to_target <= float(contact_deadband_mm):
         return {"mechanism": "TRANSLATE", "feasible": True, "axial_scale": 1.0,
                 "target_top_mm": top, "lower_bound_mm": lower, "upper_bound_mm": upper,
                 "gap_to_target_mm": float(gap_to_target),
