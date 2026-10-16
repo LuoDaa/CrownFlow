@@ -1,13 +1,17 @@
 """Private FDI26 Crown 1.0 regression runner.
 
-The raw scanner STLs stay local.  The runner now exercises the same RED/GREEN/BLUE
+The raw scanner STLs stay local. The runner exercises the same RED/GREEN/BLUE
 geometry used by live AUTO generation:
 
     RED   = prep / minimum-wall safety envelope
     GREEN = broad mesial/distal envelope from the same-jaw arch
     BLUE  = antagonist-constrained occlusal cap
 
-It also exports the prep-driven blockout + gap cutter used as the future intaglio.
+A confirmed live Margin may be supplied with ``--margin-json``.  If it is absent,
+the M1 proposal is still allowed for regression, but it must pass the same
+prep-relative Margin contract before any crown geometry is built.  Consecutive
+duplicate Margin samples are removed; small/self-crossing loops are rejected.
+
 This is regression tooling only; raw-arch neighbor crops are explicitly NOT a
 clinical substitute for confirmed neighbor patches in the application.
 """
@@ -26,6 +30,11 @@ import trimesh
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.geometry.axis import suggest_insertion_axis  # noqa: E402
+from app.geometry.crown_outer.margin_contract import (  # noqa: E402
+    MarginContractError,
+    assess_margin_against_support,
+    sanitize_margin_loop,
+)
 from app.geometry.crown_outer.patient_frame import (  # noqa: E402
     build_patient_frame,
     confirmed_patient_frame,
@@ -101,6 +110,28 @@ def _frame_seed(path: Path | None) -> tuple[dict | None, np.ndarray | None]:
     return seed, axis
 
 
+def _margin_json_points(path: Path) -> np.ndarray:
+    """Read confirmed Margin exports from common live/report JSON shapes."""
+    value = json.loads(path.read_text(encoding="utf-8"))
+    points = None
+    if isinstance(value, list):
+        points = value
+    elif isinstance(value, dict):
+        points = value.get("points") or value.get("margin_points")
+        if points is None and isinstance(value.get("margin"), dict):
+            points = value["margin"].get("points")
+        if points is None and isinstance(value.get("payload"), dict):
+            points = value["payload"].get("points")
+    if points is None:
+        raise ValueError(
+            "margin-json 必须是 Nx3 数组，或包含 points / margin_points / margin.points / payload.points"
+        )
+    result = np.asarray(points, float)
+    if result.ndim != 2 or result.shape[1] != 3:
+        raise ValueError("margin-json points 必须是 Nx3")
+    return result
+
+
 def _local(points, frame):
     return (np.asarray(points, float) - np.asarray(frame.origin, float)) @ frame.matrix()
 
@@ -108,7 +139,7 @@ def _local(points, frame):
 def _private_arch_neighbor_patches(arch, frame, margin_points, support):
     """Engineering-only neighbor crops for the private two-STL fixture.
 
-    Live CrownFlow still requires human-confirmed neighbor patches.  This helper
+    Live CrownFlow still requires human-confirmed neighbor patches. This helper
     exists only so the supplied FDI26 raw scan can exercise GREEN broad-contact
     geometry without uploading extra patient files.
     """
@@ -171,6 +202,12 @@ def main() -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--fdi", type=int, default=26)
     ap.add_argument("--frame-json", type=Path, default=None)
+    ap.add_argument(
+        "--margin-json",
+        type=Path,
+        default=None,
+        help="优先使用 live 已确认 Margin；支持 points / margin_points / margin.points / payload.points",
+    )
     ap.add_argument("--margin-mode", choices=("SUPRA", "SUB"), default="SUPRA")
     ap.add_argument("--margin-radius-mm", type=float, default=1.0)
     ap.add_argument("--min-thickness-mm", type=float, default=0.50)
@@ -187,7 +224,7 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     frame_seed, confirmed_axis = _frame_seed(args.frame_json)
     report = {
-        "runner": "run_fdi26_private_regression/3-section-red-green-blue",
+        "runner": "run_fdi26_private_regression/4-margin-contract",
         "fdi": 26,
         "privacy": "raw_stl_local_only_not_committed",
         "release_status": "NOT_PRODUCTION_APPROVED",
@@ -197,6 +234,11 @@ def main() -> int:
             "frame": (
                 {"name": args.frame_json.name, "sha256": _sha256(args.frame_json)}
                 if args.frame_json
+                else None
+            ),
+            "margin": (
+                {"name": args.margin_json.name, "sha256": _sha256(args.margin_json)}
+                if args.margin_json
                 else None
             ),
         },
@@ -246,19 +288,55 @@ def main() -> int:
             "axis": axis.tolist(),
         }
 
-    margin = auto_margin_m1(
-        support_path,
-        axis=axis.tolist(),
-        mode=args.margin_mode,
-        radius_mm=float(args.margin_radius_mm),
-        apply_snap=True,
-    )
-    report["stages"]["margin"] = margin
-    if not margin.get("points"):
-        report.update(status="REVIEW_REQUIRED", reason="AUTO_MARGIN_NOT_ACCEPTED")
+    if args.margin_json is not None:
+        raw_margin = _margin_json_points(args.margin_json)
+        margin_stage = {
+            "status": "CONFIRMED_INPUT",
+            "source": "margin_json",
+            "source_sha256": _sha256(args.margin_json),
+            "points": raw_margin.tolist(),
+        }
+    else:
+        margin_stage = auto_margin_m1(
+            support_path,
+            axis=axis.tolist(),
+            mode=args.margin_mode,
+            radius_mm=float(args.margin_radius_mm),
+            apply_snap=True,
+        )
+        margin_stage["source"] = "auto_margin_m1"
+        if not margin_stage.get("points"):
+            report["stages"]["margin"] = margin_stage
+            report.update(status="REVIEW_REQUIRED", reason="AUTO_MARGIN_NOT_ACCEPTED")
+            _write_report(args.out, report)
+            return 3
+        raw_margin = np.asarray(margin_stage["points"], float)
+
+    try:
+        margin_points, cleanup = sanitize_margin_loop(raw_margin)
+        plausibility = assess_margin_against_support(
+            margin_points, np.asarray(support.vertices, float), axis
+        )
+    except MarginContractError as exc:
+        report["stages"]["margin"] = {
+            **margin_stage,
+            "points": [],
+            "contract": {"status": "REVIEW_REQUIRED", "reason": str(exc)},
+        }
+        report.update(status="REVIEW_REQUIRED", reason="MARGIN_CONTRACT_FAILED")
         _write_report(args.out, report)
         return 3
-    margin_points = np.asarray(margin["points"], float)
+
+    margin_stage["points"] = margin_points.tolist()
+    margin_stage["contract"] = {
+        "cleanup": cleanup,
+        "plausibility": plausibility,
+    }
+    report["stages"]["margin"] = margin_stage
+    if not plausibility["accepted"]:
+        report.update(status="REVIEW_REQUIRED", reason="MARGIN_GEOMETRY_IMPLAUSIBLE")
+        _write_report(args.out, report)
+        return 3
 
     if frame_seed is not None:
         frame = confirmed_patient_frame(
@@ -378,11 +456,16 @@ def main() -> int:
         "prep_driven_intaglio": bool(inner),
     }
     all_ok = all(report["acceptance"].values())
-    if all_ok and frame_seed is not None:
+    if all_ok and frame_seed is not None and args.margin_json is not None:
         report["status"] = "PASS_PRIVATE_REGRESSION"
     elif all_ok:
         report["status"] = "PASS_PRIVATE_GEOMETRY_REGRESSION"
-        report["reason"] = "PATIENT_FRAME_NOT_CONFIRMED"
+        missing = []
+        if frame_seed is None:
+            missing.append("PATIENT_FRAME_NOT_CONFIRMED")
+        if args.margin_json is None:
+            missing.append("MARGIN_NOT_CONFIRMED_INPUT")
+        report["reason"] = "+".join(missing) if missing else "ENGINEERING_ONLY"
     else:
         report["status"] = "REVIEW_REQUIRED"
         report["reason"] = "ONE_OR_MORE_CROWN_V1_REQUIREMENTS_NOT_MET"
