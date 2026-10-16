@@ -1,14 +1,10 @@
 """Read-only eligibility and deterministic generation candidates.
 
-AUTO v1.0 is generation-first.  Margin/frame/support are the only inputs that can
-prevent a run from starting.  The primary route uses a closed library crown as
-anatomy/topology prior and lets patient geometry own all metric limits:
+AUTO v1.0 is generation-first. Margin/frame/support are the only inputs that can
+prevent a run from starting. The primary route fuses a complete library crown
+(morphology/topology prior) with patient-owned M/D, B/L and occlusal distances.
 
-    template -> rigid patient placement -> uniform overscale -> patient-envelope
-    soft compression -> one constraint pass -> latest geometry is always kept.
-
-The older procedural patient-space embryo is retained only as a fail-open
-fallback while the template-constrained route is validated on real cases.
+The older procedural patient-space embryo remains a fail-open fallback.
 """
 import json
 from pathlib import Path
@@ -42,7 +38,6 @@ def _latest_stage(report, *names):
 
 
 def _apply_auto_candidate_safety(d, report, artifacts):
-    """Record observations without suppressing a generated outer in v1.0."""
     observations = []
     if d.get('support_type') == 'abutment' and report.get('mode') != 'BOTH':
         observations.append({'code': 'FULL_SPACE_NOT_AVAILABLE', 'mode': report.get('mode')})
@@ -64,12 +59,10 @@ def eligibility(d):
     from ..api.auto_fit import frame_from
     from ..api.design_inputs import scan_reference
 
-    blockers = []
-    advisories = []
+    blockers, advisories = [], []
     support = asset(d['case_id'], 'support')
     if not support:
         blockers.append({'stage': 'SUPPORT', 'message': '缺少 support，无法定义冠体根部空间'})
-
     margin = json.loads(d.get('margin_json') or 'null')
     axis = json.loads(d.get('axis_json') or 'null')
     if not margin:
@@ -104,48 +97,28 @@ def eligibility(d):
     bite = json.loads(d.get('bite_json') or '{}')
     bite_valid = bool(frame and bite.get('revision_id') and bite.get('pose_confirmed') and bite.get('transform'))
     if not bite_valid:
-        advisories.append({
-            'stage': 'OCCLUSAL', 'code': 'NO_TRUSTED_BITE',
-            'message': '本轮仍生成，但不把对颌作为可信高度所有者',
-        })
+        advisories.append({'stage': 'OCCLUSAL', 'code': 'NO_TRUSTED_BITE', 'message': '本轮仍生成，但不把对颌作为可信高度所有者'})
 
     params = json.loads(d.get('parameters_json') or '{}')
     proximal_target, occlusal_target, prox_source, occl_source = _resolved_contact_targets(params)
     proximal = bool(any(v == 'CONFIRMED' for v in sides.values()))
     occlusal = bool(bite_valid)
-    mode = (
-        'BOTH' if proximal and occlusal else
-        'PROXIMAL_ONLY' if proximal else
-        'OCCLUSAL_ONLY' if occlusal else
-        'SPACE_ONLY'
-    )
+    mode = 'BOTH' if proximal and occlusal else 'PROXIMAL_ONLY' if proximal else 'OCCLUSAL_ONLY' if occlusal else 'SPACE_ONLY'
     return {
-        'input_digest': dependency_digest(d),
-        'blockers': blockers,
-        'advisories': advisories,
-        'automatic_mode': mode if not blockers else None,
-        'frame_confirmed': bool(frame),
-        'neighbors': sides,
-        'bite_confirmed': bite_valid,
-        'proximal_target_mm': proximal_target,
-        'occlusal_target_mm': occlusal_target,
-        'proximal_target_source': prox_source,
-        'occlusal_target_source': occl_source,
-        'generation_policy': 'TEMPLATE_CONSTRAINED_FAIL_OPEN_TEST_V1',
+        'input_digest': dependency_digest(d), 'blockers': blockers, 'advisories': advisories,
+        'automatic_mode': mode if not blockers else None, 'frame_confirmed': bool(frame),
+        'neighbors': sides, 'bite_confirmed': bite_valid,
+        'proximal_target_mm': proximal_target, 'occlusal_target_mm': occlusal_target,
+        'proximal_target_source': prox_source, 'occlusal_target_source': occl_source,
+        'generation_policy': 'MORPHOLOGY_DISTANCE_FAIL_OPEN_TEST_V1',
         'release_status': 'NOT_PRODUCTION_APPROVED',
     }
 
 
 def _fallback_report(mode, outer, exc, *, stage):
     return {
-        'mode': mode,
-        'status': 'REVIEW_REQUIRED',
-        'stages': [{
-            'stage': stage,
-            'status': 'REVIEW_REQUIRED',
-            'reason': str(exc),
-            'output_preserved': True,
-        }],
+        'mode': mode, 'status': 'REVIEW_REQUIRED',
+        'stages': [{'stage': stage, 'status': 'REVIEW_REQUIRED', 'reason': str(exc), 'output_preserved': True}],
         'warnings': [{'stage': stage, 'reason': str(exc)}],
         'candidate_kind': 'AUTO_FIT_CANDIDATE',
         'w3_preflight': {'status': 'NOT_COMPLETED', 'reason': str(exc)},
@@ -164,10 +137,7 @@ def generate_candidate(d, kind):
 
     state = eligibility(d)
     if state['blockers']:
-        raise HTTPException(409, {
-            'message': '缺少建立冠体几何所必需的最小输入',
-            'blockers': state['blockers'],
-        })
+        raise HTTPException(409, {'message': '缺少建立冠体几何所必需的最小输入', 'blockers': state['blockers']})
 
     margin = json.loads(d['margin_json'])
     axis = json.loads(d['axis_json'])
@@ -176,17 +146,12 @@ def generate_candidate(d, kind):
     diagnostics, _ = diagnose(support, margin, axis)
 
     if kind != 'AUTO':
-        placement, baseline = initialize_draft_outer(
-            d, AutoOuterRequest(margin_points=margin, insertion_axis=axis)
-        )
+        placement, baseline = initialize_draft_outer(d, AutoOuterRequest(margin_points=margin, insertion_axis=axis))
         report = {
-            'type': 'template_draft',
-            'candidate_kind': 'TEMPLATE_ONLY_DRAFT',
+            'type': 'template_draft', 'candidate_kind': 'TEMPLATE_ONLY_DRAFT',
             'status': 'TEMPLATE_REVIEW_REQUIRED',
-            'stages': [{'stage': 'TEMPLATE', 'status': 'PLACED'}],
-            'warnings': [],
-            'w3_preflight': {'status': 'NOT_ASSESSED'},
-            'complete_crown_ready': False,
+            'stages': [{'stage': 'TEMPLATE', 'status': 'PLACED'}], 'warnings': [],
+            'w3_preflight': {'status': 'NOT_ASSESSED'}, 'complete_crown_ready': False,
         }
         artifacts = {'outer': str(baseline), 'baseline': str(baseline)}
     else:
@@ -200,28 +165,23 @@ def generate_candidate(d, kind):
         seed_fallback = None
         try:
             from .template_constrained_generation import build_template_constrained_seed
-            baseline, seed_report = build_template_constrained_seed(
-                effective, frame, ref, support, margin, effective_params, state
-            )
+            baseline, seed_report = build_template_constrained_seed(effective, frame, ref, support, margin, effective_params, state)
             placement = {
-                'placement_path': 'TEMPLATE_CONSTRAINED_PATIENT_SPACE_V1',
+                'placement_path': 'MORPHOLOGY_PRIOR_PLUS_DISTANCE_ADAPTATION_V1',
                 'frame_source': 'CONFIRMED_FRAME',
                 'template_source': {
-                    'status': 'USED_AS_ANATOMY_TOPOLOGY_PRIOR',
+                    'status': 'USED_AS_MORPHOLOGY_TOPOLOGY_PRIOR',
                     'library': seed_report.get('library'),
-                    'route': 'TEMPLATE_CONSTRAINED_CROWN_V1',
+                    'route': 'MORPHOLOGY_PRIOR_PLUS_DISTANCE_CONSTRAINED_ADAPTATION_V1',
                 },
                 'template_source_warning': None,
             }
         except Exception as exc:
-            # 1.0 fail-open: a missing/bad library must not suppress a test result.
             from .space_driven_generation import build_space_driven_seed
-            baseline, seed_report = build_space_driven_seed(
-                effective, frame, ref, support, margin, effective_params, state
-            )
+            baseline, seed_report = build_space_driven_seed(effective, frame, ref, support, margin, effective_params, state)
             seed_fallback = str(exc)
             seed_report['template_route_failure'] = seed_fallback
-            seed_report['route'] = 'PROCEDURAL_FALLBACK_AFTER_TEMPLATE_ROUTE_FAILURE'
+            seed_report['route'] = 'PROCEDURAL_FALLBACK_AFTER_MORPHOLOGY_ROUTE_FAILURE'
             placement = {
                 'placement_path': 'PROCEDURAL_PATIENT_ENVELOPE_FALLBACK',
                 'frame_source': 'CONFIRMED_FRAME',
@@ -231,58 +191,42 @@ def generate_candidate(d, kind):
 
         attempts = []
         try:
-            # Single solver pass only.  Do not feed a constrained output through a
-            # second anatomy/recheck deformation cycle in 1.0 test mode.
             _, report, artifacts = propose(
-                effective, frame, ref, state['automatic_mode'],
-                baseline_path=baseline, run_w3_preflight=True,
+                effective, frame, ref, state['automatic_mode'], baseline_path=baseline, run_w3_preflight=True,
             )
+            if not seed_fallback and artifacts.get('outer'):
+                from .template_constrained_generation import guard_published_outer
+                guarded_outer, guard_report = guard_published_outer(baseline, artifacts['outer'])
+                if guarded_outer != artifacts['outer']:
+                    artifacts['solver_outer_unpublished'] = str(artifacts['outer'])
+                    artifacts['outer'] = str(guarded_outer)
+                    report['status'] = 'REVIEW_REQUIRED'
+                    report.setdefault('warnings', []).append({'stage': 'OUTER_TOPOLOGY_GUARD', **guard_report})
+                report.setdefault('stages', []).append({'stage': 'OUTER_TOPOLOGY_GUARD', **guard_report})
             attempts.append({
-                'attempt': 'SINGLE_CONSTRAINT_PASS',
-                'status': report.get('status'),
+                'attempt': 'SINGLE_CONSTRAINT_PASS', 'status': report.get('status'),
                 'w3_status': (report.get('w3_preflight') or {}).get('status'),
-                'outer': artifacts.get('outer'),
-                'output_preserved': True,
+                'outer': artifacts.get('outer'), 'output_preserved': True,
             })
         except Exception as exc:
-            report = _fallback_report(
-                state['automatic_mode'], baseline, exc, stage='SINGLE_CONSTRAINT_PASS'
-            )
+            report = _fallback_report(state['automatic_mode'], baseline, exc, stage='SINGLE_CONSTRAINT_PASS')
             artifacts = {'outer': str(baseline)}
-            attempts.append({
-                'attempt': 'SINGLE_CONSTRAINT_PASS',
-                'status': 'NOT_COMPLETED',
-                'reason': str(exc),
-                'outer': str(baseline),
-                'output_preserved': True,
-            })
+            attempts.append({'attempt': 'SINGLE_CONSTRAINT_PASS', 'status': 'NOT_COMPLETED', 'reason': str(exc), 'outer': str(baseline), 'output_preserved': True})
 
         report.setdefault('stages', [])
         report['stages'] = [seed_report] + report['stages']
         report['generation_attempts'] = attempts
         report['candidate_kind'] = 'AUTO_FIT_CANDIDATE'
-        report['baseline_source'] = (
-            'TEMPLATE_CONSTRAINED_WATERTIGHT_SEED'
-            if not seed_fallback else 'PATIENT_ENVELOPE_PROCEDURAL_FALLBACK'
-        )
+        report['baseline_source'] = 'MORPHOLOGY_DISTANCE_WATERTIGHT_SEED' if not seed_fallback else 'PATIENT_ENVELOPE_PROCEDURAL_FALLBACK'
         report['generation_route'] = (
-            'TEMPLATE_RIGID_PLACEMENT_TO_UNIFORM_OVERSCALE_TO_PATIENT_ENVELOPE_'
-            'SOFT_COMPRESSION_TO_SINGLE_CONSTRAINT_PASS_V1'
-            if not seed_fallback else
-            'PROCEDURAL_FALLBACK_TO_SINGLE_CONSTRAINT_PASS_V1'
+            'MORPHOLOGY_PRIOR_TO_PATIENT_DISTANCE_REGIONAL_DEFORMATION_TO_SINGLE_CONSTRAINT_PASS_V1'
+            if not seed_fallback else 'PROCEDURAL_FALLBACK_TO_SINGLE_CONSTRAINT_PASS_V1'
         )
-        report['template_role'] = (
-            'ANATOMY_AND_CLOSED_TOPOLOGY_PRIOR'
-            if not seed_fallback else 'TEMPLATE_ROUTE_FAILED_FALLBACK_USED'
-        )
+        report['template_role'] = 'MORPHOLOGY_AND_CLOSED_TOPOLOGY_PRIOR' if not seed_fallback else 'TEMPLATE_ROUTE_FAILED_FALLBACK_USED'
         if seed_fallback:
-            report.setdefault('warnings', []).append({
-                'stage': 'TEMPLATE_CONSTRAINED_SEED',
-                'reason': seed_fallback,
-                'fallback': 'PROCEDURAL_PATIENT_ENVELOPE',
-            })
+            report.setdefault('warnings', []).append({'stage': 'MORPHOLOGY_DISTANCE_SEED', 'reason': seed_fallback, 'fallback': 'PROCEDURAL_PATIENT_ENVELOPE'})
         artifacts['baseline'] = str(baseline)
-        artifacts['template_constrained_seed' if not seed_fallback else 'space_seed'] = str(baseline)
+        artifacts['morphology_distance_seed' if not seed_fallback else 'space_seed'] = str(baseline)
         report['complete_crown_ready'] = bool(
             (report.get('w3_preflight') or {}).get('status') == 'CONSTRUCTED_ENGINEERING'
             and artifacts.get('final') and artifacts.get('cutter')
@@ -295,10 +239,7 @@ def generate_candidate(d, kind):
         manufacturing_status='NOT_PRODUCTION_APPROVED',
         output_policy='ALWAYS_RETURN_LATEST_GEOMETRY_TEST_V1',
         candidate_outer_sha256=file_digest(artifacts['outer']),
-        artifact_sha256={
-            k: file_digest(v) for k, v in artifacts.items()
-            if isinstance(v, (str, Path)) and Path(v).is_file()
-        },
+        artifact_sha256={k: file_digest(v) for k, v in artifacts.items() if isinstance(v, (str, Path)) and Path(v).is_file()},
     )
     report['template_source'] = placement.get('template_source') or report.get('template_source')
     report['frame_source'] = placement.get('frame_source') or report.get('frame_source')
