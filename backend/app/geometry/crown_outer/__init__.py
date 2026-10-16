@@ -86,3 +86,14 @@ __all__ = [
     "GtExtractError", "extract_outer_surface", "sample_surface_points",
     "surface_distance_metrics",
 ]
+
+# CrownFlow 1.0 active proximal policy.
+#
+# Services import ``fit_proximal_envelopes`` directly from ``space_contact``.
+# Keep V6's geometry/query helpers as the single truth source, but replace the
+# orchestration with V7 so mesial/distal are solved one at a time and an already
+# established contact is hard-protected before the opposite side can move.
+from . import space_contact as _space_contact
+from .proximal_v7 import fit_proximal_envelopes_v7 as _fit_proximal_envelopes_v7
+
+_space_contact.fit_proximal_envelopes = _fit_proximal_envelopes_v7
