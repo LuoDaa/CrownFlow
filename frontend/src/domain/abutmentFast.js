@@ -2,7 +2,11 @@ import { api, autoFitRequest } from "../api";
 import adapter from "./adapter";
 
 const IDENTITY = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
-const MAX_AUTO_CORRECTION_ATTEMPTS = 3;
+// CAD-1 one-click generation is deliberately single-pass.  Earlier code accepted
+// a REVIEW candidate and then fed that deformed outer back into the next attempt,
+// so broad proximal growth accumulated up to three times.  Engineering warnings
+// belong in the review panel; they must not silently compound geometry.
+const MAX_AUTO_CORRECTION_ATTEMPTS = 1;
 
 const emit = (onProgress, id, label, progress, detail = "") => {
   onProgress?.({ id, label, progress, detail, at: Date.now() });
@@ -110,8 +114,6 @@ export async function prepareAbutmentOrder({ caseId, fdi, designId = null, param
     : await adapter.setToothPosition({ caseId, fdi, supportType: "abutment" });
   if (design.support_type !== "abutment") throw new Error("当前设计不是基台冠，不能进入快速流程");
 
-  // 参数在自动识别开始前就落到设计上，避免 Margin/Axis 完成后 resumeDesign
-  // 又把用户刚调好的参数覆盖回旧值。
   if (params) {
     emit(onProgress, "PROFILE", "应用当前生成参数", 6);
     await adapter.saveProfile(design.id, params);
@@ -201,7 +203,7 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   await adapter.saveProfile(designId, params);
   eligibility = await api.generationEligibility(designId);
 
-  // 新病例刚刚在 prepareAbutmentOrder 中已经用 V4/5mm 参考面识别过邻牙，
+  // 新病例刚刚在 prepareAbutmentOrder 中已经用 V5/5mm 参考面识别过邻牙，
   // 不再立刻重复一次昂贵提取。只有恢复旧病例时才刷新自动参考面。
   if (!preparedNow) {
     emit(onProgress, "NEIGHBORS", "刷新邻牙参考面", 14, "确保旧病例也使用当前接触参考范围");
@@ -246,12 +248,11 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
 
   for (let attempt = 1; attempt <= MAX_AUTO_CORRECTION_ATTEMPTS; attempt += 1) {
     attemptsUsed = attempt;
-    const baseProgress = 26 + (attempt - 1) * 16;
     emit(
       onProgress,
       "AUTO_CORRECTION_ATTEMPT",
-      attempt === 1 ? "患者空间自动生成" : `自动纠正第 ${attempt} 轮`,
-      Math.min(baseProgress, 74),
+      "患者空间自动生成",
+      42,
       "Margin → 左右邻接 → 上下咬合联合求解",
     );
 
@@ -260,20 +261,19 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     hardFailures = threeHardConstraintFailures(candidate, eligibility);
 
     if (!hardFailures.length) {
-      emit(onProgress, "HARD_CONSTRAINTS_PASS", "Margin / 邻接 / 咬合全部达到目标", 82, `第 ${attempt} 轮收敛`);
-      break;
+      emit(onProgress, "HARD_CONSTRAINTS_PASS", "Margin / 邻接 / 咬合全部达到目标", 82, "本轮已收敛");
+    } else {
+      // 1.0 阶段的工程提示只提示，不把 REVIEW 候选提前采纳后再作为
+      // 下一轮输入。那种做法会把每轮侧向形变累计到同一 mesh 上。
+      emit(
+        onProgress,
+        "AUTO_CORRECTION_REVIEW",
+        "自动生成完成，存在工程提示",
+        82,
+        hardFailures.join("；"),
+      );
     }
-
-    emit(
-      onProgress,
-      "AUTO_CORRECTION_RETRY",
-      attempt < MAX_AUTO_CORRECTION_ATTEMPTS ? "检测偏差，继续自动纠正" : "自动纠正达到本轮上限",
-      Math.min(baseProgress + 10, 83),
-      hardFailures.join("；"),
-    );
-
-    await adapter.confirmCrownCandidate(designId, candidate.id);
-    eligibility = await api.generationEligibility(designId);
+    break;
   }
 
   emitStageResult(onProgress, stageOf(payloadStages, "GLOBAL_PREFIT"), "PREFIT_DONE", "患者空间整体适配完成", 68);
@@ -284,7 +284,7 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   emitStageResult(onProgress, occlusalStage, "OCCLUSAL_DONE", "咬合适配完成", 82);
 
   if (candidate) {
-    emit(onProgress, "PUBLISH", hardFailures.length ? "保留当前最接近结果供 3D 复核" : "发布患者化外冠", 86);
+    emit(onProgress, "PUBLISH", hardFailures.length ? "保留当前结果供 3D 复核" : "发布患者化外冠", 86);
     await adapter.confirmCrownCandidate(designId, candidate.id);
   }
 
@@ -300,8 +300,8 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
       emit(onProgress, "FINAL_REVIEW", "最终冠需要复核", 96, finalizeWarning);
     }
   } else {
-    finalizeWarning = `三轮自动纠正后仍有 ${hardFailures.length} 项空间约束未收敛；已保留外冠供 3D 检查`;
-    emit(onProgress, "HARD_CONSTRAINT_REVIEW", "已保留未收敛外冠供 3D 检查", 96, hardFailures.join("；"));
+    finalizeWarning = `本轮仍有 ${hardFailures.length} 项空间约束未收敛；已保留外冠供 3D 检查`;
+    emit(onProgress, "HARD_CONSTRAINT_REVIEW", "已保留当前外冠供 3D 检查", 96, hardFailures.join("；"));
   }
 
   const stageWarnings = payloadStages
@@ -326,11 +326,11 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     final
       ? "自动牙冠设计完成"
       : hardFailures.length
-        ? "自动纠正已完成，当前外冠已保留供 3D 定位问题"
+        ? "自动生成完成，当前外冠已保留供 3D 检查"
         : "患者化外冠完成，可进入 3D 检查",
     100,
     hardFailures.length
-      ? `已自动求解 ${attemptsUsed} 轮 · ${hardFailures.length} 项仍需检查`
+      ? `本轮生成 · ${hardFailures.length} 项仍需检查`
       : (stageWarnings.length ? `${stageWarnings.length} 项工程提示` : ""),
   );
 
