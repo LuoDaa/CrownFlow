@@ -138,10 +138,24 @@ def generate_candidate(d,kind):
             d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
 
     if kind=='AUTO':
-        frame,ref=frame_from(d);_,report,artifacts=propose(
-            d,frame,ref,state['automatic_mode'],baseline_path=baseline,run_w3_preflight=False)
+        # Auto-fit consumes the resolved policy values even for legacy designs
+        # whose persisted JSON predates the contact fields.  This closes the
+        # FDI46 failure where mode=BOTH was intended but occlusion received None.
+        effective=dict(d)
+        effective_params=json.loads(d['parameters_json'])
+        effective_params.setdefault('proximal_target_mm',state['proximal_target_mm'])
+        effective_params.setdefault('occlusal_target_mm',state['occlusal_target_mm'])
+        effective['parameters_json']=json.dumps(effective_params,ensure_ascii=False)
+        frame,ref=frame_from(effective);_,report,artifacts=propose(
+            effective,frame,ref,state['automatic_mode'],baseline_path=baseline,run_w3_preflight=False)
         artifacts['baseline']=str(baseline);report['candidate_kind']='AUTO_FIT_CANDIDATE'
         report['baseline_source']=placement.get('placement_path') or 'TEMPLATE_INITIALIZATION'
+        report['resolved_contact_targets']={
+            'proximal_target_mm':state['proximal_target_mm'],
+            'occlusal_target_mm':state['occlusal_target_mm'],
+            'proximal_source':state['proximal_target_source'],
+            'occlusal_source':state['occlusal_target_source'],
+        }
     else:
         report={'type':'template_draft','candidate_kind':'TEMPLATE_ONLY_DRAFT','status':'TEMPLATE_REVIEW_REQUIRED',
             'stages':[{'stage':'TEMPLATE','status':'PLACED'},{'stage':'PROXIMAL','status':'NOT_ASSESSED'},
