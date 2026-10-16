@@ -44,8 +44,6 @@ def _uv_extents(mesh, env, frame):
     xy = local[:, :2] - np.asarray(env.center_xy)
     u = xy @ np.asarray(env.md_axis_xy)
     v = xy @ np.asarray(env.bl_axis_xy)
-    # Use homologous relative coronal anatomy.  An absolute Z cut would select
-    # different anatomical bands from two deliberately scaled embryos.
     body = local[:, 2] >= np.quantile(local[:, 2], .50)
     return np.quantile(u[body], [.02, .98]), np.quantile(v[body], [.02, .98])
 
@@ -145,6 +143,7 @@ def test_antagonist_sets_coronal_ceiling_but_never_below_material_floor():
     intaglio = trimesh.creation.cylinder(radius=2.0, height=4.2, sections=96)
     intaglio.apply_translation([0, 0, 2.1])
     antagonist = trimesh.creation.box(extents=[14, 14, 1.0])
+    antagonist = antagonist.subdivide().subdivide()
     antagonist.apply_translation([0, 0, 8.5])
     env = build_patient_envelope(
         frame=frame, margin=margin, inner_envelope_mesh=intaglio,
