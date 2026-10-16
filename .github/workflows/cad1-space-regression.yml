@@ -55,26 +55,36 @@ jobs:
         run: pytest tests/unit/services/test_generation_runtime.py -q
       - name: Three hard constraints regression
         run: pytest tests/unit/geometry/test_three_hard_constraints.py -q
+      # The legacy large-global-penetration expectation above is already red on
+      # the branch and is unrelated to the current proximal/intaglio/final work.
+      # Keep the job red, but continue running the targeted regressions so a known
+      # upstream failure cannot hide a new CAD-1 regression.
       - name: Space-driven embryo regression
+        if: always()
         run: |
           pytest tests/unit/geometry/test_space_driven_embryo.py -q
           pytest tests/unit/geometry/test_patient_space_envelope.py -q
           pytest tests/unit/geometry/test_space_contact_patient_envelope.py -q
           pytest tests/unit/geometry/test_cad1_proximal_guardrails.py -q
       - name: Margin and occlusion regressions
+        if: always()
         run: |
           pytest tests/unit/geometry/test_patient_adaptation.py -q
           pytest tests/unit/geometry/test_occlusal_active_subset_acceptance.py -q
       - name: Abutment support selection regression
+        if: always()
         run: pytest tests/unit/geometry/test_abutment_support_selection.py -q
       - name: Abutment and final-surface regressions
+        if: always()
         run: |
           pytest tests/unit/services/test_abutment_fast.py -q
           pytest tests/unit/geometry/test_nonplanar_source_extraction.py -q
       - name: Pack current source for real-case replay
+        if: always()
         working-directory: ${{ github.workspace }}
         run: tar --exclude='.git' -czf /tmp/cad1-current-source.tar.gz backend frontend testdata .github
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: cad1-current-source
           path: /tmp/cad1-current-source.tar.gz
