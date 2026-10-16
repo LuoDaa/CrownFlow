@@ -45,15 +45,17 @@ export default function ViewerStage({
     ? `/api/designs/${wf.design.id}/auto-fit/${wf.generatedCandidate.id}/artifact/${candidateInnerLabel}?v=${wf.meshVersion}`
     : null;
 
-  // After acceptance/finalization always ask the semantic inner-preview endpoint
-  // first.  It serves W3 intaglio_surface when available, otherwise SHA-matches
-  // the accepted outer to its design intaglio.  The legacy cutter URL is only a
-  // fallback; showing it first made its artificial lower closure look like a
-  // Margin/intaglio mismatch.
+  // A completed generation may intentionally keep generatedCandidate around so
+  // the user can still inspect the just-generated outer.  That must NOT make its
+  // pre-finalization intaglio_preview win over the finalized crown inner wall.
+  // `wf.innerCrown` points at the semantic `/inner-preview.stl` endpoint once the
+  // design has a finalized cutter; that endpoint prefers W3 `intaglio_surface`,
+  // whose cervical boundary is the exact shared 3D Margin seam.  Only fall back
+  // to the AUTO candidate preview when finalization has not produced an inner yet.
   const acceptedInner = !hasFinal && !candidateInner && wf.design?.id && wf.outer
     ? `/api/designs/${wf.design.id}/inner-preview.stl?v=${wf.meshVersion}`
     : null;
-  const activeInner = candidateInner || acceptedInner || wf.innerCrown || null;
+  const activeInner = wf.innerCrown || candidateInner || acceptedInner || null;
 
   return <section className="cd-viewport-card">
     <div className="cd-viewport-head">
