@@ -23,6 +23,9 @@ from .patient_envelope import (
 @dataclass(frozen=True)
 class SpaceMorphConfig:
     body_transition_mm: float = 1.45
+    # Margin/cervical geometry is authoritative once fitted.  Shell correction
+    # must never move this band again, including the final cutter-based pass.
+    cervical_immutable_mm: float = 0.45
     # Kept for API compatibility with older callers/reports.  Global MD/BL
     # scaling no longer uses these limits; PatientEnvelope owns the target size.
     md_scale_min: float = 0.55
@@ -90,7 +93,10 @@ def audit_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, req
     if inner_envelope_mesh is None or required_mm is None or float(required_mm) <= 0:
         return {"status": "NOT_ASSESSED", "reason": "INNER_ENVELOPE_OR_THICKNESS_MISSING"}
     weight, height = _body_weight(mesh, frame, margin, cfg.body_transition_mm)
-    ids = np.flatnonzero((weight > 0.05) & (height > 0.20))
+    # The cervical band is owned by Margin, not by the material shell.  Auditing
+    # it against the body-thickness target produced false deficits and encouraged
+    # the shell solver to undo an already-correct Margin fit.
+    ids = np.flatnonzero((weight > 0.05) & (height > float(cfg.cervical_immutable_mm)))
     if not len(ids):
         return {"status": "NOT_ASSESSED", "reason": "NO_BODY_VERTICES"}
     _cp, dist, _ = closest_point(inner_envelope_mesh, np.asarray(mesh.vertices)[ids])
@@ -114,6 +120,7 @@ def audit_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, req
         "status": "PASS_ENGINEERING" if p95 <= 0.02 else "REVIEW_REQUIRED",
         "method": "OUTER_VERTEX_TO_ACTUAL_INTAGLIO_DISTANCE",
         "required_mm": float(required_mm),
+        "cervical_immutable_mm": float(cfg.cervical_immutable_mm),
         "sample_count": int(len(values)),
         "min_clearance_mm": float(np.min(values)),
         "p05_clearance_mm": float(np.quantile(values, .05)),
@@ -128,9 +135,10 @@ def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, r
                                      *, config: SpaceMorphConfig | None = None):
     """Expand the outer body around the real intaglio without changing height.
 
-    Material correction is projected into patient XY and fades to zero at the
-    Margin root, so it cannot silently undo the already-established cervical or
-    occlusal constraints.
+    Material correction is projected into patient XY.  The already solved
+    cervical band is a hard immutable constraint, and every shell push is accepted
+    through a deformation line-search so a thickness repair cannot fold away a
+    visible patch of the crown.
     """
     cfg = config or SpaceMorphConfig()
     if inner_envelope_mesh is None or required_mm is None or float(required_mm) <= 0:
@@ -141,14 +149,18 @@ def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, r
     origin, matrix = _basis(frame)
     moved_all, passes = set(), []
     unresolved = 0
+    unsafe_rejections = 0
     max_push = 0.0
     for iteration in range(max(1, int(cfg.envelope_iterations))):
         weight, height = _body_weight(current, frame, margin, cfg.body_transition_mm)
-        vertices = np.asarray(current.vertices, float).copy()
-        active = np.flatnonzero((weight > 0.02) & (height > 0.15))
+        before_vertices = np.asarray(current.vertices, float).copy()
+        locked = np.flatnonzero(height <= float(cfg.cervical_immutable_mm))
+        active = np.flatnonzero(
+            (weight > 0.02) & (height > float(cfg.cervical_immutable_mm))
+        )
         if not len(active):
             break
-        cp, dist, _ = closest_point(inner_envelope_mesh, vertices[active])
+        cp, dist, _ = closest_point(inner_envelope_mesh, before_vertices[active])
         dist = np.asarray(dist, float)
         finite = np.isfinite(dist) & np.isfinite(cp).all(axis=1)
         deficit = np.maximum(float(required_mm) - dist, 0.0)
@@ -158,7 +170,7 @@ def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, r
                            "min_clearance_mm": float(np.min(dist[finite])) if np.any(finite) else None})
             break
         chosen = active[bad]
-        local_v = (vertices[chosen] - origin) @ matrix
+        local_v = (before_vertices[chosen] - origin) @ matrix
         local_cp = (cp[bad] - origin) @ matrix
         sep_xy = local_v[:, :2] - local_cp[:, :2]
         radial = local_v[:, :2] - center_xy
@@ -177,22 +189,69 @@ def enforce_inner_envelope_clearance(mesh, inner_envelope_mesh, frame, margin, r
         chosen = chosen[good]
         desired_xy = desired_xy[good] / dn[good, None]
         world_dir = np.c_[desired_xy, np.zeros(len(chosen))] @ matrix.T
-        push = deficit[bad][good] * np.clip(weight[chosen], 0.20, 1.0)
-        push = np.minimum(push, float(cfg.envelope_max_push_per_pass_mm))
-        vertices[chosen] += world_dir * push[:, None]
-        current.vertices = vertices
+        requested_push = deficit[bad][good] * np.clip(weight[chosen], 0.20, 1.0)
+        requested_push = np.minimum(requested_push, float(cfg.envelope_max_push_per_pass_mm))
+
+        accepted = None
+        accepted_alpha = 0.0
+        accepted_gate = None
+        accepted_flips = None
+        for alpha in (1.0, 0.50, 0.25, 0.125):
+            trial_vertices = before_vertices.copy()
+            trial_vertices[chosen] += world_dir * (requested_push * alpha)[:, None]
+            # Belt-and-suspenders: the Margin band must be byte-for-byte unchanged.
+            trial_vertices[locked] = before_vertices[locked]
+            trial = current.copy()
+            trial.vertices = trial_vertices
+            moved = np.linalg.norm(trial_vertices - before_vertices, axis=1) > 1e-9
+            focus_faces = np.flatnonzero(np.any(moved[np.asarray(current.faces, int)], axis=1))
+            gate = deformation_gate(
+                before_vertices, trial_vertices, np.asarray(current.faces, int),
+                scale_mm=.1, locked_ids=locked, focus_faces=focus_faces,
+            )
+            flips = int((np.einsum('ij,ij->i', current.face_normals, trial.face_normals) <= 0).sum())
+            degenerate = bool(np.any(np.asarray(trial.area_faces) < 1e-10))
+            if gate.ok and flips == 0 and not degenerate:
+                accepted = trial
+                accepted_alpha = float(alpha)
+                accepted_gate = gate.as_dict()
+                accepted_flips = flips
+                break
+
+        if accepted is None:
+            unsafe_rejections += int(len(chosen))
+            passes.append({
+                "iteration": iteration + 1,
+                "status": "REJECTED_UNSAFE_DEFORMATION",
+                "candidate_vertices": int(len(chosen)),
+                "requested_max_push_mm": float(requested_push.max(initial=0.0)),
+            })
+            break
+
+        current = accepted
+        actual_push = requested_push * accepted_alpha
         moved_all.update(map(int, chosen.tolist()))
-        max_push = max(max_push, float(push.max(initial=0.0)))
-        passes.append({"iteration": iteration + 1, "moved_vertices": int(len(chosen)),
-                       "max_push_mm": float(push.max(initial=0.0)),
-                       "min_before_mm": float(np.min(dist[bad]))})
+        max_push = max(max_push, float(actual_push.max(initial=0.0)))
+        passes.append({
+            "iteration": iteration + 1,
+            "status": "APPLIED_SAFE",
+            "moved_vertices": int(len(chosen)),
+            "alpha": accepted_alpha,
+            "max_push_mm": float(actual_push.max(initial=0.0)),
+            "requested_max_push_mm": float(requested_push.max(initial=0.0)),
+            "min_before_mm": float(np.min(dist[bad])),
+            "gate": accepted_gate,
+            "all_flips": accepted_flips,
+        })
     audit = audit_inner_envelope_clearance(current, inner_envelope_mesh, frame, margin, required_mm, config=cfg)
     return current, {
         "status": "APPLIED" if moved_all else "NO_CORRECTION_NEEDED",
-        "method": "ACTUAL_INTAGLIO_PURE_LATERAL_CLEARANCE_V3",
+        "method": "ACTUAL_INTAGLIO_SAFE_LATERAL_CLEARANCE_V4",
         "required_outer_to_intaglio_mm": float(required_mm),
+        "cervical_immutable_mm": float(cfg.cervical_immutable_mm),
         "moved_vertices": int(len(moved_all)),
         "unresolved_direction_vertices": int(unresolved),
+        "unsafe_rejected_vertices": int(unsafe_rejections),
         "max_push_per_pass_mm": float(max_push),
         "passes": passes,
         "audit_after": audit,
