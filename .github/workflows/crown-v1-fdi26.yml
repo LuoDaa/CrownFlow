@@ -11,6 +11,7 @@ on:
       - "backend/app/services/generation_workflow.py"
       - "backend/tests/integration/test_a0_draft_template_identity.py"
       - "backend/tests/integration/test_a1_placement_parity.py"
+      - "backend/tests/integration/test_sectional_generation_dispatch.py"
       - "backend/tests/unit/geometry/test_axial_placement.py"
       - "backend/tests/unit/geometry/test_crown_outer_confirmed_frame.py"
       - "backend/tests/unit/geometry/test_proximal_patch_broadening.py"
@@ -76,4 +77,5 @@ jobs:
         run: |
           pytest -q \
             tests/integration/test_a0_draft_template_identity.py \
-            tests/integration/test_a1_placement_parity.py
+            tests/integration/test_a1_placement_parity.py \
+            tests/integration/test_sectional_generation_dispatch.py
