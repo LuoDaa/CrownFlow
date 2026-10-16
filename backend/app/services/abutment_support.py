@@ -4,7 +4,8 @@ from pathlib import Path
 from fastapi import HTTPException
 from .prep_conditioning import PreparedSurfaceContract, Indication, Readiness
 from .design_dependencies import file_digest
-from ..geometry.abutment_support import extract_abutment_support, SupportExtractionError
+from ..geometry import abutment_support as _abutment_geometry
+from ..geometry.abutment_support import SupportExtractionError
 from ..geometry.io import load_mesh
 from ..geometry.nonplanar_crown import fitting_support_above_margin, MarginBuildError
 
@@ -30,7 +31,13 @@ def assess_abutment_surface(support,margin,axis,*,source_sha256=None,margin_revi
     if not margin_revision_id:return rejected('MARGIN_NOT_CONFIRMED','请先确认基台冠终止线')
     if not axis_revision_id or not patient_frame_revision_id:return rejected('SUPPORT_EXTRACTION_AMBIGUOUS','请先确认插入轴和当前 PatientFrame')
     try:
-        prepared=extract_abutment_support(support,margin,axis,seed=seed,confirmed_loop_ids=confirmed_loop_ids)
+        # Resolve through the geometry module at call time instead of keeping a
+        # copied function reference.  CrownFlow 1.0 installs a narrowly guarded
+        # Margin-sliver recovery on that module during app startup; dynamic
+        # lookup guarantees eligibility/intaglio/QC all consume the same active
+        # extractor regardless of Python import order.
+        prepared=_abutment_geometry.extract_abutment_support(
+            support,margin,axis,seed=seed,confirmed_loop_ids=confirmed_loop_ids)
         report=prepared.report
         for loop in report['loops']:
             if loop['classification']=='CROWN_MARGIN':
