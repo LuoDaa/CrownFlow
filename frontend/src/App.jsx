@@ -10,12 +10,27 @@ import DesignPage from "./app/pages/DesignPage";
 import ReviewPage from "./app/pages/ReviewPage";
 import "./styles/app.css";
 
+/** 病例信息页不做边填边审：只有用户点“提交并继续”时统一检查必填项。 */
+function submitCaseInfo(wf) {
+  if (wf.design) return wf.go(S.MARGIN);
+  const missing = [];
+  if (!wf.upper) missing.push("上颌扫描");
+  if (!wf.lower) missing.push("下颌扫描");
+  if (!wf.fdi) missing.push("目标牙位");
+  if (!wf.supportType) missing.push("修复类型");
+  if (missing.length) {
+    wf.setMsg(`请补齐必填信息：${missing.join("、")}`);
+    return false;
+  }
+  return wf.prepare();
+}
+
 /** 每一步底部的主动作：只有这一步真的做完了，才允许往下走。 */
 function primaryOf(wf) {
   switch (wf.step) {
     case S.CASE:
-      return { label: wf.design ? "下一步：Margin / Axis" : "创建设计", disabled: !wf.caseId || (!wf.design && (!wf.fdi || !wf.supportType)),
-        run: () => (wf.design ? wf.go(S.MARGIN) : wf.prepare()) };
+      return { label: wf.design ? "下一步：Margin / Axis" : "提交并继续", disabled: !wf.caseId,
+        run: () => submitCaseInfo(wf) };
     case S.MARGIN:
       if (!wf.marginConfirmed) return { label: "确认当前 Margin", disabled: !wf.canConfirmMargin, run: wf.confirmMargin };
       if (!wf.axisConfirmed) return { label: "确认插入轴", disabled: !wf.canConfirmMargin, run: wf.confirmAxis };

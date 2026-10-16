@@ -1,0 +1,26 @@
+/* STEP 2：病例信息输入保持紧凑。填写过程不做逐项审核，提交时统一校验必填项。 */
+.cd-case-page { max-width: 980px; margin: 0 auto; width: 100%; }
+.cd-case-page .cd-panel { padding: 16px 18px; }
+.cd-case-form { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr); gap: 18px; align-items: start; }
+.cd-case-files { display: grid; gap: 9px; }
+.cd-upload-compact {
+  min-height: 66px; border: 1px dashed var(--line-strong); border-radius: 10px; background: #fbfcfe;
+  display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 11px;
+  padding: 10px 12px; cursor: pointer;
+}
+.cd-upload-compact:hover { border-color: #9ab7f4; background: #f8fbff; }
+.cd-upload-compact.done { border-style: solid; border-color: #b8e3cd; background: #f5fbf7; }
+.cd-upload-compact input { display: none; }
+.cd-upload-compact .cd-upload-mark { width: 36px; height: 36px; border-radius: 9px; }
+.cd-upload-copy { min-width: 0; }
+.cd-upload-copy b { display: block; font-size: 12px; }
+.cd-upload-copy span { display: block; margin-top: 3px; color: #7b8798; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-upload-compact em { font-style: normal; color: #6b7b91; font-size: 10px; font-weight: 800; }
+.cd-upload-compact.done em { color: var(--green); }
+.cd-case-fields { display: grid; gap: 10px; }
+.cd-case-fields .cd-field { margin-bottom: 0; }
+.cd-case-submit-hint { margin-top: 14px; padding-top: 11px; border-top: 1px solid #eef2f7; color: var(--muted); font-size: 10px; line-height: 1.55; }
+
+@media (max-width: 860px) {
+  .cd-case-form { grid-template-columns: 1fr; }
+}

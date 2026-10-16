@@ -16,6 +16,10 @@
 - 全局恒高区间：``lower = prep_top + min_thickness``、``upper = min(天花板) − target_clearance``；
   若该区间为空，仍需查看逐柱空间，不能直接断言局部冠形不可行。
 
+Crown 1.0 增补：只要对颌证据充分且空间可行，冠顶不能因为“已经落在区间内”就停在半空。
+当冠顶距离 ``upper`` 仍大于 deadband 时，以颈缘带为固定锚点做**有限轴向增高**，先把模板
+解剖面送到对颌附近，再交给现有 occlusal adaptation 按对颌局部表面削出基础凹凸。
+
 **不修改**：margin detection、cervical reconstruction、boolean、stitch、QC gate。
 只做"把牙放在正确的高度和尺度上"这一件事，且只动**颈缘带以上**的顶点（颈缘位移精确为 0）。
 """
@@ -34,9 +38,11 @@ CELL_MM = 0.4                  # 与咬合适配共用同一逐柱天花板
 MIN_OCCLUSAL_THICKNESS_MM = 0.5
 TARGET_CLEARANCE_MM = 0.05
 AXIAL_SCALE_MIN = 0.75         # 允许的最小轴向缩放（低于此值不算"合理范围内的缩放"）
+AXIAL_SCALE_MAX = 1.35         # 1.0：只允许有限增高；再高说明模板/牙位空间本身不匹配
+CONTACT_DEADBAND_MM = 0.08     # 距对颌目标上界 ≤ 此值视为已到位，避免反复微缩放
 CERVICAL_ANCHOR_MM = 0.4       # 颈缘带（≤ 此高度）完全不动；缩放从锚点向冠顶线性展开
 OCCLUSAL_NORMAL_MIN = 0.35
-IMPLEMENTATION = "services.axial_placement/occlusal_envelope/2"
+IMPLEMENTATION = "services.axial_placement/occlusal_envelope/3"
 
 
 def _unit(v):
@@ -214,15 +220,17 @@ def _frame_ref(frame):
 
 
 def plan_axial_placement(envelope, *, crown_top_mm, crown_bottom_mm=None,
-                         max_scale_down=AXIAL_SCALE_MIN):
-    """在区间内给出放置方案（只算方案，不动几何）。
+                         max_scale_down=AXIAL_SCALE_MIN, max_scale_up=AXIAL_SCALE_MAX,
+                         contact_deadband_mm=CONTACT_DEADBAND_MM):
+    """在区间内给出颈缘锁定的轴向放置方案（只算方案，不动几何）。
 
-    返回 ``{'mechanism', 'target_top_mm', 'axial_scale', 'feasible', 'reason'}``。
-    ``mechanism``：
-      - ``TRANSLATE``：整体轴向平移即可（仅在颈缘不锁定时可用）；
-      - ``AXIAL_SCALE``：颈缘被钉住（margin deviation 必须为 0），只能把**颈缘带以上**的
-        冠体按比例压到目标高度；
-      - ``INSUFFICIENT_OCCLUSAL_SPACE`` / ``REQUIRED_AXIAL_SCALE_OUT_OF_RANGE``：放不进去。
+    Crown 1.0 约束：
+    - 太高：缩到 ``upper``；
+    - 太低或虽然可行但仍离对颌明显：在不动颈缘带的前提下增高到 ``upper``；
+    - 只有距 ``upper`` 已进入 deadband 且已经满足 ``lower`` 才不再动。
+
+    这样初始 crown 不会停在可行区间下半部而“咬不到”；随后现有 occlusal adaptation
+    只需要处理局部穿透/凹凸，不必凭空把整颗牙往上长。
     """
     if envelope.get("status") == "NOT_ASSESSED":
         return {"mechanism": "NOT_ASSESSED", "feasible": False, "axial_scale": None,
@@ -234,16 +242,16 @@ def plan_axial_placement(envelope, *, crown_top_mm, crown_bottom_mm=None,
                 "feasible": False, "axial_scale": None,
                 "target_top_mm": None, "lower_bound_mm": lower, "upper_bound_mm": upper,
                 "reason": ("逐柱空间不足" if hard else "全局恒定冠高不可行；逐柱空间允许局部冠形调整")}
+
     top = float(crown_top_mm)
-    if lower <= top <= upper:
-        return {"mechanism": "TRANSLATE", "feasible": True, "axial_scale": 1.0, "target_top_mm": top,
-                "reason": "冠顶已在可行区间内，不需要调整"}
+    anchor = CERVICAL_ANCHOR_MM
+
+    # 冠太高：保留原有安全缩短逻辑。
     if top > upper:
         if crown_bottom_mm is not None and crown_bottom_mm > upper:
             return {"mechanism": "REQUIRED_AXIAL_SCALE_OUT_OF_RANGE", "feasible": False,
                     "axial_scale": None, "target_top_mm": upper,
                     "reason": "连冠底都在上界之上，属整体过大而非高度问题"}
-        anchor = CERVICAL_ANCHOR_MM
         span = max(top - anchor, 1e-6)
         scale = (upper - anchor) / span
         if scale < max_scale_down:
@@ -254,11 +262,36 @@ def plan_axial_placement(envelope, *, crown_top_mm, crown_bottom_mm=None,
                     "lower_bound_mm": lower, "upper_bound_mm": upper, "crown_top_mm": top}
         return {"mechanism": "AXIAL_SCALE", "feasible": True, "axial_scale": float(scale),
                 "target_top_mm": float(upper), "anchor_mm": anchor,
-                "reason": "颈缘被钉住：只能把颈缘带以上的冠体轴向压到上界"}
-    # top < lower：冠太矮，盖不住预备体
-    return {"mechanism": "CROWN_TOO_SHORT_FOR_PREP", "feasible": False, "axial_scale": None,
-            "target_top_mm": lower, "lower_bound_mm": lower, "upper_bound_mm": upper,
-            "reason": "冠顶低于 lower（预备体顶 + 最小壁厚），当前模板盖不住预备体"}
+                "reason": "颈缘被钉住：把颈缘带以上的冠体轴向压到对颌安全上界"}
+
+    # 只有“已经满足最小高度”且进入 deadband 才能不动；否则会把略低于 lower 的冠误判为到位。
+    gap_to_target = upper - top
+    if top >= lower and gap_to_target <= float(contact_deadband_mm):
+        return {"mechanism": "TRANSLATE", "feasible": True, "axial_scale": 1.0,
+                "target_top_mm": top, "lower_bound_mm": lower, "upper_bound_mm": upper,
+                "gap_to_target_mm": float(gap_to_target),
+                "reason": "冠顶已进入对颌目标 deadband，不需要轴向调整"}
+
+    # 冠太矮/悬空：从颈缘固定带向冠顶有限增高到 upper。
+    span = top - anchor
+    target_span = upper - anchor
+    if span <= 1e-6 or target_span <= 1e-6:
+        return {"mechanism": "CROWN_TOO_SHORT_FOR_PREP", "feasible": False,
+                "axial_scale": None, "target_top_mm": upper,
+                "lower_bound_mm": lower, "upper_bound_mm": upper,
+                "reason": "冠顶未高出颈缘固定带，无法在不移动 Margin 的前提下增高"}
+    scale = target_span / span
+    if scale > max_scale_up:
+        return {"mechanism": "REQUIRED_AXIAL_SCALE_OUT_OF_RANGE", "feasible": False,
+                "axial_scale": float(scale), "target_top_mm": upper,
+                "lower_bound_mm": lower, "upper_bound_mm": upper, "crown_top_mm": top,
+                "reason": ("需要把冠体增高到 %.0f%%（> 允许上限 %.0f%%）：模板过短或牙位/模板不匹配，"
+                           "应换模板或进入局部形态求解，不能硬拉" % (100 * scale, 100 * max_scale_up))}
+    return {"mechanism": "AXIAL_SCALE", "feasible": True, "axial_scale": float(scale),
+            "target_top_mm": float(upper), "anchor_mm": anchor,
+            "lower_bound_mm": lower, "upper_bound_mm": upper,
+            "gap_to_target_mm": float(gap_to_target),
+            "reason": "Crown 1.0：保持颈缘不动，将冠顶有限增高到对颌安全上界"}
 
 
 def apply_axial_placement(mesh, margin, axis, plan):
@@ -278,7 +311,6 @@ def apply_axial_placement(mesh, margin, axis, plan):
     anchor = float(plan.get("anchor_mm", CERVICAL_ANCHOR_MM))
     vertices = np.asarray(mesh.vertices, float)
     h = curtain.axial_above(vertices)
-    origin = np.asarray(curtain.frame.origin, float)
     upper = h > anchor
     new_h = h.copy()
     new_h[upper] = anchor + (h[upper] - anchor) * scale

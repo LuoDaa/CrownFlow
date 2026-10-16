@@ -6,8 +6,8 @@ import trimesh
 import mapbox_earcut
 from ..geometry.crown_outer.template import load_crown_template
 from ..geometry.crown_outer.collar_body_outer import _boundary_loops
+from ..geometry.crown_outer.generator import generate_crown_outer_v0
 from ..geometry.nonplanar_crown import MarginCurtain
-from ..geometry.registration import initialize_from_margin
 
 # ── 库件缓存 ─────────────────────────────────────────────────────────────────
 # 这两个函数是**确定性**的（同库件字节 + 同牙位 + 同 Margin/帧 ⇒ 同结果），但每次都要解析
@@ -39,6 +39,29 @@ def _library_cache_key(library, fdi):
     path = Path(library.template_path(fdi))
     stat = path.stat()
     return (library.name, int(fdi), path.name, stat.st_mtime_ns, stat.st_size)
+
+
+def _cap_margin_boundary(open_crown):
+    """Step-5 临时封底：只封**已经 hard-fit 到患者 Margin**的唯一边界。
+
+    最终制造几何仍由 finalize_crown 的 blockout/gap/intaglio 重建；这里的 cap 只为了
+    浏览器工作台需要 watertight body，绝不当作真实内冠。
+    """
+    crown = open_crown.copy()
+    crown.remove_unreferenced_vertices()
+    loops = _boundary_loops(np.asarray(crown.faces, np.int64))
+    if len(loops) != 1 or len(crown.split(only_watertight=False)) != 1:
+        raise ValueError('Margin hard-fit 后冠体出现额外缺口或组件，拒绝静默封补')
+    ring = np.asarray(loops[0], int)
+    MarginCurtain(np.asarray(crown.vertices, float)[ring], [0, 0, 1])
+    triangles = mapbox_earcut.triangulate_float64(
+        np.asarray(crown.vertices, float)[ring, :2],
+        np.array([len(ring)], np.uint32)).reshape(-1, 3)
+    crown.faces = np.vstack((np.asarray(crown.faces, np.int64), ring[triangles]))
+    trimesh.repair.fix_normals(crown)
+    if not crown.is_watertight or crown.volume <= 0:
+        raise ValueError('患者 Margin 临时封底未形成有效实体')
+    return crown
 
 
 def canonical_library_crown(library,fdi):
@@ -81,15 +104,32 @@ def placed_library_crown(library,fdi,margin,frame):
 
 
 def _placed_library_crown_uncached(library,fdi,margin,frame):
-    open_crown,template=canonical_library_crown(library,fdi)
-    # Initialize in the confirmed local frame, then put the result into world space.
-    # A0：显式传**规范局部帧**（+Z 就位、X=近中），不再走 "world-X 推断" 的 legacy 分支。
+    # canonical_library_crown 同时验证库件只有一个合法颈缘边界，并从缓存取 CrownTemplate。
+    _canonical,template=canonical_library_crown(library,fdi)
+
+    # 先进入确认的患者局部帧：+Z=就位方向、+X=近中、+Y=颊侧。
+    # 不再让 Margin PCA 猜 M/D/B/L；尤其 26 这类近似椭圆颈缘容易出现 90°/180° 二义。
     from ..geometry.crown_outer.patient_frame import confirmed_patient_frame
-    local_frame=confirmed_patient_frame(np.zeros(3),(1.0,0.0,0.0),(0.0,1.0,0.0),(0.0,0.0,1.0))
+    local_frame=confirmed_patient_frame(np.zeros(3),(1.0,0.0,0.0),(0.0,1.0,0.0),(0.0,0.0,1.0),
+                                        revision_id=getattr(frame,'revision_id',None))
     local_margin=(np.asarray(margin)-frame.origin)@frame.matrix()
-    placed=initialize_from_margin(open_crown,local_margin,[0,0,1],template_cervical_points=template.margin_loop,
-                                  patient_frame=local_frame)
+
+    # Crown 1.0：从"只对齐颈缘中心/尺度"升级为真正的 3D Margin hard constraint。
+    # generate_crown_outer_v0 内部做闭环 forward/reverse+shift correspondence，并用 Laplacian
+    # 将模板颈环顶点逐点钉到患者 Margin；咬合区仅弱锚，因而保留牙库 cusp/groove 基础形态。
+    result=generate_crown_outer_v0(template,local_margin,[0,0,1],patient_frame=local_frame)
+    if result.mesh is None:
+        raise ValueError('Margin hard-fit 未生成冠体')
+    placed=_cap_margin_boundary(result.mesh)
     placed.vertices=np.asarray(placed.vertices)@frame.matrix().T+frame.origin
+
+    solver=(result.mesh_qc or {}).get('solver') or {}
     return placed,{'library':library.name,'fdi':fdi,'margin_source':template.margin_source,
         'template_summary':template.summary(),'label_semantics_status':'GEOMETRIC_CANDIDATE_NOT_CLINICALLY_VERIFIED',
-        'normalization':'confirmed_mesial_and_axis_frame','original_anatomy_review_required':True}
+        'normalization':'confirmed_mesial_and_axis_frame','original_anatomy_review_required':True,
+        'margin_fit_mode':'HARD_LAPLACIAN_BOUNDARY',
+        'margin_error_median_mm':result.margin_error_median_mm,
+        'margin_error_p95_mm':result.margin_error_p95_mm,
+        'margin_error_max_mm':result.margin_error_max_mm,
+        'margin_constraint_residual_max_mm':solver.get('margin_constraint_residual_max_mm'),
+        'crown_outer_status':result.status}

@@ -22,8 +22,8 @@ def eligibility(d):
     try: _,frame=frame_from(d)
     except (HTTPException,KeyError): pass
     if not frame:
-        # A1：坐标帧是 live 生成的**前置条件**（模板放置的横向轴只能来自确认帧），
-        # 不再允许"没确认就先放一个，方向靠世界轴猜"。
+        # A1：坐标帧是 live 生成的**前置条件**。Crown 1.0 的红/绿/蓝截面同样只消费
+        # 已确认 Patient Frame，不允许由世界轴猜近远中或咬合方向。
         blockers.append({'stage':'FRAME','message':'请先确认近中/颊侧方向与毫米单位（坐标确认），再生成外形'})
     neighbors=json.loads(d.get('neighbors_json') or '{}');sides={}
     for side in ('mesial','distal'):
@@ -53,12 +53,20 @@ def eligibility(d):
         'automatic_mode':mode if not blockers else None,'frame_confirmed':bool(frame),'neighbors':sides,
         'bite_confirmed':bite_valid,'proximal_target_confirmed':params.get('proximal_target_mm') is not None,
         'occlusal_target_confirmed':params.get('occlusal_target_mm') is not None,
+        # Full red/green/blue baseline is only truthful when both lateral context and antagonist are confirmed.
+        'sectional_v1_ready':bool(not blockers and mode=='BOTH'),
         'release_status':'NOT_PRODUCTION_APPROVED'}
 
 
-def generate_candidate(d,kind):
-    from ..api.routes import asset, initialize_draft_outer
+def _template_baseline(d, margin, axis):
+    """Legacy/partial-context baseline retained for TEMPLATE_ONLY and incomplete AUTO modes."""
+    from ..api.routes import initialize_draft_outer
     from ..models import AutoOuterRequest
+    return initialize_draft_outer(d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
+
+
+def generate_candidate(d,kind):
+    from ..api.routes import asset
     from ..geometry.io import load_mesh
     from ..geometry.prep_margin_diagnostics import diagnose
     from ..geometry.nonplanar_crown import fitting_support_above_margin
@@ -82,23 +90,60 @@ def generate_candidate(d,kind):
     if diagnostics['codes']:
         raise HTTPException(422,{'message':'预备体组件或边界不满足构冠要求，请检查边缘或上传独立预备体',
             'geometry':diagnostics,'repair_stage':'PREP'})
-    placement,baseline=initialize_draft_outer(d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
-    if kind=='AUTO':
-        frame,ref=frame_from(d);_,report,artifacts=propose(d,frame,ref,state['automatic_mode'],baseline_path=baseline)
-        artifacts['baseline']=str(baseline);report['candidate_kind']='AUTO_FIT_CANDIDATE'
+
+    frame,ref=frame_from(d)
+    sectional_report=None
+    sectional_artifacts={}
+
+    # Crown 1.0 live path：当红（Prep/内冠约束）、绿（邻牙）和蓝（对颌）证据齐全时，
+    # 不再用牙库尺寸作为外形真相。先按患者空间直接生成 section-driven baseline，
+    # 再复用 AutoFit 做精细 signed-distance 修正和 W3 intaglio/finalize 预检。
+    if kind=='AUTO' and state['automatic_mode']=='BOTH':
+        from .sectional_generation import build_sectional_baseline
+        try:
+            _mesh,sectional_report,sectional_artifacts=build_sectional_baseline(
+                d,frame,ref,support,margin)
+        except ValueError as exc:
+            raise HTTPException(422,{
+                'message':'Crown 1.0 红/绿/蓝空间包络无法生成，请复核邻牙、咬合位姿或基台空间',
+                'detail':str(exc),'repair_stage':'SECTIONAL_ENVELOPE'}) from exc
+        baseline=Path(sectional_artifacts['outer'])
+        _,report,artifacts=propose(d,frame,ref,'BOTH',baseline_path=baseline)
+        # Preserve both the exact coarse envelope and the final fine-fit candidate.
+        artifacts['baseline']=str(baseline)
+        artifacts['sectional_baseline']=str(baseline)
+        artifacts['sectional_report']=sectional_artifacts['sectional_report']
+        report['sectional_v1']=sectional_report
+        report['candidate_kind']='AUTO_FIT_CANDIDATE'
+        report['generator']='SECTIONAL_RED_GREEN_BLUE_V1+AUTOFIT_FINE'
+        report['placement_path']='SECTIONAL_RED_GREEN_BLUE_V1'
+        placement={
+            'template_source':sectional_report.get('template_source'),
+            'template_source_warning':'牙库不再决定 Crown 1.0 的宽度/高度；仅保留弱解剖先验语义',
+            'frame_source':'CONFIRMED_FRAME',
+            'placement_path':'SECTIONAL_RED_GREEN_BLUE_V1',
+        }
     else:
-        report={'type':'template_draft','candidate_kind':'TEMPLATE_ONLY_DRAFT','status':'TEMPLATE_REVIEW_REQUIRED',
-            'stages':[{'stage':'TEMPLATE','status':'PLACED'},{'stage':'PROXIMAL','status':'NOT_ASSESSED'},
-                      {'stage':'OCCLUSAL','status':'NOT_ASSESSED'}],
-            'w3_preflight':{'status':'INPUT_CHECKED','reason':'预备体输入检查通过；内冠与壁厚仍需最终构建检查'}}
-        artifacts={'outer':str(baseline),'baseline':str(baseline)}
+        placement,baseline=_template_baseline(d,margin,axis)
+        if kind=='AUTO':
+            _,report,artifacts=propose(d,frame,ref,state['automatic_mode'],baseline_path=baseline)
+            artifacts['baseline']=str(baseline);report['candidate_kind']='AUTO_FIT_CANDIDATE'
+            report['generator']='TEMPLATE_BASELINE+AUTOFIT_PARTIAL_CONTEXT'
+        else:
+            report={'type':'template_draft','candidate_kind':'TEMPLATE_ONLY_DRAFT','status':'TEMPLATE_REVIEW_REQUIRED',
+                'stages':[{'stage':'TEMPLATE','status':'PLACED'},{'stage':'PROXIMAL','status':'NOT_ASSESSED'},
+                          {'stage':'OCCLUSAL','status':'NOT_ASSESSED'}],
+                'w3_preflight':{'status':'INPUT_CHECKED','reason':'预备体输入检查通过；内冠与壁厚仍需最终构建检查'}}
+            artifacts={'outer':str(baseline),'baseline':str(baseline)}
+            report['generator']='TEMPLATE_ONLY_DRAFT'
+
     report.update(eligibility=state,input_diagnostics=diagnostics,
         completed_stages=[s['stage'] for s in report['stages'] if s['status'] in ('PLACED','PASS_ENGINEERING')],
-        blocked_stages=[s for s in report['stages'] if s['status'] in ('NOT_ASSESSED','INPUT_UNVERIFIED','BLOCKED')],        review_required_stages=['CANDIDATE','FINAL_QC'],manufacturing_status='NOT_PRODUCTION_APPROVED',
+        blocked_stages=[s for s in report['stages'] if s['status'] in ('NOT_ASSESSED','INPUT_UNVERIFIED','BLOCKED')],
+        review_required_stages=['CANDIDATE','FINAL_QC'],manufacturing_status='NOT_PRODUCTION_APPROVED',
         candidate_outer_sha256=file_digest(artifacts['outer']),
         artifact_sha256={k:file_digest(v) for k,v in artifacts.items()})
-    # A1：候选报告必须自证 truth source（哪颗模板 / 哪个确认帧 / 哪条放置实现），
-    # 否则"几何来自 A、报告写着 B"这类断链在报告层无法被发现。
+    # Candidate report must self-prove which geometry truth source was consumed.
     report['template_source']=placement.get('template_source')
     report['template_source_warning']=placement.get('template_source_warning')
     report['frame_source']=placement.get('frame_source')

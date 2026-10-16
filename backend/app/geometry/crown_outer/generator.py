@@ -22,9 +22,39 @@ from .models import (
     CrownOuterConfig,
     CrownOuterResult,
 )
-from .patient_frame import build_patient_frame
+from .patient_frame import PatientFrame, build_patient_frame, validate_patient_frame
 from .placement import patient_margin_perimeter, place_template
 from .template import CrownTemplate
+
+
+def _patient_frame_for_generation(patient_frame, margin, insertion_axis):
+    """Resolve and validate the frame used by CrownOuter generation.
+
+    A supplied confirmed frame is a truth source, not a hint: it must remain a
+    strict right-handed orthonormal frame and its +Z must agree with the explicit
+    insertion axis.  We intentionally do not project/orthogonalize a bad frame.
+    """
+    if patient_frame is None:
+        return build_patient_frame(margin, insertion_axis)
+    validate_patient_frame(patient_frame)
+    axis = np.asarray(insertion_axis, dtype=float)
+    norm = float(np.linalg.norm(axis))
+    if norm < 1e-9 or not np.isfinite(norm):
+        raise ValueError("insertion_axis 是零向量或无效向量")
+    axis = axis / norm
+    if float(axis @ np.asarray(patient_frame.z, float)) < 1.0 - 1e-6:
+        raise ValueError("patient_frame.z 与 insertion_axis 不一致，拒绝混用不同确认方向")
+    return patient_frame
+
+
+def _occlusal_anchor_indices(placed, crown_idx, patient_frame, percentile):
+    """Select high-crown weak anchors along Patient Frame +Z, never world-Z."""
+    placed = np.asarray(placed, dtype=float)
+    crown_idx = np.asarray(crown_idx, dtype=np.int64)
+    axial = ((placed - np.asarray(patient_frame.origin, float))
+             @ np.asarray(patient_frame.z, float))
+    threshold = np.percentile(axial[crown_idx], float(percentile))
+    return crown_idx[axial[crown_idx] >= threshold]
 
 
 def generate_crown_outer_v0(
@@ -36,12 +66,17 @@ def generate_crown_outer_v0(
     config: CrownOuterConfig | None = None,
     md_scale: float | None = None,
     md_body_keep: float | None = None,
+    patient_frame: PatientFrame | None = None,
 ) -> CrownOuterResult:
     """...（H.1 原流程）
 
     ``md_scale``（**H.2**）：非 None 时把"近远中（模板局部 X）"这一轴
     的缩放从均匀缩放改成 ``scale·md_scale``，颊舌/咬合两轴保持 ``scale``。
     用于让解剖先验**按邻牙可用间隙定宽**，而不是按 margin 周长等比放大。
+
+    ``patient_frame``（Crown 1.0）：调用方已经有人工/上游确认的近中、颊侧、就位方向时，
+    必须复用该帧，避免重新从近似椭圆 Margin 的 PCA 猜 X/Y 导致 90°/180° 旋转二义。
+    Margin 本身仍由下面的 hard Laplacian boundary constraint 逐点锁定。
     """
     if method != "laplacian":
         raise ValueError("v0 只实现 laplacian；arap 是条件升级项（方案 §9.4）")
@@ -53,7 +88,7 @@ def generate_crown_outer_v0(
         perim = patient_margin_perimeter(margin)
 
         # ---- C: patient frame + similarity placement
-        pf = build_patient_frame(margin, insertion_axis)
+        pf = _patient_frame_for_generation(patient_frame, margin, insertion_axis)
         placement = place_template(template, pf, perim)
         if md_scale is not None:
             sv = placement.svec().copy()
@@ -81,10 +116,15 @@ def generate_crown_outer_v0(
         loop_idx = template.margin_loop_indices
         root_idx = np.flatnonzero(template.root_vertex_mask)
         crown_idx = np.flatnonzero(template.crown_vertex_mask)
-        # 咬合弱锚：冠部 z 高分位（不含颈环顶点）
-        z_thr = np.percentile(placed[crown_idx, 2],
-                              config.occlusal_anchor_percentile)
-        occ_idx = crown_idx[placed[crown_idx, 2] >= z_thr]
+        # 咬合弱锚：必须沿**确认 Patient Frame 的 +Z**取高分位，不能看 world-Z。
+        # 否则同一病例整体旋转后会换一批锚点，破坏 rigid-transform equivariance。
+        occ_idx = _occlusal_anchor_indices(
+            placed, crown_idx, pf, config.occlusal_anchor_percentile)
+        res.mesh_qc["occlusal_anchor"] = {
+            "frame": "patient_z",
+            "percentile": float(config.occlusal_anchor_percentile),
+            "count": int(len(occ_idx)),
+        }
         deformed, solve_info = solve_laplacian(DeformInputs(
             vertices_placed=placed, faces=template.faces,
             margin_vertex_indices=loop_idx, margin_targets=targets,

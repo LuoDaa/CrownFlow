@@ -164,6 +164,9 @@ def test_unconfirmed_frame_blocks_live_generation_without_guessing_axes(isolated
     monkeypatch.setattr(auto_fit, 'CASE_DIR', isolated_db / 'cases')
     monkeypatch.setattr(routes, 'TEMPLATE_DIR', isolated_db / 'templates')
     monkeypatch.setattr(design_dependencies, 'TEMPLATE_DIR', isolated_db / 'templates')
+    # 这条测试只验证 FRAME blocker；先给一个合法模板，避免被“不存在模板”这一独立前置条件抢先拦截。
+    template_path = isolated_db / 'templates' / 'FDI_46.stl'
+    template_path.write_bytes(trimesh.creation.box(extents=(6.0, 4.0, 8.0)).export(file_type='stl'))
     from fastapi.testclient import TestClient
     from app.main import app
 
