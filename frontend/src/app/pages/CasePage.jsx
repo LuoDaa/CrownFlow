@@ -98,7 +98,7 @@ function GenerationOverlay({ progress, message, fdi, library }) {
         <i />
         <span className={percent >= 80 ? "on" : ""}>内冠 / Final</span>
       </div>
-      <small className="cd-generation-overlay-note">Margin、插入方向、邻牙和咬合参考都已封装在自动流程中，不需要另外确认。</small>
+      <small className="cd-generation-overlay-note">Margin、插入方向、邻牙和咬合参考都已封装在自动流程中；模板和参数确认后由“牙冠生成”统一启动。</small>
     </div>
   </div>;
 }
@@ -126,8 +126,7 @@ export default function CasePage({ wf }) {
 
   const bothJaws = has("upper") && has("lower");
   const fastPrepared = Boolean(wf.design && wf.marginConfirmed && wf.axisConfirmed && wf.frameConfirmed && wf.serverStatus?.bite?.pose_confirmed);
-  const neighbors = wf.serverStatus?.neighbors || {};
-  const selectedLibrary = wf.selectedTemplate?.library || wf.library || "";
+  const selectedLibrary = wf.library || wf.selectedTemplate?.library || "";
   const orderReady = Boolean(bothJaws && fdi && supportType);
 
   useEffect(() => { latestParams.current = wf.params; }, [wf.params]);
@@ -185,14 +184,13 @@ export default function CasePage({ wf }) {
         onProgress,
       });
       await wf.refreshDetail();
-      // resumeDesign 会读回服务端参数；把准备期间用户继续调整的最新值重新放回页面，避免“参数又变回去”。
       const currentParams = { ...latestParams.current };
       await wf.resumeDesign(result.design.id, wf.caseId);
       wf.setParams(currentParams);
       wf.setStep("case");
       const detected = Object.values(result.neighbors?.neighbors || {}).filter((item) => item.confirmation_status === "CONFIRMED").length;
       setFastProgress({ id:"READY", label:"病例空间已自动识别", progress:100, detail:`Margin / Axis / Bite 完成 · ${detected} 个邻牙参考面` });
-      setFastMsg("病例空间参考已建立。现在只需确认参数并选择牙模板；选择模板后会自动生成牙冠。");
+      setFastMsg("病例空间参考已建立。请确认参数并选择牙模板；选择模板不会开始生成，点击右下角“牙冠生成”统一计算外冠和内冠。");
     } catch (error) {
       setAutoPrepareError(error.message || "自动识别失败");
       setFastMsg(`自动识别未完成：${error.message}`);
@@ -204,33 +202,39 @@ export default function CasePage({ wf }) {
   useEffect(() => {
     if (!fastAbutment || !orderReady || fastPrepared || wf.busy || fastBusy || generationOpen || autoPrepareError) return;
     void prepareFast();
-    // 自动准备只由病例输入状态驱动，不把函数 identity 放进依赖，避免重复触发。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fastAbutment, orderReady, fastPrepared, wf.busy, fastBusy, generationOpen, autoPrepareError, wf.caseId, fdi, supportType]);
 
-  const chooseLibrary = async (name) => {
-    if (!wf.design?.id || generationOpen || fastBusy) return;
+  // Template cards are selection only. Generation is an explicit user action.
+  const chooseLibrary = (name) => {
+    if (!wf.design?.id || generationOpen || fastBusy || wf.busy) return;
+    wf.setLibrary(name);
+    setFastProgress(null);
+    setFastMsg(`已选择牙模板 ${name}。请确认参数后点击右下角“牙冠生成”。`);
+  };
+
+  const generateSelectedCrown = async () => {
+    if (!wf.design?.id || !selectedLibrary || generationOpen || fastBusy || wf.busy) return;
     const paramsForGeneration = { ...latestParams.current };
     setGenerationOpen(true);
     setFastBusy(true);
-    setFastProgress({ id:"TEMPLATE", label:`选择牙模板 ${name}`, progress:2, detail:"模板仅作为解剖胚子" });
-    setFastMsg(`正在应用牙库 ${name}，随后直接自动生成牙冠…`);
+    setFastProgress({ id:"TEMPLATE", label:`确认牙模板 ${selectedLibrary}`, progress:2, detail:"模板只作为解剖胚子；随后一次生成外冠 + 内冠" });
+    setFastMsg(`正在使用 ${selectedLibrary} 生成完整牙冠…`);
     try {
-      wf.setLibrary(name);
-      await selectAbutmentTemplate({ designId: wf.design.id, library: name, params: paramsForGeneration, onProgress });
-      setFastProgress({ id:"START", label:"模板已选定，开始自动生成", progress:4, detail:"Margin / 左右邻牙 / 上下咬合联合求解" });
+      await selectAbutmentTemplate({ designId: wf.design.id, library: selectedLibrary, params: paramsForGeneration, onProgress });
+      setFastProgress({ id:"START", label:"开始完整牙冠生成", progress:4, detail:"Margin / 左右邻牙 / 对颌 / 内冠联合流程" });
       const result = await generateAbutmentOrder({ designId: wf.design.id, params: paramsForGeneration, onProgress });
       await wf.resumeDesign(wf.design.id, wf.caseId);
-      if (result?.final) {
-        setFastMsg(result.warnings?.length
-          ? `牙冠已生成；有 ${result.warnings.length} 项工程提示，可在 3D 中检查。`
-          : "基台冠已自动生成并完成内冠，正在打开最终检查。");
-      } else {
-        setFastMsg(`患者化外冠已生成并进入 3D。${result?.hardFailures?.length ? `仍有 ${result.hardFailures.length} 项空间约束需要检查。` : ""}`);
-      }
+      wf.setStep("design");
+      wf.reloadMeshes();
+      setFastMsg(result?.final
+        ? (result.warnings?.length
+          ? `外冠和内冠已生成；有 ${result.warnings.length} 项工程提示，可直接在微调画布检查并导出。`
+          : "外冠和内冠已一次生成完成，可直接微调或导出。")
+        : `外冠和内冠预览已生成并进入微调。${result?.finalizeWarning ? `最终闭合提示：${result.finalizeWarning}` : ""}`);
     } catch (error) {
       setFastProgress((current) => current ? { ...current, detail:`失败：${error.message}` } : null);
-      setFastMsg(`自动生成停止：${error.message}`);
+      setFastMsg(`牙冠生成停止：${error.message}`);
     } finally {
       setGenerationOpen(false);
       setFastBusy(false);
@@ -252,7 +256,8 @@ export default function CasePage({ wf }) {
     };
     if (!fastPrepared) return { label:"正在自动识别 Margin / Axis / 邻牙 / Bite…", disabled:true };
     if (!(wf.templates.libraries || []).length) return { label:"正在读取牙模板…", disabled:true };
-    return { label:"选择牙模板后自动生成", disabled:true };
+    if (!selectedLibrary) return { label:"请先选择牙模板", disabled:true };
+    return { label:"牙冠生成", disabled: wf.busy || fastBusy || generationOpen, run: generateSelectedCrown };
   };
 
   const action = primaryAction();
@@ -264,10 +269,10 @@ export default function CasePage({ wf }) {
     </div>
 
     <PageHead eyebrow="NEW CROWN ORDER" title="新建牙冠病例"
-      hint="上传上下颌、选择牙位与修复类型、微调参数、选择牙模板。Margin、插入方向、邻牙和静态咬合参考由系统在后台自动完成。" />
+      hint="上传上下颌、选择牙位与修复类型、微调参数、选择牙模板。模板只负责选择；确认后点击右下角“牙冠生成”，一次生成外冠与内冠。" />
 
     <div className="cd-order-flowline" aria-label="当前页面包含的输入">
-      <span><i>1</i>上传病例</span><b>→</b><span><i>2</i>牙位 / 修复</span><b>→</b><span><i>3</i>微调参数</span><b>→</b><span><i>4</i>选择模板即生成</span>
+      <span><i>1</i>上传病例</span><b>→</b><span><i>2</i>牙位 / 修复</span><b>→</b><span><i>3</i>微调参数</span><b>→</b><span><i>4</i>选择模板</span><b>→</b><span><i>5</i>牙冠生成</span>
     </div>
 
     <Panel title="病例与设计对象" subtitle="Upper / Lower 保留原始咬合坐标；上传完成后系统会在后台自动准备，不需要额外点 Margin 或 Axis">
@@ -297,7 +302,7 @@ export default function CasePage({ wf }) {
           </Field>
           <div className="cd-order-type-note">
             {fastAbutment
-              ? <><b>自动基台流程</b><span>病例资料齐全后自动寻找 Margin、插入方向、邻牙和 Bite；这些步骤不再要求单独点击。</span></>
+              ? <><b>自动基台流程</b><span>病例资料齐全后自动寻找 Margin、插入方向、邻牙和 Bite；模板选择和最终生成分开。</span></>
               : supportType === "prep"
                 ? <><b>天然牙完整流程</b><span>天然牙仍保留专业 Margin / Axis 复核流程。</span></>
                 : <><b>请选择修复类型</b><span>不同类型会使用不同的后续几何流程。</span></>}
@@ -306,7 +311,7 @@ export default function CasePage({ wf }) {
       </div>
     </Panel>
 
-    <Panel title="模型生成参数" subtitle="全部都有可直接使用的默认值；只调整你确实想改变的参数，不需要为了“生效”再确认一次">
+    <Panel title="模型生成参数" subtitle="全部都有可直接使用的默认值；确认参数和模板后，由右下角“牙冠生成”统一执行">
       <div className="cd-parameter-toolbar">
         <div><b>标准预设已生效</b><span>邻接默认 -0.02 mm 轻压接；咬合默认 0.02 mm 近接触。新病例沿用你上一次调整的参数。</span></div>
         <button type="button" className="cd-btn ghost" disabled={wf.busy || generationOpen}
@@ -325,7 +330,7 @@ export default function CasePage({ wf }) {
       </div>
     </Panel>
 
-    <Panel title="牙模板" subtitle="模板只提供牙体解剖身份；选择模板后立即自动生成，不再需要第二次点击">
+    <Panel title="牙模板" subtitle="模板只提供牙体解剖身份；点击只选择，不会自动开始生成">
       {!supportType && <Notice>先完成病例上传、牙位和修复类型。后续准备会在后台自动执行。</Notice>}
 
       {fastAbutment && !fastPrepared && <div className="cd-template-empty-state">
@@ -350,14 +355,14 @@ export default function CasePage({ wf }) {
               disabled={wf.busy || fastBusy || generationOpen || unavailable} onClick={() => chooseLibrary(library.name)}>
               <div className="cd-template-shape"><span>FDI</span><strong>{fdi}</strong></div>
               <b>{library.label || library.name}</b>
-              <small>{selected ? "当前模板" : unavailable ? library.reason || "不可用" : "选择并自动生成"}</small>
+              <small>{selected ? "已选择 · 等待生成" : unavailable ? library.reason || "不可用" : "选择模板"}</small>
             </button>;
           })}
         </div>
-        : <div className="cd-template-empty-state"><div className="cd-template-empty-icon">…</div><div><b>正在读取牙库</b><p>牙库准备完成后直接在这里选择；选择后立即自动生成。</p></div></div>)}
+        : <div className="cd-template-empty-state"><div className="cd-template-empty-icon">…</div><div><b>正在读取牙库</b><p>牙库准备完成后在这里选择；选择不会立即计算。</p></div></div>)}
 
-      {wf.selectedTemplate && <div className="cd-selected-template-strip">
-        <span>当前模板</span><b>{wf.selectedTemplate.library}</b><small>只作为解剖胚子，最终尺寸由患者空间决定</small>
+      {selectedLibrary && <div className="cd-selected-template-strip">
+        <span>当前模板</span><b>{selectedLibrary}</b><small>只作为解剖胚子；点击右下角“牙冠生成”后才开始患者化求解</small>
       </div>}
     </Panel>
 
@@ -372,22 +377,23 @@ export default function CasePage({ wf }) {
         <span className={fdi ? "ok" : ""}>{fdi ? "✓" : "2"} 牙位</span>
         <span className={supportType ? "ok" : ""}>{supportType ? "✓" : "3"} 修复类型</span>
         {fastAbutment && <span className={fastPrepared ? "ok" : ""}>{fastPrepared ? "✓" : "4"} 自动病例准备</span>}
-        {fastAbutment && <span className={wf.selectedTemplate ? "ok" : ""}>{wf.selectedTemplate ? "✓" : "5"} 牙模板</span>}
+        {fastAbutment && <span className={selectedLibrary ? "ok" : ""}>{selectedLibrary ? "✓" : "5"} 牙模板</span>}
       </div>
       <div className="cd-order-actioncopy">
         <b>{fastAbutment
           ? autoPrepareError
             ? "自动识别遇到问题"
             : fastPrepared
-              ? "选择任一牙模板即可开始生成"
+              ? selectedLibrary ? "参数和模板已就绪" : "请选择牙模板"
               : "正在后台自动识别病例空间"
           : "天然牙进入专业复核"}</b>
         <span>{fastAbutment
-          ? "不需要再点 Margin、Axis、应用参数或生成按钮"
+          ? selectedLibrary
+            ? "点击右侧“牙冠生成”，一次完成外冠、邻接、咬合、内冠并进入微调画布"
+            : "选择模板只做选择，不会自动开始生成"
           : "参数会随设计保存，不需要再次填写"}</span>
       </div>
-      {!fastAbutment && <button type="button" className="cd-btn primary cd-order-primary" disabled={action.disabled} onClick={action.run}>{action.label}</button>}
-      {fastAbutment && autoPrepareError && <button type="button" className="cd-btn primary cd-order-primary" disabled={action.disabled} onClick={action.run}>{action.label}</button>}
+      <button type="button" className="cd-btn primary cd-order-primary" disabled={action.disabled} onClick={action.run}>{action.label}</button>
     </div>
 
     {generationOpen && <GenerationOverlay progress={fastProgress} message={fastMsg} fdi={fdi} library={selectedLibrary} />}
