@@ -9,6 +9,10 @@ from fastapi.staticfiles import StaticFiles
 # service graph so patient-space sizing and safe anatomy refinement are the
 # defaults used by all subsequently imported generation code.
 from . import v1_test_geometry_overrides as _v1_test_geometry_overrides  # noqa: F401
+# Last-mile tuning is deliberately layered on top of the established policy:
+# stronger patient B/L fullness, one-side proximal closure and antagonist-owned
+# occlusal relief. Import before API/services capture the patched functions.
+from . import v1_final_geometry_guards as _v1_final_geometry_guards  # noqa: F401
 
 from .api.crown import router as crown_router
 from .api.importers import router as importers_router
