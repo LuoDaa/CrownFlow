@@ -136,6 +136,15 @@ def test_antagonist_deadband_does_not_churn_geometry():
     assert plan["axial_scale"] == 1.0
 
 
+def test_deadband_never_accepts_a_crown_below_the_lower_bound():
+    """deadband 只用于“已满足最小高度”的冠；不能绕过 prep+壁厚下界。"""
+    envelope = {"status": "FEASIBLE", "lower_bound_mm": 5.96, "upper_bound_mm": 6.0}
+    plan = plan_axial_placement(envelope, crown_top_mm=5.93)
+    assert plan["mechanism"] == "AXIAL_SCALE", plan
+    assert plan["feasible"] and plan["axial_scale"] > 1.0
+    assert plan["target_top_mm"] == pytest.approx(6.0)
+
+
 def test_excessive_axial_growth_is_refused():
     envelope = {"status": "FEASIBLE", "lower_bound_mm": 4.5, "upper_bound_mm": 8.0}
     plan = plan_axial_placement(envelope, crown_top_mm=5.0)
