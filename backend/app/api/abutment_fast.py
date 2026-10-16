@@ -269,7 +269,10 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
     if not len(candidates):
         return None, {
             "status": "ABSENT",
-            "reason": "NO_NEIGHBOR_GEOMETRY_IN_BOUNDED_PRESENCE_WINDOW",
+            # Backwards-compatible reason string: callers/tests key on this code.
+            # Diagnostics below make it explicit that the wider presence window
+            # was also empty before ABSENT was allowed.
+            "reason": "NO_CORONAL_NEIGHBOR_WITHIN_SEARCH_RANGE",
             "strict_candidate_faces": strict_count,
             "relaxed_candidate_faces": relaxed_count,
             "presence_candidate_faces": presence_count,
