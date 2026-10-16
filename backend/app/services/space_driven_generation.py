@@ -101,6 +101,30 @@ def _margin_fallback_envelope(frame, margin, reason):
     )
 
 
+def _bind_runtime_seed_as_geometry_source(d, path, sha256):
+    """Keep legacy AutoFit provenance code from touching an external tooth library.
+
+    ``propose`` still asks ``resolve_template_source`` for historical reporting.
+    For the patient-space AUTO route we inject the generated seed only into this
+    in-memory design copy.  Nothing is persisted; the workflow report later marks
+    the template role as NOT_USED.  This compatibility shim removes runtime tooth
+    library dependency without rewriting the mature contact/occlusion solver.
+    """
+    try:
+        landmarks = json.loads(d.get('landmarks_json') or '{}')
+    except (TypeError, ValueError):
+        landmarks = {}
+    landmarks['_selected_template'] = {
+        'source_path': str(path),
+        'sha256': sha256,
+        'library': None,
+        'proposal_id': None,
+        'geometry_frame_revision_id': None,
+        'runtime_only_procedural_seed': True,
+    }
+    d['landmarks_json'] = json.dumps(landmarks, ensure_ascii=False)
+
+
 def build_space_driven_seed(d, frame, frame_ref, support, margin, parameters, state):
     """Build PatientEnvelope first, then generate a template-free embryo.
 
@@ -148,11 +172,14 @@ def build_space_driven_seed(d, frame, frame_ref, support, margin, parameters, st
     )
     path = CASE_DIR / d['case_id'] / f"{d['id']}_space_seed_{uuid4().hex}.stl"
     save_mesh(mesh, path)
+    seed_sha = file_digest(path)
+    _bind_runtime_seed_as_geometry_source(d, path, seed_sha)
     seed_report['artifact'] = str(path)
-    seed_report['sha256'] = file_digest(path)
+    seed_report['sha256'] = seed_sha
     seed_report['neighbor_surface_count'] = int(len(neighbors))
     seed_report['antagonist_used'] = bool(antagonist is not None and fallback_reason is None)
     seed_report['envelope_status'] = 'FALLBACK_MARGIN_ENVELOPE' if fallback_reason else 'PATIENT_ENVELOPE'
+    seed_report['runtime_template_dependency'] = False
     if fallback_reason:
         seed_report['status'] = 'REVIEW_REQUIRED'
         seed_report['fallback_reason'] = fallback_reason
