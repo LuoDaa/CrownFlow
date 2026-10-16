@@ -31,7 +31,7 @@ class SpaceMorphConfig:
     bl_scale_max: float = 1.90
     height_scale_min: float = 0.70
     height_scale_max: float = 1.65
-    height_iterations: int = 8
+    height_iterations: int = 12
     height_max_step_mm: float = 1.10
     height_target_band_mm: float = 0.025
     height_domain_median_tolerance_mm: float = 0.20
