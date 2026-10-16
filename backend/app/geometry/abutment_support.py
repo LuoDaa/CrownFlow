@@ -100,6 +100,9 @@ def _select_margin_loop(vertices,loops,curve,*,gate_mm=.05):
 
 def _embed_boundary(mesh,source_ids,ring,margin):
     vertices=mesh.vertices.tolist();faces=mesh.faces.tolist();sources=source_ids.tolist();anchors=[];errors=[]
+    # 边界环可能是 ndarray（_boundary_loops 的产物）：下面要往里 append 新插入的切割顶点，
+    # 以前走到这一步会 AttributeError: 'numpy.ndarray' object has no attribute 'append'。
+    ring=list(np.asarray(ring,dtype=int).reshape(-1))
     for point in margin:
         point=np.asarray(point,dtype=float)
         if point.shape!=(3,) or not np.isfinite(point).all():
