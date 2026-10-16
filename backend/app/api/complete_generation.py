@@ -1,10 +1,9 @@
-"""Accept a one-click CAD-1 candidate as one complete crown.
+"""Accept one-click CAD-1 candidates for review or complete crown publication.
 
-The generation job already computes the patient-driven outer, the prep-driven
-intaglio and the non-planar cervical stitch.  Acceptance must therefore publish
-those exact artifacts together.  Publishing only ``outer_path`` and rebuilding
-later made Step 5 operate on a solid shell and reintroduced a second finalize
-workflow that the 1.0 product does not have.
+In 1.0 test mode an AUTO candidate with a valid outer surface may be published
+for sculpt/review even when intaglio/final construction is not complete yet.
+If the same generation job already produced outer + cutter + stitched final, all
+artifacts are still published together exactly as before.
 """
 from __future__ import annotations
 
@@ -44,23 +43,60 @@ def _verified_artifact(revision, label: str) -> str:
     return path
 
 
+def _publish_outer_only(d, r, digest: str, *, algorithm_version: str, warning: str | None = None):
+    """Publish a valid outer as current geometry without pretending final exists."""
+    outer = _verified_artifact(r, 'outer')
+    updates = {
+        'outer_path': outer,
+        'outer_output_sha256': file_digest(outer),
+        'final_path': None,
+        'cutter_path': None,
+        'qc_json': None,
+        'final_dependency_digest': None,
+        'status': 'outer_ready',
+        'updated_at': now(),
+        'sculpt_state_json': None,
+    }
+    updates['outer_dependency_digest'] = dependency_digest({**d, **updates}, stage='outer')
+    revision = DesignRevision(
+        design_id=d['id'], revision_no=0, kind=RevisionKind.OUTER,
+        payload={
+            'type': 'autofit_accepted',
+            'proposal_id': r.id,
+            'complete_crown': False,
+            'consumed_revisions': r.payload.get('consumed_revisions', {}),
+            'outer_dependency_digest': updates['outer_dependency_digest'],
+            'output_sha256': file_digest(outer),
+            'test_mode_outer_only': True,
+            'warning': warning,
+        },
+        artifacts={'outer': outer},
+        algorithm_version=algorithm_version,
+    )
+    publish_artifacts(d, digest, updates, stage='outer', revision=revision)
+    return {
+        'outer_path': outer,
+        'revision_id': revision.id,
+        'final_invalidated': True,
+        'complete_crown_ready': False,
+        'release_status': 'NOT_PRODUCTION_APPROVED',
+        'test_mode_outer_only': True,
+        'warning': warning,
+    }
+
+
 @router.post('/{design_id}/auto-fit/{proposal_id}/accept')
 def accept_complete_generated_crown(design_id: str, proposal_id: str, p: CompleteAcceptInput):
-    """Publish AUTO candidates as outer + cutter + stitched final in one revision.
-
-    This route intentionally shadows the legacy outer-only accept route because
-    it is included before ``auto_fit.router``. Template-preview candidates keep
-    their old outer-only semantics; one-click AUTO candidates must be complete.
-    """
+    """Publish AUTO candidates; outer-only is allowed in 1.0 test mode."""
     d = checked(design_id, p.expected_input_digest, natural_only=False)
     r = candidate(design_id, proposal_id)
     if r.payload.get('input_digest') != p.expected_input_digest or r.payload.get('design_revision') != d['design_revision']:
         raise HTTPException(409, '候选已过期，不能采纳')
 
-    is_auto = r.payload.get('candidate_kind') == 'AUTO_FIT_CANDIDATE'
+    candidate_kind = r.payload.get('candidate_kind')
+    is_auto = candidate_kind in ('AUTO_FIT_CANDIDATE', 'AUTO_FIT_REVIEW')
     if not is_auto:
-        # Preserve the existing template-preview acceptance contract. A template
-        # draft is only an anatomical reference; it is not a complete crown.
+        # Template preview keeps outer-only semantics only after explicit anatomy confirmation.
         if not (r.payload.get('type') in ('template_placement', 'template_draft')
                 and p.confirmed_template_anatomy
                 and r.payload.get('status') == 'TEMPLATE_REVIEW_REQUIRED'):
@@ -101,12 +137,15 @@ def accept_complete_generated_crown(design_id: str, proposal_id: str, p: Complet
             'release_status': 'NOT_PRODUCTION_APPROVED',
         }
 
-    # AUTO generation is not accepted into Step 5 until the same job produced a
-    # real intaglio and a watertight stitched final. Warnings may remain review
-    # items, but missing geometry is not silently converted into outer-only work.
+    # 1.0 test mode: the sculpt canvas is a review tool. A valid outer is enough
+    # to enter it; final/intaglio failures remain warnings and can be retried later.
     if not r.payload.get('complete_crown_ready'):
         reason = (r.payload.get('w3_preflight') or {}).get('reason') or '最终闭合或内冠尚未构建完成'
-        raise HTTPException(409, {'message': '完整牙冠尚未生成，不能进入微调', 'reason': reason})
+        return _publish_outer_only(
+            d, r, p.expected_input_digest,
+            algorithm_version='welooai/autofit/1.0-test-outer-review',
+            warning=reason,
+        )
 
     outer = _verified_artifact(r, 'outer')
     final = _verified_artifact(r, 'final')
@@ -114,7 +153,13 @@ def accept_complete_generated_crown(design_id: str, proposal_id: str, p: Complet
 
     qc = dict((r.payload.get('w3_preflight') or {}).get('qc') or {})
     if not qc:
-        raise HTTPException(409, '完整牙冠缺少生成阶段 QC，请重新生成')
+        # Even if final-QC packaging is incomplete, do not block the 1.0 sculpt canvas.
+        return _publish_outer_only(
+            d, r, p.expected_input_digest,
+            algorithm_version='welooai/autofit/1.0-test-outer-review',
+            warning='完整牙冠缺少生成阶段 QC',
+        )
+
     generated_paths = {}
     for label in ('outer_surface', 'intaglio_surface', 'manufacturing_qc', 'prepared_support', 'actual_support'):
         if label in r.artifacts:
@@ -141,9 +186,6 @@ def accept_complete_generated_crown(design_id: str, proposal_id: str, p: Complet
         'updated_at': now(),
         'sculpt_state_json': None,
     }
-    # ``publish_artifacts(stage='final')`` owns final dependency/hash publication;
-    # outer/body currentness must also be established because Step 5 reads the
-    # editable external body through the outer contract.
     updates['outer_dependency_digest'] = dependency_digest({**d, **updates}, stage='outer')
     landmarks = json.loads(d.get('landmarks_json') or '{}')
     landmarks['_body_dependency_digest'] = dependency_digest({**d, **updates}, stage='body')
@@ -178,14 +220,7 @@ def accept_complete_generated_crown(design_id: str, proposal_id: str, p: Complet
 
 @router.post('/{design_id}/rebuild-cervical')
 def rebuild_cervical_idempotent(design_id: str, p: FinalizeRequest):
-    """Compatibility endpoint for the old UI; never rebuild an already-current final.
-
-    Generation now creates the intaglio and stitch before Step 5. Older clients
-    still issue one ``rebuild-cervical`` immediately after candidate acceptance.
-    Treat that call as a read of the already-current result instead of running the
-    expensive geometry a second time. If sculpting invalidated the final, the same
-    endpoint remains the internal sync operation used just before export.
-    """
+    """Compatibility endpoint; rebuild only when no current final exists."""
     d = design_row(design_id)
     try:
         require_current_final(d)
