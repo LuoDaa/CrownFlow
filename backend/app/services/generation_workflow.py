@@ -5,6 +5,24 @@ from fastapi import HTTPException
 from .design_dependencies import confirmed_inputs, dependency_digest, file_digest, require_current_outer
 
 LATEST_AUTO_NEIGHBOR_SCOPE = 'AUTO_CAD1_CORONAL_MD_NEIGHBOR_V4'
+CAD1_DEFAULT_PROXIMAL_TARGET_MM = -0.02
+CAD1_DEFAULT_OCCLUSAL_TARGET_MM = 0.02
+
+
+def _resolved_contact_targets(params):
+    """CAD-1 always has explicit usable contact defaults.
+
+    Existing designs created before these fields were persisted must not silently
+    degrade to PROXIMAL_ONLY / no occlusion.  User values still win.
+    """
+    p = params.get('proximal_target_mm')
+    o = params.get('occlusal_target_mm')
+    return (
+        CAD1_DEFAULT_PROXIMAL_TARGET_MM if p is None else float(p),
+        CAD1_DEFAULT_OCCLUSAL_TARGET_MM if o is None else float(o),
+        'DEFAULT_POLICY' if p is None else 'USER',
+        'DEFAULT_POLICY' if o is None else 'USER',
+    )
 
 
 def eligibility(d):
@@ -62,15 +80,18 @@ def eligibility(d):
         blockers.append({'stage':'OCCLUSAL','code':'OCCLUSION_REGISTRATION_UNVERIFIED',
                          'message':'基台冠需先确认上下颌咬合配准，才能测量对颌空间并生成初稿'})
     params=json.loads(d['parameters_json'])
+    proximal_target,occlusal_target,prox_source,occl_source=_resolved_contact_targets(params)
     proximal=bool(frame and any(v=='CONFIRMED' for v in sides.values())
-        and all(v in ('CONFIRMED','ABSENT') for v in sides.values()) and params.get('proximal_target_mm') is not None)
-    occlusal=bool(bite_valid and params.get('occlusal_target_mm') is not None)
+        and all(v in ('CONFIRMED','ABSENT') for v in sides.values()))
+    occlusal=bool(bite_valid)
     mode='BOTH' if proximal and occlusal else 'PROXIMAL_ONLY' if proximal else 'OCCLUSAL_ONLY' if occlusal else None
     return {'input_digest':dependency_digest(d),'blockers':blockers,'template_allowed':not blockers,
         'support_contract':support_contract.as_report() if support_contract else None,
         'automatic_mode':mode if not blockers else None,'frame_confirmed':bool(frame),'neighbors':sides,
-        'bite_confirmed':bite_valid,'proximal_target_confirmed':params.get('proximal_target_mm') is not None,
-        'occlusal_target_confirmed':params.get('occlusal_target_mm') is not None,
+        'bite_confirmed':bite_valid,'proximal_target_confirmed':True,
+        'occlusal_target_confirmed':True,
+        'proximal_target_mm':proximal_target,'occlusal_target_mm':occlusal_target,
+        'proximal_target_source':prox_source,'occlusal_target_source':occl_source,
         'neighbor_reference_version':LATEST_AUTO_NEIGHBOR_SCOPE,
         'release_status':'NOT_PRODUCTION_APPROVED'}
 
@@ -102,9 +123,6 @@ def generate_candidate(d,kind):
         raise HTTPException(422,{'message':'预备体组件或边界不满足构冠要求，请检查边缘或上传独立预备体',
             'geometry':diagnostics,'repair_stage':'PREP'})
 
-    # 第一轮从用户选择的牙库胚子开始；自动纠正后的后续轮次必须从“上一轮已采纳的
-    # 患者化外冠”继续，而不是重新把同一颗模板放回去再算一遍。这样 retry 才是真正
-    # 的收敛迭代，同时省掉重复的模板放置/粗冠高求解。
     placement={}
     if kind=='AUTO' and d.get('outer_path'):
         require_current_outer(d)
@@ -120,8 +138,6 @@ def generate_candidate(d,kind):
             d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
 
     if kind=='AUTO':
-        # AUTO candidate阶段只求外冠。昂贵的内冠 Boolean、厚度/制造 QC 只在
-        # candidate 被采纳且三项空间约束收敛后由 /finalize 执行一次。
         frame,ref=frame_from(d);_,report,artifacts=propose(
             d,frame,ref,state['automatic_mode'],baseline_path=baseline,run_w3_preflight=False)
         artifacts['baseline']=str(baseline);report['candidate_kind']='AUTO_FIT_CANDIDATE'
@@ -148,10 +164,11 @@ def generate_candidate(d,kind):
     from .contact_measurement import measure_confirmed_inputs, serializable_measurement
     from fastapi import HTTPException as _HTTPException
     parameters=json.loads(d['parameters_json'])
+    proximal_target,occlusal_target,_ps,_os=_resolved_contact_targets(parameters)
     try:
         contact=measure_confirmed_inputs(d,json.loads(d.get('autofit_frame_json') or 'null') or {},
-            artifacts['baseline'],target_proximal=parameters.get('proximal_target_mm'),
-            target_occlusal=parameters.get('occlusal_target_mm'),strict=False)
+            artifacts['baseline'],target_proximal=proximal_target,
+            target_occlusal=occlusal_target,strict=False)
         report['placement_contact']=serializable_measurement(contact)
     except (_HTTPException,ValueError,OSError) as exc:
         report['placement_contact']={'status':'NOT_ASSESSED','reason':'PLACEMENT_SNAPSHOT_FAILED: %s'%exc}
