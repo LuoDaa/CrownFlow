@@ -19,6 +19,7 @@ on:
       - "backend/tests/unit/geometry/test_crown_outer_confirmed_frame.py"
       - "backend/tests/unit/geometry/test_margin_contract.py"
       - "backend/tests/unit/geometry/test_proximal_patch_broadening.py"
+      - "backend/tests/unit/geometry/test_proximal_rounding.py"
       - "backend/tests/unit/geometry/test_scan_pair_triage.py"
       - "backend/tests/unit/geometry/test_a0_patient_frame.py"
       - "backend/tests/unit/geometry/test_sectional_crown_v1.py"
@@ -61,6 +62,7 @@ jobs:
             tests/unit/geometry/test_crown_outer_confirmed_frame.py \
             tests/unit/geometry/test_margin_contract.py \
             tests/unit/geometry/test_proximal_patch_broadening.py \
+            tests/unit/geometry/test_proximal_rounding.py \
             tests/unit/geometry/test_scan_pair_triage.py \
             tests/unit/geometry/test_a0_patient_frame.py \
             tests/unit/geometry/test_sectional_crown_v1.py
