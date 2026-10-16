@@ -9,8 +9,8 @@ import ViewTools, { useViewTools } from "../components/ViewTools";
  * 1.0 预览策略：渲染与审核彻底解耦。只要本轮生成出了候选几何，画布
  * 就优先展示 candidatePreview；是否 PASS/REVIEW_REQUIRED/是否已采纳都
  * 不能阻止用户先看到结果。AUTO 候选同时发布 intaglio artifact，因此
- * 外冠出来时内冠也立即显示；final 模式在最终冠尚未生成时仍回退到最新
- * candidate/outer，而不是显示空画布。
+ * 外冠出来时内冠也立即显示；采纳后若 final cutter 尚未完成，则通过
+ * 当前 outer SHA 找回同一候选的 intaglio，避免内冠从画布消失。
  */
 export default function ViewerStage({
   wf, mode = "patient", renderUpper = true, renderLower = true, renderSupport = true,
@@ -38,12 +38,16 @@ export default function ViewerStage({
 
   // AUTO generation stores the best available inner surface under the candidate
   // artifact label `intaglio`: final W3 intaglio when available, otherwise the
-  // design-time intaglio preview.  Derive that URL from the already-authoritative
-  // candidate URL so the inner crown is visible before acceptance as well.
+  // design-time intaglio preview.  Derive that URL from the candidate URL before
+  // acceptance.  After acceptance, `inner-preview.stl` only returns an intaglio
+  // whose candidate outer SHA exactly matches the current accepted outer.
   const candidateInner = !hasFinal && wf.candidatePreview
     ? wf.candidatePreview.replace(/\/candidate\.stl(?:\?.*)?$/, "/artifact/intaglio")
     : null;
-  const activeInner = candidateInner || wf.innerCrown || null;
+  const acceptedInner = !hasFinal && !wf.candidatePreview && wf.design?.id && wf.outer
+    ? `/api/designs/${wf.design.id}/inner-preview.stl?v=${wf.meshVersion}`
+    : null;
+  const activeInner = candidateInner || wf.innerCrown || acceptedInner || null;
 
   return <section className="cd-viewport-card">
     <div className="cd-viewport-head">
@@ -53,7 +57,7 @@ export default function ViewerStage({
       <small>
         右键旋转 · 滚轮缩放 · 左右键平移
         {previewSource === "candidate" ? " · 正在显示本次生成候选（审核不阻止预览）" : ""}
-        {candidateInner ? " · 同步显示本次生成内冠" : ""}
+        {activeInner ? " · 同步显示当前内冠" : ""}
         {mode === "final" && previewSource !== "final" && previewSource !== "none"
           ? " · 最终冠未完成，显示最新可用外冠" : ""}
       </small>
