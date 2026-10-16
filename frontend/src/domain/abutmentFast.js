@@ -8,8 +8,20 @@ const IDENTITY = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
 // belong in the review panel; they must not silently compound geometry.
 const MAX_AUTO_CORRECTION_ATTEMPTS = 1;
 
+// Product-level invariant: a progress bar may pause, but it must never go backwards.
+// Keep state per callback so nested preparation/generation helpers cannot regress the
+// overall percentage when they report their own local stage percentages.
+const PROGRESS_STATE = new WeakMap();
+const PROGRESS_RESET_IDS = new Set(["DESIGN", "TEMPLATE"]);
+
 const emit = (onProgress, id, label, progress, detail = "") => {
-  onProgress?.({ id, label, progress, detail, at: Date.now() });
+  if (!onProgress) return;
+  if (PROGRESS_RESET_IDS.has(id)) PROGRESS_STATE.delete(onProgress);
+  const requested = Math.max(0, Math.min(100, Number(progress || 0)));
+  const previous = Number(PROGRESS_STATE.get(onProgress) || 0);
+  const monotonic = Math.max(previous, requested);
+  PROGRESS_STATE.set(onProgress, monotonic);
+  onProgress({ id, label, progress: monotonic, detail, at: Date.now() });
 };
 
 async function inputDigest(designId) {
@@ -177,7 +189,7 @@ export async function selectAbutmentTemplate({ designId, library, params, onProg
 }
 
 async function ensureAutomaticReferences(designId, params, onProgress = null) {
-  emit(onProgress, "SYNC", "检查病例空间参考", 3);
+  emit(onProgress, "SYNC", "检查病例空间参考", 50);
   let eligibility = await api.generationEligibility(designId);
   if (referencesReady(eligibility)) return { eligibility, preparedNow: false };
 
@@ -196,17 +208,17 @@ async function ensureAutomaticReferences(designId, params, onProgress = null) {
 export async function generateAbutmentOrder({ designId, params, onProgress = null }) {
   if (!designId) throw new Error("请先创建基台订单");
 
-  emit(onProgress, "SYNC", "检查自动设计输入", 2);
+  emit(onProgress, "SYNC", "检查自动设计输入", 50);
   let { eligibility, preparedNow } = await ensureAutomaticReferences(designId, params, onProgress);
 
-  emit(onProgress, "PROFILE", "同步牙冠参数", 8);
+  emit(onProgress, "PROFILE", "同步牙冠参数", 52);
   await adapter.saveProfile(designId, params);
   eligibility = await api.generationEligibility(designId);
 
   // 新病例刚刚在 prepareAbutmentOrder 中已经用 V5/5mm 参考面识别过邻牙，
   // 不再立刻重复一次昂贵提取。只有恢复旧病例时才刷新自动参考面。
   if (!preparedNow) {
-    emit(onProgress, "NEIGHBORS", "刷新邻牙参考面", 14, "确保旧病例也使用当前接触参考范围");
+    emit(onProgress, "NEIGHBORS", "刷新邻牙参考面", 54, "确保旧病例也使用当前接触参考范围");
     await autoFitRequest(designId, "auto-neighbors", "POST", {
       expected_input_digest: await inputDigest(designId),
       confirmed: true,
@@ -217,7 +229,7 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
 
   let states = neighborStates(eligibility);
   if (!eligibility?.bite_confirmed) {
-    emit(onProgress, "BITE", "重新确认静态咬合", 18);
+    emit(onProgress, "BITE", "重新确认静态咬合", 56);
     await api.confirmBite(designId, {
       expected_input_digest: await inputDigest(designId),
       confirmed: true,
@@ -252,27 +264,13 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
       onProgress,
       "AUTO_CORRECTION_ATTEMPT",
       "患者空间自动生成",
-      42,
-      "Margin → 左右邻接 → 上下咬合联合求解",
+      60,
+      "基础牙形态 + 患者空间距离约束联合适配",
     );
 
     candidate = await adapter.generateInitialCrown(designId, { kind: "AUTO" });
     payloadStages = candidate?.payload?.stages || [];
     hardFailures = threeHardConstraintFailures(candidate, eligibility);
-
-    if (!hardFailures.length) {
-      emit(onProgress, "HARD_CONSTRAINTS_PASS", "Margin / 邻接 / 咬合全部达到目标", 82, "本轮已收敛");
-    } else {
-      // 1.0 阶段的工程提示只提示，不把 REVIEW 候选提前采纳后再作为
-      // 下一轮输入。那种做法会把每轮侧向形变累计到同一 mesh 上。
-      emit(
-        onProgress,
-        "AUTO_CORRECTION_REVIEW",
-        "自动生成完成，存在工程提示",
-        82,
-        hardFailures.join("；"),
-      );
-    }
     break;
   }
 
@@ -282,6 +280,18 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   const occlusalStage = latestStageOf(payloadStages, ["OCCLUSAL_RECHECK_AFTER_SHELL", "OCCLUSAL"])
     || stageOf(payloadStages, "OCCLUSAL_HEIGHT_PREFIT");
   emitStageResult(onProgress, occlusalStage, "OCCLUSAL_DONE", "咬合适配完成", 82);
+
+  if (!hardFailures.length) {
+    emit(onProgress, "HARD_CONSTRAINTS_PASS", "主要空间适配完成", 84, "本轮已收敛");
+  } else {
+    emit(
+      onProgress,
+      "AUTO_CORRECTION_REVIEW",
+      "自动生成完成，存在工程提示",
+      84,
+      hardFailures.join("；"),
+    );
+  }
 
   if (candidate) {
     emit(onProgress, "PUBLISH", hardFailures.length ? "保留当前结果供 3D 复核" : "发布患者化外冠", 86);
@@ -312,7 +322,7 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
     if (!stageWarnings.includes(text)) stageWarnings.push(text);
   });
   hardFailures.forEach((failure) => {
-    const text = `hard-constraint:${failure}`;
+    const text = `constraint:${failure}`;
     if (!stageWarnings.includes(text)) stageWarnings.push(text);
   });
   if (candidate?.payload?.status && candidate.payload.status !== "PASS_ENGINEERING") {
