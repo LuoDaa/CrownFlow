@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import inspect
 import math
 
 import numpy as np
 import trimesh
 
-from app.api.abutment_fast import _automatic_abutment_frame, _automatic_neighbor_patch
+from app.api.abutment_fast import _automatic_abutment_frame, _automatic_neighbor_patch, confirm_automatic_neighbors
 from app.geometry.crown_outer.patient_frame import confirmed_patient_frame
+from app.services.generation_workflow import LATEST_AUTO_NEIGHBOR_SCOPE
 
 
 def _margin(radius_x=1.5, radius_y=1.2):
@@ -22,6 +24,12 @@ def _frame():
         insertion=(0.0, 0.0, 1.0),
         revision_id="abutment-fast-test",
     )
+
+
+def test_auto_neighbor_scope_gate_matches_current_producer():
+    source = inspect.getsource(confirm_automatic_neighbors)
+    assert LATEST_AUTO_NEIGHBOR_SCOPE == "AUTO_CAD1_CORONAL_MD_NEIGHBOR_V5"
+    assert LATEST_AUTO_NEIGHBOR_SCOPE in source
 
 
 def test_automatic_abutment_frame_is_right_handed_and_radial():
