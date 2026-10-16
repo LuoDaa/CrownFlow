@@ -7,6 +7,8 @@ on:
       - "backend/app/geometry/scan_pair_triage.py"
       - "backend/app/services/auto_fit_templates.py"
       - "backend/app/services/axial_placement.py"
+      - "backend/tests/integration/test_a0_draft_template_identity.py"
+      - "backend/tests/integration/test_a1_placement_parity.py"
       - "backend/tests/unit/geometry/test_axial_placement.py"
       - "backend/tests/unit/geometry/test_crown_outer_confirmed_frame.py"
       - "backend/tests/unit/geometry/test_proximal_patch_broadening.py"
@@ -49,3 +51,25 @@ jobs:
             tests/unit/geometry/test_proximal_patch_broadening.py \
             tests/unit/geometry/test_scan_pair_triage.py \
             tests/unit/geometry/test_a0_patient_frame.py
+
+  live-placement-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install backend runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run live placement truth-source regressions
+        run: |
+          pytest -q \
+            tests/integration/test_a0_draft_template_identity.py \
+            tests/integration/test_a1_placement_parity.py
