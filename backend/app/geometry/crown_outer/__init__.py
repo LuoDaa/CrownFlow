@@ -88,12 +88,10 @@ __all__ = [
 ]
 
 # CrownFlow 1.0 active proximal policy.
-#
 # Services import ``fit_proximal_envelopes`` directly from ``space_contact``.
-# Keep V6's geometry/query helpers as the single truth source, but replace the
-# orchestration with V7 so mesial/distal are solved one at a time and an already
-# established contact is hard-protected before the opposite side can move.
+# V8 keeps V7's independent mesial/distal ownership and adds only a tightly
+# guarded micro-closure attempt for the last small visible interproximal sliver.
 from . import space_contact as _space_contact
-from .proximal_v7 import fit_proximal_envelopes_v7 as _fit_proximal_envelopes_v7
+from .proximal_v8 import fit_proximal_envelopes_v8 as _fit_proximal_envelopes_v8
 
-_space_contact.fit_proximal_envelopes = _fit_proximal_envelopes_v7
+_space_contact.fit_proximal_envelopes = _fit_proximal_envelopes_v8
