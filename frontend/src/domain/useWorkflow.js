@@ -544,7 +544,11 @@ export default function useWorkflow() {
     if (result?.thickness_audit) setThickness(result.thickness_audit);
     if (result?.contacts?.status) setAdaptStatus({ status: result.contacts.status });
     setEditState("SAVED");
-    setMsg(`已应用并保存到外形修订（${payload.operation}）`);
+    // 1.0：微调一律保存；质量类问题只在消息里如实提示，不再回滚。
+    const warnings = result?.edit?.quality_warnings || [];
+    setMsg(warnings.length
+      ? `已保存到外形修订（${payload.operation}）· 质量提示 ${warnings.length} 项：${warnings.slice(0, 2).join("；")}${warnings.length > 2 ? " …" : ""}`
+      : `已应用并保存到外形修订（${payload.operation}）`);
     return result;
   }, "正在验证并保存本次微调…", "微调未保存");
   const markEditPreview = () => { if (!busy) setEditState("PREVIEW"); };
