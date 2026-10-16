@@ -58,6 +58,7 @@ jobs:
       - name: Space-driven embryo regression
         run: |
           pytest tests/unit/geometry/test_space_driven_embryo.py -q
+          pytest tests/unit/geometry/test_patient_space_envelope.py -q
           pytest tests/unit/geometry/test_space_contact_patient_envelope.py -q
       - name: Margin and occlusion regressions
         run: |
