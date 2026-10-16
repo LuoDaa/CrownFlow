@@ -43,10 +43,12 @@ def test_procedural_seed_uses_patient_envelope_without_template():
         config=ProceduralEmbryoConfig(sections=96, body_rings=18),
     )
 
-    assert report['algorithm'] == 'PROCEDURAL_PATIENT_ENVELOPE_EMBRYO_V1'
+    assert report['algorithm'] == 'PROCEDURAL_PATIENT_ENVELOPE_EMBRYO_V2_MULTI_RING_TABLE'
     assert report['template_used'] is False
     assert report['template_size_authoritative'] is False
     assert report['margin_root_exact'] is True
+    assert report['family'] == 'MOLAR'
+    assert report['cap_rings'] >= 2
     assert np.isfinite(np.asarray(mesh.vertices)).all()
     assert len(mesh.faces) > 3000
 
@@ -57,6 +59,11 @@ def test_procedural_seed_uses_patient_envelope_without_template():
     assert np.quantile(body[:, 0], .98) > 3.4
     assert np.quantile(body[:, 0], .02) < -3.3
     assert np.quantile(body[:, 2], .98) > 6.4
+
+    # Posterior seed must not be a center-apex cone: the cap center is a shallow
+    # fossa below the highest table vertices before detailed anatomy refinement.
+    center_z = report['central_table_z_mm']
+    assert center_z < float(np.quantile(body[:, 2], .99))
 
 
 def test_anatomy_refinement_preserves_cervical_root_and_is_bounded():
