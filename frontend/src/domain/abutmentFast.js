@@ -2,15 +2,12 @@ import { api, autoFitRequest } from "../api";
 import adapter from "./adapter";
 
 const IDENTITY = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
-// CAD-1 one-click generation is deliberately single-pass.  Earlier code accepted
+// CAD-1 one-click generation is deliberately single-pass. Earlier code accepted
 // a REVIEW candidate and then fed that deformed outer back into the next attempt,
-// so broad proximal growth accumulated up to three times.  Engineering warnings
+// so broad proximal growth accumulated up to three times. Engineering warnings
 // belong in the review panel; they must not silently compound geometry.
 const MAX_AUTO_CORRECTION_ATTEMPTS = 1;
 
-// Product-level invariant: a progress bar may pause, but it must never go backwards.
-// Keep state per callback so nested preparation/generation helpers cannot regress the
-// overall percentage when they report their own local stage percentages.
 const PROGRESS_STATE = new WeakMap();
 const PROGRESS_RESET_IDS = new Set(["DESIGN", "TEMPLATE"]);
 
@@ -184,7 +181,7 @@ export async function selectAbutmentTemplate({ designId, library, params, onProg
   emit(onProgress, "TEMPLATE", `载入牙库 ${library}`, 46);
   const candidate = await adapter.selectCrownTemplate(designId, library);
   await adapter.confirmTemplateReference(designId, candidate.id);
-  emit(onProgress, "TEMPLATE_READY", "模板参考已确认，开始自动生成", 48);
+  emit(onProgress, "TEMPLATE_READY", "模板参考已确认", 48, "开始完整牙冠生成");
   return candidate;
 }
 
@@ -215,8 +212,6 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   await adapter.saveProfile(designId, params);
   eligibility = await api.generationEligibility(designId);
 
-  // 新病例刚刚在 prepareAbutmentOrder 中已经用 V5/5mm 参考面识别过邻牙，
-  // 不再立刻重复一次昂贵提取。只有恢复旧病例时才刷新自动参考面。
   if (!preparedNow) {
     emit(onProgress, "NEIGHBORS", "刷新邻牙参考面", 54, "确保旧病例也使用当前接触参考范围");
     await autoFitRequest(designId, "auto-neighbors", "POST", {
@@ -294,24 +289,25 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   }
 
   if (candidate) {
-    emit(onProgress, "PUBLISH", hardFailures.length ? "保留当前结果供 3D 复核" : "发布患者化外冠", 86);
+    emit(onProgress, "PUBLISH", hardFailures.length ? "发布当前结果并继续生成内冠" : "发布患者化外冠", 86);
     await adapter.confirmCrownCandidate(designId, candidate.id);
   }
 
+  // Generation-first invariant: engineering review warnings never suppress the
+  // inner-crown build. Once a valid outer exists, always attempt the exact
+  // intaglio/cervical/final construction. If exact finalization still fails, the
+  // candidate's intaglio preview remains available in the sculpt canvas.
   let final = null;
   let finalizeWarning = null;
-  if (!hardFailures.length) {
-    try {
-      emit(onProgress, "INTAGLIO", "根据基台生成内冠", 90);
-      final = await adapter.finalize(designId, { preserveCervical: true });
-      emit(onProgress, "FINAL", "连接内外冠并生成最终 STL", 96);
-    } catch (error) {
-      finalizeWarning = error?.message || "最终内冠/QC 尚未完成";
-      emit(onProgress, "FINAL_REVIEW", "最终冠需要复核", 96, finalizeWarning);
-    }
-  } else {
-    finalizeWarning = `本轮仍有 ${hardFailures.length} 项空间约束未收敛；已保留外冠供 3D 检查`;
-    emit(onProgress, "HARD_CONSTRAINT_REVIEW", "已保留当前外冠供 3D 检查", 96, hardFailures.join("；"));
+  try {
+    emit(onProgress, "INTAGLIO", "根据基台生成内冠", 90,
+      hardFailures.length ? `外冠有 ${hardFailures.length} 项工程提示，但不阻止内冠生成` : "");
+    final = await adapter.finalize(designId, { preserveCervical: true });
+    emit(onProgress, "FINAL", "连接内外冠并生成最终 STL", 96,
+      hardFailures.length ? "最终冠已构建；工程提示保留到微调画布" : "");
+  } catch (error) {
+    finalizeWarning = error?.message || "最终内冠/QC 尚未完成";
+    emit(onProgress, "FINAL_REVIEW", "内冠/最终闭合需要复核", 96, finalizeWarning);
   }
 
   const stageWarnings = payloadStages
@@ -333,20 +329,17 @@ export async function generateAbutmentOrder({ designId, params, onProgress = nul
   emit(
     onProgress,
     "DONE",
-    final
-      ? "自动牙冠设计完成"
-      : hardFailures.length
-        ? "自动生成完成，当前外冠已保留供 3D 检查"
-        : "患者化外冠完成，可进入 3D 检查",
+    final ? "外冠与内冠生成完成" : "外冠与内冠预览已生成，可进入 3D 微调",
     100,
     hardFailures.length
-      ? `本轮生成 · ${hardFailures.length} 项仍需检查`
+      ? `本轮生成 · ${hardFailures.length} 项工程提示已保留，不阻止微调/导出流程`
       : (stageWarnings.length ? `${stageWarnings.length} 项工程提示` : ""),
   );
 
   return {
     candidate,
     final,
+    finalizeWarning,
     eligibility,
     warnings: stageWarnings,
     hardFailures,
