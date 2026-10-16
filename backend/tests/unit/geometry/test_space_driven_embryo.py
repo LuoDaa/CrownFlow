@@ -36,6 +36,11 @@ def _robust_width(points):
     return float(q[1]-q[0])
 
 
+def _coronal_half(mesh):
+    v=np.asarray(mesh.vertices,float)
+    return v[v[:,2]>=np.quantile(v[:,2],.50)]
+
+
 def test_global_prefit_uses_patient_envelope_not_template_metric_size():
     frame=_frame();margin=_margin();surfaces={'a':_neighbor(-5.0),'b':_neighbor(5.0)}
     small,rs=space_driven_embryo_prefit(_crown(.70),frame,margin,proximal_surfaces=surfaces,proximal_target_mm=-.02)
@@ -46,9 +51,9 @@ def test_global_prefit_uses_patient_envelope_not_template_metric_size():
     assert rs['patient_envelope']['global_dimensions_source']=='PATIENT_GEOMETRY_ONLY'
     sw=rs['patient_envelope']['md_width_mm'];lw=rl['patient_envelope']['md_width_mm']
     assert abs(sw-lw)<1e-9
-    # Compare the robust patient body envelope, not isolated anatomy outliers.
-    sb=np.asarray(small.vertices)[np.asarray(small.vertices)[:,2]>2]
-    lb=np.asarray(large.vertices)[np.asarray(large.vertices)[:,2]>2]
+    # Compare homologous coronal anatomy (relative height), not an absolute-Z
+    # slice that selects different anatomy when the source embryo is scaled.
+    sb=_coronal_half(small);lb=_coronal_half(large)
     assert abs(_robust_width(sb[:,0])-_robust_width(lb[:,0]))<.20
 
 
