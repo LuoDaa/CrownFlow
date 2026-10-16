@@ -16,7 +16,7 @@ from .patient_envelope import PatientEnvelope
 
 @dataclass(frozen=True)
 class ProceduralEmbryoConfig:
-    sections: int = 96
+    sections: int = 96  # compatibility only; root now keeps confirmed Margin count
     body_rings: int = 16
     cap_rings: int = 3
     occlusal_table_fraction: float = 0.60
@@ -43,23 +43,18 @@ def _world(points, frame):
     return np.asarray(points, float) @ matrix.T + origin
 
 
-def _resample_closed_ring(points, count):
+def _confirmed_margin_ring(points):
     p = np.asarray(points, float)
-    if len(p) < 8 or p.ndim != 2 or p.shape[1] != 3 or not np.isfinite(p).all():
+    if p.ndim != 2 or p.shape[1] != 3 or len(p) < 8 or not np.isfinite(p).all():
         raise ValueError("程序化冠胚需要完整、有限的 Margin")
     if np.linalg.norm(p[0] - p[-1]) <= 1e-8:
         p = p[:-1]
-    closed = np.vstack([p, p[0]])
-    seg = np.linalg.norm(np.diff(closed, axis=0), axis=1)
-    perimeter = float(seg.sum())
-    if perimeter <= 1e-6:
+    if len(p) < 8:
+        raise ValueError("Margin 有效点不足")
+    seg = np.linalg.norm(np.roll(p, -1, axis=0) - p, axis=1)
+    if not np.isfinite(seg).all() or float(seg.sum()) <= 1e-6:
         raise ValueError("Margin 周长无效")
-    s = np.r_[0.0, np.cumsum(seg)]
-    target = np.linspace(0.0, perimeter, int(count), endpoint=False)
-    idx = np.searchsorted(s, target, side="right") - 1
-    idx = np.clip(idx, 0, len(p) - 1)
-    alpha = (target - s[idx]) / np.maximum(seg[idx], 1e-12)
-    return closed[idx] * (1.0 - alpha[:, None]) + closed[idx + 1] * alpha[:, None]
+    return p.copy()
 
 
 def _smoothstep(x):
@@ -94,7 +89,6 @@ def _signed_radius(cosv, sinv, env):
 
 
 def _cap_profile(family, top, cfg):
-    """Return radial scales and axial heights for a broad, non-conical table."""
     count = max(2, int(cfg.cap_rings))
     scales = np.linspace(.78, .26, count)
     if family == "MOLAR":
@@ -111,11 +105,11 @@ def _cap_profile(family, top, cfg):
 
 def build_procedural_crown_embryo(frame, margin, envelope: PatientEnvelope, *, fdi: int,
                                    config: ProceduralEmbryoConfig | None = None):
-    """Create a template-free crown outer surface rooted exactly on Margin."""
+    """Create a template-free crown outer surface rooted on the exact Margin vertices."""
     cfg = config or ProceduralEmbryoConfig()
-    sections = max(48, int(cfg.sections))
     rings = max(10, int(cfg.body_rings))
-    root_world = _resample_closed_ring(margin, sections)
+    root_world = _confirmed_margin_ring(margin)
+    sections = int(len(root_world))
     root = _local(root_world, frame)
 
     center = np.asarray(envelope.center_xy, float)
@@ -156,8 +150,6 @@ def build_procedural_crown_embryo(frame, margin, envelope: PatientEnvelope, *, f
         z = root[:, 2] + height * t
         ring_vertices.append(np.c_[xy, z])
 
-    # A single center fan creates an artificial central cusp. Use several
-    # concentric table rings instead; posterior teeth finish with a shallow fossa.
     family = _family(fdi)
     cap_scales, cap_heights, center_z = _cap_profile(family, top, cfg)
     for scale, cap_z in zip(cap_scales, cap_heights):
@@ -191,12 +183,12 @@ def build_procedural_crown_embryo(frame, margin, envelope: PatientEnvelope, *, f
     report = {
         "stage": "SPACE_DRIVEN_SEED",
         "status": "PASS_ENGINEERING",
-        "algorithm": "PROCEDURAL_PATIENT_ENVELOPE_EMBRYO_V2_MULTI_RING_TABLE",
+        "algorithm": "PROCEDURAL_PATIENT_ENVELOPE_EMBRYO_V3_EXACT_MARGIN_RING",
         "template_used": False,
         "template_size_authoritative": False,
         "margin_root_exact": True,
+        "margin_vertex_count": sections,
         "family": family,
-        "sections": sections,
         "body_rings": rings,
         "cap_rings": int(len(cap_scales)),
         "vertex_count": int(len(mesh.vertices)),
