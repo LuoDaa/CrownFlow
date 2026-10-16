@@ -331,15 +331,81 @@ def _smoothed_occlusal_shift(mesh, ids, valid, raw_shift, cfg):
     return field
 
 
-def _fit_antagonist_height(current, frame, margin, antagonist_surface, target, cfg):
-    """Closed-loop local-column height solve over a curved antagonist envelope.
+def _global_penetration_field(mesh, frame, margin, before, cfg):
+    """Return a topology-safe axial compression field for severe global collision.
 
-    Unlike the old single global Z shift, this solver can raise low fossae/occlusal
-    regions even when one cusp already touches the coronal ceiling.  It still uses
-    a smoothed, partly-global displacement field and deformation gates, so the
-    antagonist never becomes a copied negative mould.
+    A curved local field is the right tool once the crown is near the antagonist,
+    but it is unnecessarily aggressive when a large part of the occlusal table is
+    globally above the opposing ceiling.  In that case first compress the axial
+    body smoothly from the confirmed Margin root.  The displacement is exactly
+    zero on the cervical lock and monotonic with axial height, so it behaves like
+    a bounded height scale rather than a local dent.
     """
-    target=float(target);passes=[];ever=False;envelope_meta=None
+    penetration=float(before.get("penetration_p95_mm") or 0.0)
+    fraction=float(before.get("penetration_fraction") or 0.0)
+    if penetration <= max(float(cfg.penetration_p95_limit_mm)*2.0,0.04) and fraction < 0.30:
+        return None,None
+    _weight,height=_body_weight(mesh,frame,margin,cfg.body_transition_mm)
+    positive=np.maximum(np.asarray(height,float)-0.45,0.0)
+    top=float(np.quantile(positive[positive>0.0],.98)) if np.any(positive>0.0) else 0.0
+    if top <= 1e-6:
+        return None,None
+    requested=min(float(cfg.height_max_step_mm),max(penetration-float(cfg.penetration_p95_limit_mm)+0.01,0.05))
+    # Linear axial compression about the immutable cervical root.  Vertices at
+    # the root do not move; the occlusal table receives the full requested drop.
+    ratio=np.clip(positive/top,0.0,1.0)
+    field=-requested*ratio
+    field[np.asarray(height)<=.45]=0.0
+    return field,{"requested_drop_mm":float(requested),"axial_span_mm":float(top),
+                  "penetration_p95_mm":penetration,"penetration_fraction":fraction}
+
+
+def _evaluate_height_field(current, field, ids, frame, margin, antagonist_surface,
+                           target, before, cfg, iteration, passes, strategy):
+    """Line-search one axial field under the common hard deformation gate."""
+    if field is None or float(np.max(np.abs(field),initial=0.0))<=1e-5:
+        return None,None
+    _weight,height=_body_weight(current,frame,margin,cfg.body_transition_mm)
+    field=np.asarray(field,float).copy()
+    field[height<=.45]=0.0
+    local0=_local(current.vertices,frame)
+    locked=np.flatnonzero(height<=.45)
+    for alpha in (1.0,.70,.50,.30,.15,.08):
+        trial_local=local0.copy();trial_local[:,2]+=field*float(alpha)
+        trial=current.copy();trial.vertices=_world(trial_local,frame);_finite_mesh(trial)
+        moved=np.linalg.norm(np.asarray(trial.vertices)-np.asarray(current.vertices),axis=1)
+        focus=np.flatnonzero(np.any((moved>1e-9)[np.asarray(current.faces,int)],axis=1))
+        gate=deformation_gate(np.asarray(current.vertices),np.asarray(trial.vertices),np.asarray(current.faces),
+                              scale_mm=.1,locked_ids=locked,focus_faces=focus)
+        flips=int((np.einsum('ij,ij->i',current.face_normals,trial.face_normals)<=0).sum())
+        signed2,valid2,meta2=_antagonist_axial_clearance(np.asarray(trial.vertices)[ids],antagonist_surface,frame)
+        valid2=np.asarray(valid2,bool)&np.isfinite(signed2)
+        if int(valid2.sum())<12:
+            continue
+        after=_occlusal_metrics(signed2[valid2],target)
+        improved=_occlusal_objective(after,cfg)<_occlusal_objective(before,cfg)-1e-4
+        safe=bool(gate.ok and flips==0 and not np.any(trial.area_faces<1e-10))
+        passes.append({"iteration":iteration+1,"strategy":strategy,"alpha":float(alpha),
+                       "max_column_step_mm":float(np.max(np.abs(field))*float(alpha)),
+                       "before":before,"after":after,"improved":bool(improved),
+                       "safe":safe,"gate":gate.as_dict(),"all_flips":flips,
+                       "accepted":bool(improved and safe),"envelope":meta2})
+        if improved and safe:
+            return trial,meta2
+    return None,None
+
+
+def _fit_antagonist_height(current, frame, margin, antagonist_surface, target, cfg):
+    """Closed-loop antagonist height solve with a global penetration guard.
+
+    Near the target, a smoothed local-column field follows a curved antagonist
+    without copying it.  When there is severe broad penetration, an axial
+    compression about the confirmed Margin is attempted first/after a local
+    conflict.  This removes the former failure mode where a crown that was simply
+    too tall could not take the first safe step because the local field folded its
+    occlusal transition.
+    """
+    target=float(target);passes=[];ever=False;envelope_meta=None;global_guard_used=False
     for iteration in range(max(1,int(cfg.height_iterations))):
         zones=build_crown_zones(current,frame,margin)
         ids=np.flatnonzero(zones.occlusal)
@@ -354,8 +420,23 @@ def _fit_antagonist_height(current, frame, margin, antagonist_surface, target, c
         if _occlusal_target_reached(before,cfg):
             return current,{"applied":ever,"reason":"HEIGHT_ON_TARGET","passes":passes,
                             "final":before,"target_clearance_mm":target,"envelope":envelope_meta,
-                            "target_reached":True,
-                            "mode":"CURVED_COLUMN_ANTAGONIST_ENVELOPE_V4"}
+                            "target_reached":True,"global_penetration_guard_used":global_guard_used,
+                            "mode":"CURVED_COLUMN_PLUS_GLOBAL_PENETRATION_GUARD_V5"}
+
+        # Severe global collision is fundamentally a crown-height problem, not a
+        # local anatomy problem. Try the monotonic Margin-rooted compression first.
+        global_field,global_meta=_global_penetration_field(current,frame,margin,before,cfg)
+        accepted=None
+        if global_field is not None:
+            accepted,meta2=_evaluate_height_field(
+                current,global_field,ids,frame,margin,antagonist_surface,target,before,cfg,
+                iteration,passes,"GLOBAL_AXIAL_PENETRATION_GUARD",
+            )
+            if accepted is not None:
+                global_guard_used=True;current=accepted;ever=True;envelope_meta=meta2
+                if passes:
+                    passes[-1]["global_guard"] = global_meta
+                continue
 
         error=signed[valid]-target
         raw=np.clip(error,-float(cfg.height_max_step_mm),float(cfg.height_max_step_mm))
@@ -363,37 +444,34 @@ def _fit_antagonist_height(current, frame, margin, antagonist_surface, target, c
         weight,height=_body_weight(current,frame,margin,cfg.body_transition_mm)
         field*=weight
         field[height<=.45]=0.0
-        if float(np.max(np.abs(field),initial=0.0))<=1e-5:break
-        local0=_local(current.vertices,frame)
-        accepted=None
-        locked=np.flatnonzero(height<=.45)
-        for alpha in (1.0,.70,.50,.30,.15):
-            trial_local=local0.copy();trial_local[:,2]+=field*float(alpha)
-            trial=current.copy();trial.vertices=_world(trial_local,frame);_finite_mesh(trial)
-            moved=np.linalg.norm(np.asarray(trial.vertices)-np.asarray(current.vertices),axis=1)
-            focus=np.flatnonzero(np.any((moved>1e-9)[np.asarray(current.faces,int)],axis=1))
-            gate=deformation_gate(np.asarray(current.vertices),np.asarray(trial.vertices),np.asarray(current.faces),
-                                  scale_mm=.1,locked_ids=locked,focus_faces=focus)
-            flips=int((np.einsum('ij,ij->i',current.face_normals,trial.face_normals)<=0).sum())
-            signed2,valid2,meta2=_antagonist_axial_clearance(np.asarray(trial.vertices)[ids],antagonist_surface,frame)
-            valid2=np.asarray(valid2,bool)&np.isfinite(signed2)
-            if int(valid2.sum())<12:continue
-            after=_occlusal_metrics(signed2[valid2],target)
-            improved=_occlusal_objective(after,cfg)<_occlusal_objective(before,cfg)-1e-4
-            safe=bool(gate.ok and flips==0 and not np.any(trial.area_faces<1e-10))
-            passes.append({"iteration":iteration+1,"alpha":float(alpha),
-                           "max_column_step_mm":float(np.max(np.abs(field))*float(alpha)),
-                           "before":before,"after":after,"improved":bool(improved),
-                           "safe":safe,"gate":gate.as_dict(),"all_flips":flips,
-                           "accepted":bool(improved and safe),"envelope":meta2})
-            if improved and safe:
-                accepted=trial;envelope_meta=meta2;break
+        accepted,meta2=_evaluate_height_field(
+            current,field,ids,frame,margin,antagonist_surface,target,before,cfg,
+            iteration,passes,"CURVED_LOCAL_COLUMN",
+        )
         if accepted is None:
-            return current,{"applied":ever,"reason":"HEIGHT_COLUMN_LINE_SEARCH_CONFLICT","passes":passes,
-                            "final":before,"target_clearance_mm":target,"envelope":envelope_meta,
-                            "target_reached":_occlusal_target_reached(before,cfg),
-                            "mode":"CURVED_COLUMN_ANTAGONIST_ENVELOPE_V4"}
-        current=accepted;ever=True
+            # If the local field was unsafe and the global guard was not triggered
+            # by the strict threshold, allow a conservative robust drop as a last
+            # attempt whenever measurable penetration remains.
+            penetration=float(before.get("penetration_p95_mm") or 0.0)
+            if penetration>float(cfg.penetration_p95_limit_mm)+1e-4:
+                _w,h=_body_weight(current,frame,margin,cfg.body_transition_mm)
+                pos=np.maximum(np.asarray(h,float)-.45,0.0)
+                top=float(np.quantile(pos[pos>0],.98)) if np.any(pos>0) else 0.0
+                if top>1e-6:
+                    drop=min(float(cfg.height_max_step_mm),max(penetration-float(cfg.penetration_p95_limit_mm)+.005,.025))
+                    fallback=-drop*np.clip(pos/top,0.0,1.0);fallback[h<=.45]=0.0
+                    accepted,meta2=_evaluate_height_field(
+                        current,fallback,ids,frame,margin,antagonist_surface,target,before,cfg,
+                        iteration,passes,"GLOBAL_AXIAL_CONFLICT_FALLBACK",
+                    )
+                    if accepted is not None:global_guard_used=True
+            if accepted is None:
+                return current,{"applied":ever,"reason":"HEIGHT_COLUMN_LINE_SEARCH_CONFLICT","passes":passes,
+                                "final":before,"target_clearance_mm":target,"envelope":envelope_meta,
+                                "target_reached":_occlusal_target_reached(before,cfg),
+                                "global_penetration_guard_used":global_guard_used,
+                                "mode":"CURVED_COLUMN_PLUS_GLOBAL_PENETRATION_GUARD_V5"}
+        current=accepted;ever=True;envelope_meta=meta2
 
     zones=build_crown_zones(current,frame,margin);ids=np.flatnonzero(zones.occlusal);final=None
     if len(ids):
@@ -401,10 +479,10 @@ def _fit_antagonist_height(current, frame, margin, antagonist_surface, target, c
         valid=np.asarray(valid,bool)&np.isfinite(signed)
         if np.any(valid):final=_occlusal_metrics(signed[valid],target)
     reached=bool(final is not None and _occlusal_target_reached(final,cfg))
-    return current,{"applied":ever,"mode":"CURVED_COLUMN_ANTAGONIST_ENVELOPE_V4",
+    return current,{"applied":ever,"mode":"CURVED_COLUMN_PLUS_GLOBAL_PENETRATION_GUARD_V5",
                     "passes":passes,"final":final,"target_clearance_mm":target,
                     "target_reached":reached,"reason":None if reached else "HEIGHT_TARGET_NOT_REACHED",
-                    "envelope":envelope_meta}
+                    "global_penetration_guard_used":global_guard_used,"envelope":envelope_meta}
 
 
 def _grow_height_floor_only(current, frame, margin, floor_top, cfg):
@@ -453,7 +531,7 @@ def space_driven_embryo_prefit(mesh, frame, margin, *, support_mesh=None,
 
     report = {
         "stage": "GLOBAL_PREFIT", "status": "PASS_ENGINEERING",
-        "algorithm": "PATIENT_6_FACE_ENVELOPE_PLUS_LOCAL_REFINEMENT_V6",
+        "algorithm": "PATIENT_6_FACE_ENVELOPE_PLUS_LOCAL_REFINEMENT_V7",
         "template_role": "DIMENSIONLESS_TOPOLOGY_AND_ANATOMY_SKIN_ONLY",
         "template_size_authoritative": False,
         "patient_envelope": {"status": "NOT_ASSESSED"},
@@ -497,7 +575,7 @@ def space_driven_embryo_prefit(mesh, frame, margin, *, support_mesh=None,
             current, frame, margin, antagonist_surface, float(occlusal_target_mm), cfg,
         )
         report["height"] = height_report
-        report["coronal_owner"] = "ANTAGONIST_CURVED_COLUMN_ENVELOPE"
+        report["coronal_owner"] = "ANTAGONIST_CURVED_COLUMN_PLUS_GLOBAL_PENETRATION_GUARD"
         if not height_report.get("target_reached",False):
             report["status"]="REVIEW_REQUIRED"
             report.setdefault("warnings",[]).append({"code":"OCCLUSAL_HEIGHT_TARGET_NOT_REACHED","height":height_report})
