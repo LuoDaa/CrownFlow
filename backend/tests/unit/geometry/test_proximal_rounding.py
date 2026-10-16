@@ -28,9 +28,11 @@ def _prep():
 
 
 def _neighbors():
-    mesial = trimesh.creation.box(extents=[1.0, 5.4, 5.7])
+    # Wide neighbour faces make the intended RED contact band visible in the
+    # synthetic regression, rather than behaving like a point/edge target.
+    mesial = trimesh.creation.box(extents=[1.0, 6.2, 5.7])
     mesial.apply_translation([5.55, 0.0, 3.20])
-    distal = trimesh.creation.box(extents=[1.0, 5.4, 5.5])
+    distal = trimesh.creation.box(extents=[1.0, 6.0, 5.5])
     distal.apply_translation([-5.45, 0.0, 3.10])
     return {"mesial": mesial, "distal": distal}
 
@@ -53,11 +55,8 @@ def _antagonist(z0=7.25):
     return trimesh.Trimesh(vertices=vertices, faces=np.asarray(faces), process=False)
 
 
-def test_rounding_broadens_proximal_patch_without_touching_margin_or_blue_cap():
-    margin = _margin()
-    frame = _frame()
-    neighbors = _neighbors()
-    config = SectionalV1Config(
+def _config():
+    return SectionalV1Config(
         min_wall_mm=0.50,
         proximal_gap_mm=0.02,
         occlusal_gap_mm=0.05,
@@ -69,6 +68,13 @@ def test_rounding_broadens_proximal_patch_without_touching_margin_or_blue_cap():
         side_levels=(0.0, 0.10, 0.22, 0.36, 0.50, 0.62, 0.73, 0.83, 0.92, 1.0),
         ceiling_radius_mm=1.05,
     )
+
+
+def test_neighbor_facing_surface_broadens_contact_without_touching_margin_or_blue_cap():
+    margin = _margin()
+    frame = _frame()
+    neighbors = _neighbors()
+    config = _config()
     baseline, _ = build_sectional_outer(
         margin,
         frame,
@@ -95,37 +101,87 @@ def test_rounding_broadens_proximal_patch_without_touching_margin_or_blue_cap():
     np.testing.assert_allclose(after[:n], before[:n], atol=1e-10)
     assert report["margin_preserved"] is True
 
-    # Last side ring + every BLUE cap vertex are protected, so occlusion behaviour
-    # cannot be changed by this GREEN morphology pass.
+    # Last GREEN ring + every BLUE cap vertex are protected.  The neighbour pass
+    # therefore cannot change the already-good antagonist/occlusal solution.
     protected_start = (level_count - 1) * n
     np.testing.assert_allclose(after[protected_start:], before[protected_start:], atol=1e-10)
     assert report["blue_occlusal_vertices_preserved"] is True
 
-    # Middle side rings really moved; the pass is not a no-op.
+    # The pass is XY-only: no axial/occlusal height can change anywhere.
+    np.testing.assert_allclose(after[:, 2], before[:, 2], atol=1e-10)
+    assert report["axial_heights_preserved"] is True
+
+    # Middle GREEN side rings really moved; the pass is not a no-op.
     middle = after[n:protected_start] - before[n:protected_start]
     assert float(np.linalg.norm(middle, axis=1).max()) > 0.05
 
+    # The BL envelope is driven by robust neighbour width and may expand only the
+    # middle side wall, never the hard cervical or occlusal boundary.
+    envelope = report["buccolingual_envelope"]
+    assert envelope["source"] == "neighbor_patch_robust_bl_width"
+    assert envelope["target_width_mm"] > 5.0
+    assert envelope["moved_vertex_count"] > 0
+
     for side in ("mesial", "distal"):
         info = report["per_side"][side]
-        assert info["ray_coverage"] >= 5
+        assert info["surface_query_coverage"] >= 5
         assert info["rounded_contact_ray_count"] >= 5
         assert info["longest_contiguous_contact_run"] >= 3
+        assert info["contact_band_width_bl_mm"] > 0.5
         assert info["maximum_outward_move_mm"] > 0.05
-        assert info["angular_roundness_second_diff_p95_mm"] is not None
+        assert info["xy_roundness_second_diff_p95_mm"] is not None
+        assert info["mechanism"] == "neighbor_facing_patch_surface_plus_broad_contact_band"
 
+    assert report["implementation"].endswith("/2")
     assert rounded.is_winding_consistent
     assert np.array_equal(rounded.faces, baseline.faces)
 
 
-def test_rounding_does_not_invent_contact_for_absent_neighbor():
+def test_facing_surface_targets_real_inner_neighbor_faces_at_contact_height():
     margin = _margin()
     frame = _frame()
-    config = SectionalV1Config(
-        neighbor_sector_cos=0.32,
-        neighbor_ray_band_mm=2.0,
-        side_levels=(0.0, 0.10, 0.22, 0.36, 0.50, 0.62, 0.73, 0.83, 0.92, 1.0),
-        ceiling_radius_mm=1.05,
+    neighbors = _neighbors()
+    config = _config()
+    baseline, _ = build_sectional_outer(
+        margin,
+        frame,
+        _prep(),
+        neighbors=neighbors,
+        antagonist_mesh=_antagonist(),
+        fdi=26,
+        config=config,
     )
+    rounded, report = round_proximal_contacts(
+        baseline,
+        margin,
+        frame,
+        neighbors=neighbors,
+        sectional_config=config,
+    )
+
+    # Mesial box inward face is x=+5.05; distal is x=-4.95.  The broad band is
+    # expected to approach those faces with the requested 0.02-mm target gap,
+    # subject to smoothing/tessellation tolerance.
+    local = np.asarray(rounded.vertices, float)
+    n = len(margin)
+    levels = np.asarray(config.side_levels)
+    ring_index = int(np.argmin(np.abs(levels - config.contact_height_ratio)))
+    ring = local[ring_index * n:(ring_index + 1) * n]
+
+    mesial = ring[(ring[:, 0] > 0) & (np.abs(ring[:, 1]) < 2.2)]
+    distal = ring[(ring[:, 0] < 0) & (np.abs(ring[:, 1]) < 2.2)]
+    assert len(mesial) >= 3 and len(distal) >= 3
+    assert float(np.max(mesial[:, 0])) > 4.65
+    assert float(np.min(distal[:, 0])) < -4.55
+
+    assert report["per_side"]["mesial"]["contact_gap_p50_mm"] is not None
+    assert report["per_side"]["distal"]["contact_gap_p50_mm"] is not None
+
+
+def test_proximal_surface_does_not_invent_contact_for_absent_neighbor():
+    margin = _margin()
+    frame = _frame()
+    config = _config()
     neighbors = _neighbors()
     neighbors["distal"] = None
     baseline, _ = build_sectional_outer(
@@ -147,4 +203,7 @@ def test_rounding_does_not_invent_contact_for_absent_neighbor():
 
     assert report["per_side"]["distal"]["status"] == "NOT_ASSESSED"
     assert report["per_side"]["distal"]["reason"] == "NO_CONFIRMED_NEIGHBOR"
+    assert report["margin_preserved"] is True
+    assert report["blue_occlusal_vertices_preserved"] is True
+    assert report["axial_heights_preserved"] is True
     assert rounded.is_winding_consistent
