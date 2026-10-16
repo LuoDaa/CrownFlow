@@ -1,16 +1,19 @@
 """Hard patient-space proximal constraints for CAD-1.
 
-The library tooth is only an embryo.  Confirmed adjacent teeth own the real
-mesial/distal envelope.  The solver therefore has two deliberately separate
-scales:
+The library tooth is only an embryo. Confirmed adjacent teeth own the real
+mesial/distal envelope, but they do not own the already solved Margin or
+occlusal height.
 
-1. broad side growth from the fixed Margin root until a physical side reaches
-   its real neighbouring surface;
-2. a compact continuous contact core fitted to the requested signed target
-   (zero and small negative compression are both valid).
+The solver therefore has two deliberately separate scales:
 
-Clinical mesial/distal labels never define +/-X.  Every physical side direction
-is inferred from the confirmed neighbour patch in the patient frame.
+1. bounded broad side growth from the fixed Margin root toward the real
+   neighbouring surface;
+2. a compact continuous contact core fitted to the requested signed target.
+
+The confirmed PatientFrame remains authoritative: X is mesial/distal, Y is
+buccal/lingual and Z is insertion/occlusal. Automatic V5 neighbour patches may
+contain a broad halo for robust queries, but that halo is never allowed to rotate
+or unboundedly stretch the crown.
 """
 from __future__ import annotations
 
@@ -23,11 +26,13 @@ from .zones import ZONE_MODEL_VERSION, build_crown_zones
 from .auto_fit_adapter import measure
 
 TARGET_TOL_MM = 0.035
-REFERENCE_BAND_MM = 5.0
-MAX_REACH_MM = 10.0
+REFERENCE_BAND_MM = 2.50
+MAX_REACH_MM = 4.0
 MAX_PASSES = 8
-REACH_PASSES = 5
-REACH_PER_PASS_MM = 1.50
+REACH_PASSES = 3
+REACH_PER_PASS_MM = 0.80
+MAX_BROAD_SIDE_GROWTH_MM = 1.80
+MAX_REFERENCE_ANGLE_DEG = 25.0
 PER_PASS_MAX_MOVE_MM = 1.10
 ALPHAS = (1.0, 0.7, 0.5, 0.3, 0.15)
 MIN_DOMAIN_VERTICES = 56
@@ -92,8 +97,14 @@ def _margin_center(margin, frame):
     return np.median(local[:, :2], axis=0), float(np.median(local[:, 2]))
 
 
-def _physical_reference(surface, frame, center_xy):
-    """Infer the physical side from the crown-facing part of a neighbour patch."""
+def _physical_reference(surface, frame, center_xy, side=None):
+    """Return a bounded crown-growth direction and the nearest neighbour face.
+
+    The raw patch direction remains useful as a local cue, but V5 reference halos
+    can be strongly oblique.  For named clinical sides we constrain that cue to a
+    small cone around confirmed PatientFrame +/-X so a halo can never turn a
+    proximal fit into a long buccal/gingival tongue.
+    """
     local = _to_local(surface.mesh.vertices, frame)
     local = local[np.isfinite(local).all(axis=1)]
     if len(local) < 3:
@@ -103,26 +114,47 @@ def _physical_reference(surface, frame, center_xy):
     order = np.argsort(radius)
     take = max(16, min(len(order), int(np.ceil(len(order) * 0.20))))
     near = radial[order[:take]]
-    direction = np.median(near, axis=0)
-    norm = float(np.linalg.norm(direction))
+    raw = np.median(near, axis=0)
+    norm = float(np.linalg.norm(raw))
     if norm < 1e-8:
-        direction = np.mean(near, axis=0)
-        norm = float(np.linalg.norm(direction))
+        raw = np.mean(near, axis=0)
+        norm = float(np.linalg.norm(raw))
     if norm < 1e-8:
         return None
-    direction /= norm
+    raw /= norm
+    direction = raw.copy()
+    expected = None
+    if side == "mesial":
+        expected = np.array([1.0, 0.0])
+    elif side == "distal":
+        expected = np.array([-1.0, 0.0])
+    if expected is not None:
+        parallel = float(direction @ expected)
+        if parallel <= 1e-6:
+            direction = expected.copy()
+        else:
+            perpendicular = direction - parallel * expected
+            pn = float(np.linalg.norm(perpendicular))
+            angle = float(np.arctan2(pn, parallel))
+            max_angle = float(np.deg2rad(MAX_REFERENCE_ANGLE_DEG))
+            if pn > 1e-8 and angle > max_angle:
+                direction = np.cos(max_angle) * expected + np.sin(max_angle) * (perpendicular / pn)
+    direction /= max(float(np.linalg.norm(direction)), 1e-12)
     world = _to_world_vector(np.r_[direction, 0.0][None, :], frame)[0]
     world /= max(float(np.linalg.norm(world)), 1e-12)
     projection = radial @ direction
     positive = projection[projection > 0.0]
     if len(positive) < 8:
         positive = projection
+    reference_angle = float(np.degrees(np.arccos(np.clip(float(raw @ direction), -1.0, 1.0))))
     return {
         "direction_local_xy": direction,
+        "raw_direction_local_xy": raw,
         "direction_world": world,
         "face_projection_mm": float(np.quantile(positive, 0.05)),
         "patch_nearest_radius_mm": float(np.quantile(radius, 0.02)),
         "patch_median_radius_mm": float(np.median(radius)),
+        "reference_direction_clamp_deg": reference_angle,
     }
 
 
@@ -205,13 +237,13 @@ def _largest_component(ids, adjacency):
 
 
 def _large_scale_side_reach(mesh, frame, margin, surfaces, target, locked):
-    """Broadly grow each physical flank until local contact fitting is feasible."""
+    """Broadly grow each flank, but never beyond the real interproximal space."""
     current = mesh.copy()
     center_xy, _ = _margin_center(margin, frame)
     crown_center = np.median(np.asarray(margin, float), axis=0)
     details = {}
     for label, surface in surfaces.items():
-        ref = _physical_reference(surface, frame, center_xy)
+        ref = _physical_reference(surface, frame, center_xy, side=label)
         if ref is None:
             details[label] = {"status": "NOT_ASSESSED", "reason": "INVALID_NEIGHBOR_REFERENCE"}
             continue
@@ -220,6 +252,17 @@ def _large_scale_side_reach(mesh, frame, margin, surfaces, target, locked):
         for pass_no in range(1, REACH_PASSES + 1):
             projection, height, editable, extent = _side_geometry(current, frame, margin, ref, locked)
             if extent <= 0.0:
+                break
+            desired_extent = max(float(ref["face_projection_mm"]) - float(target), 0.0)
+            remaining = desired_extent - extent
+            budget = float(MAX_BROAD_SIDE_GROWTH_MM) - total_growth
+            if remaining <= TARGET_TOL_MM:
+                history.append({"pass": pass_no, "status": "PATIENT_BOUND_REACHED",
+                                "current_extent_mm": extent, "target_extent_mm": desired_extent})
+                break
+            if budget <= 1e-5:
+                history.append({"pass": pass_no, "status": "BROAD_GROWTH_BUDGET_EXHAUSTED",
+                                "remaining_mm": float(remaining)})
                 break
             side = editable & (projection > max(0.15, 0.32 * extent))
             ids = np.flatnonzero(side)
@@ -247,10 +290,8 @@ def _large_scale_side_reach(mesh, frame, margin, surfaces, target, locked):
             if not len(positive):
                 history.append({"pass": pass_no, "status": "NO_POSITIVE_GROWTH_REQUIRED"})
                 break
-            # Grow enough that a meaningful fraction of the flank reaches the
-            # neighbour; the local stage then shapes only a compact contact core.
             growth = float(np.quantile(positive, min(0.55, max(0.30, required / max(len(along), 1)))))
-            growth = float(np.clip(growth, 0.0, REACH_PER_PASS_MM))
+            growth = float(min(max(growth, 0.0), REACH_PER_PASS_MM, remaining, budget))
             if growth <= 1e-5:
                 break
             denom = max(extent, 0.5)
@@ -264,8 +305,10 @@ def _large_scale_side_reach(mesh, frame, margin, surfaces, target, locked):
             total_growth += growth
             history.append({
                 "pass": pass_no,
-                "status": "APPLIED",
+                "status": "APPLIED_BOUNDED",
                 "growth_mm": growth,
+                "total_growth_mm": float(total_growth),
+                "remaining_to_patient_bound_mm": float(max(remaining - growth, 0.0)),
                 "max_vertex_displacement_mm": float(np.linalg.norm(displacement, axis=1).max(initial=0.0)),
                 "valid_samples": int(len(along)),
                 "on_target_before": int(on.sum()),
@@ -273,20 +316,22 @@ def _large_scale_side_reach(mesh, frame, margin, surfaces, target, locked):
         details[label] = {
             "status": "APPLIED" if total_growth > 1e-6 else "NO_CORRECTION_NEEDED",
             "total_growth_mm": float(total_growth),
+            "max_broad_growth_mm": float(MAX_BROAD_SIDE_GROWTH_MM),
             "direction_world": ref["direction_world"].tolist(),
-            "reference": {k: v for k, v in ref.items() if k not in ("direction_world", "direction_local_xy")},
+            "reference": {k: (v.tolist() if isinstance(v, np.ndarray) else v)
+                          for k, v in ref.items() if k not in ("direction_world", "direction_local_xy")},
             "passes": history,
         }
     return current, details
 
 
 def build_proximal_domains(mesh, frame, margin, surfaces, *, protected=None, zones=None):
-    """Build broad, physical-side proximal domains for confirmed neighbours."""
+    """Build broad proximal domains while protecting cervical and occlusal zones."""
     vertices = np.asarray(mesh.vertices, float)
     if zones is None:
         zones = build_crown_zones(mesh, frame, margin)
     zones.validate(len(vertices))
-    locked = np.asarray(zones.cervical, bool).copy()
+    locked = np.asarray(zones.cervical | zones.occlusal, bool).copy()
     if protected is not None:
         p = np.asarray(protected, bool)
         if p.shape != (len(vertices),):
@@ -296,7 +341,7 @@ def build_proximal_domains(mesh, frame, margin, surfaces, *, protected=None, zon
     crown_center = np.median(np.asarray(margin, float), axis=0)
     masks, diagnostics, refs = {}, {}, {}
     for label, surface in surfaces.items():
-        ref = _physical_reference(surface, frame, center_xy)
+        ref = _physical_reference(surface, frame, center_xy, side=label)
         mask = np.zeros(len(vertices), bool)
         if ref is None:
             diagnostics[label] = {"status": "NOT_ASSESSED", "reason": "INVALID_NEIGHBOR_REFERENCE", "domain_vertex_count": 0}
@@ -308,8 +353,10 @@ def build_proximal_domains(mesh, frame, margin, surfaces, *, protected=None, zon
         ids = np.flatnonzero(side_candidate)
         diag = {
             "clinical_label": label,
-            "selection": "PHYSICAL_PATIENT_VECTOR_BROAD_SIDE_DOMAIN",
+            "selection": "PATIENT_FRAME_BOUNDED_BROAD_SIDE_DOMAIN",
             "direction_world": ref["direction_world"].tolist(),
+            "raw_direction_local_xy": ref["raw_direction_local_xy"].tolist(),
+            "reference_direction_clamp_deg": float(ref["reference_direction_clamp_deg"]),
             "physical_extent_mm": extent,
             "candidate_vertex_count": int(len(ids)),
             "domain_vertex_count": 0,
@@ -472,11 +519,11 @@ def _desired_contact(reference, mask, surface, target, crown_center, adjacency):
 
 def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=None,
                            transition_rings=10, max_passes=MAX_PASSES):
-    """Make confirmed adjacent teeth hard patient-space constraints."""
+    """Fit wide proximal contacts without changing Margin or occlusal height."""
     current = mesh.copy()
     faces = np.asarray(current.faces, int).copy()
     zones = build_crown_zones(current, frame, margin)
-    locked = np.asarray(zones.cervical, bool).copy()
+    locked = np.asarray(zones.cervical | zones.occlusal, bool).copy()
     if protected is not None:
         p = np.asarray(protected, bool)
         if p.shape != (len(current.vertices),):
@@ -497,7 +544,8 @@ def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=N
         "large_scale_reach": reach_report, "passes": [], "trials": [],
         "zone_model": ZONE_MODEL_VERSION, "domain_quality": domain_quality,
         "locked_vertex_count": int(locked.sum()), "transition_rings": int(transition_rings),
-        "solver": "SPACE_DRIVEN_PROXIMAL_HARD_CONSTRAINT_V4", "target_mm": float(target),
+        "solver": "SPACE_DRIVEN_PROXIMAL_BOUNDED_FRAME_V5", "target_mm": float(target),
+        "axial_policy": "PROXIMAL_SOLVER_PRESERVES_PATIENT_FRAME_Z",
     }
     for side in surfaces:
         q = domain_quality.get(side) or {}
@@ -506,6 +554,8 @@ def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=N
             return current, report, domains
     ever_changed = False
     unreachable = False
+    frame_z = np.asarray(frame.z, float)
+    frame_z /= max(float(np.linalg.norm(frame_z)), 1e-12)
     for pass_no in range(1, max(1, int(max_passes)) + 1):
         reference = np.asarray(current.vertices, float).copy()
         desired = reference.copy()
@@ -514,7 +564,13 @@ def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=N
             side_ids, points, no_reachable = _desired_contact(reference, domains[side], surface, float(target), crown_center, adjacency)
             unreachable |= no_reachable
             if len(side_ids):
-                desired[side_ids] = points
+                # Proximal morphology is a horizontal owner only. Keep every
+                # seed's axial coordinate exactly where the occlusal/height stage
+                # left it, even if the closest point on the broad V5 halo is above
+                # or below that crown vertex.
+                delta = np.asarray(points, float) - reference[side_ids]
+                delta -= (delta @ frame_z)[:, None] * frame_z[None, :]
+                desired[side_ids] = reference[side_ids] + delta
                 seed_sets[side] = side_ids
                 seeds.update(map(int, side_ids))
         if not seeds:
@@ -540,6 +596,11 @@ def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=N
                 step[large] *= (PER_PASS_MAX_MOVE_MM / norm[large])[:, None]
             xt[seed_ids] = reference[seed_ids] + step
             vertices = solve_local_band(reference, faces, free_ids, fixed, xt)[0] if len(free_ids) else xt
+            # Laplacian blending is allowed to smooth XY only. Restoring the
+            # original patient-frame Z here makes the preservation invariant exact
+            # for every vertex, not merely for the occlusal mask.
+            axial = (vertices - reference) @ frame_z
+            vertices -= axial[:, None] * frame_z[None, :]
             moved = np.linalg.norm(vertices - reference, axis=1)
             candidate = current.copy(); candidate.vertices = vertices
             gate = deformation_gate(reference, vertices, faces, scale_mm=.1,
@@ -555,7 +616,7 @@ def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=N
             report["trials"].append({"pass": pass_no, "alpha": float(alpha), "seed_count": int(len(seed_ids)),
                                      "free_count": int(len(free_ids)), "gate": gate.as_dict(), "all_flips": flips,
                                      "maximum_displacement_mm": float(moved.max(initial=0.0)), "improved": bool(better),
-                                     "accepted": bool(safe and better), "acceptance_scope": "CONTINUOUS_PATIENT_CONTACT_CORE",
+                                     "accepted": bool(safe and better), "acceptance_scope": "CONTINUOUS_PATIENT_CONTACT_CORE_XY_ONLY",
                                      "active_before": active_before, "active_after": active_after})
             if safe and better:
                 accepted = candidate

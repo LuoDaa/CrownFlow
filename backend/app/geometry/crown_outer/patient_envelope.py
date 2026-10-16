@@ -21,12 +21,21 @@ from ..nonplanar_crown import MarginCurtain
 @dataclass(frozen=True)
 class PatientEnvelopeConfig:
     emergence_transition_mm: float = 1.60
-    cervical_immutable_mm: float = 0.22
+    # Margin/cervical geometry was already fitted before the contact solver.  Keep
+    # a real immutable band here too so global patient-space sizing can never pull
+    # the established cervical root away from the confirmed line.
+    cervical_immutable_mm: float = 0.50
     absent_side_emergence_mm: float = 1.80
     bl_margin_emergence_mm: float = 1.60
-    neighbor_inner_quantile: float = 0.08
-    neighbor_width_low_quantile: float = 0.08
-    neighbor_width_high_quantile: float = 0.92
+    neighbor_inner_quantile: float = 0.10
+    neighbor_width_low_quantile: float = 0.12
+    neighbor_width_high_quantile: float = 0.88
+    # Automatic V5 neighbour references intentionally include a broad halo for
+    # robust distance queries.  That halo is NOT crown-size truth.  Cap how much
+    # it may enlarge the crown beyond the confirmed Margin in each horizontal
+    # direction; the compact contact solver handles the last local millimetres.
+    neighbor_md_extra_from_margin_mm: float = 3.00
+    neighbor_bl_extra_from_margin_mm: float = 2.20
     antagonist_low_quantile: float = 0.08
     antagonist_xy_pad_mm: float = 0.80
     max_half_span_mm: float = 7.00
@@ -128,27 +137,20 @@ def _near_direction(local, center_xy):
 
 
 def _md_axis(proximal_surfaces, frame, center_xy):
+    """Keep the confirmed PatientFrame X axis authoritative for M/D.
+
+    V5 neighbour patches contain a deliberately broad core+halo.  Inferring a new
+    global axis from that halo can rotate the entire crown toward gingiva/adjacent
+    anatomy and was the source of the long blue 'tongue' seen in CAD-1 tests.
+    Neighbour geometry owns only the +/-X bounds, never the coordinate frame.
+    """
     refs = []
     for label, surface in (proximal_surfaces or {}).items():
         local = _surface_local(surface, frame)
         direction = _near_direction(local, center_xy)
         if direction is not None:
             refs.append((str(label), direction, local))
-    if len(refs) >= 2:
-        best = None
-        for i in range(len(refs)):
-            for j in range(i + 1, len(refs)):
-                score = float(np.dot(refs[i][1], refs[j][1]))
-                if best is None or score < best[0]:
-                    best = (score, refs[i], refs[j])
-        a, b = best[1], best[2]
-        axis = a[1] - b[1]
-        norm = float(np.linalg.norm(axis))
-        if norm > 1e-8:
-            return axis / norm, refs, "TWO_CONFIRMED_NEIGHBORS"
-    if refs:
-        return refs[0][1], refs, "ONE_CONFIRMED_NEIGHBOR"
-    return np.array([1.0, 0.0]), refs, "PATIENT_FRAME_X_FALLBACK"
+    return np.array([1.0, 0.0]), refs, "CONFIRMED_PATIENT_FRAME_X"
 
 
 def _project_uv(local, center_xy, md_axis, bl_axis):
@@ -216,19 +218,29 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
             if int(near.sum()) >= 10:
                 pu = pu[near]
                 pv = pv[near]
-        sign = 1 if float(np.median(pu)) >= 0.0 else -1
+        if label == "mesial":
+            sign = 1
+        elif label == "distal":
+            sign = -1
+        else:
+            sign = 1 if float(np.median(pu)) >= 0.0 else -1
         if sign > 0:
             inner = float(np.quantile(pu, cfg.neighbor_inner_quantile))
-            bound = _clamp_side(inner - target, 1, cfg)
+            raw_bound = inner - target
+            patient_cap = margin_u_hi + float(cfg.neighbor_md_extra_from_margin_mm)
+            bound = _clamp_side(min(raw_bound, patient_cap), 1, cfg)
             u_hi = bound
             positive_found = True
         else:
             inner = float(np.quantile(pu, 1.0 - cfg.neighbor_inner_quantile))
-            bound = _clamp_side(inner + target, -1, cfg)
+            raw_bound = inner + target
+            patient_cap = margin_u_lo - float(cfg.neighbor_md_extra_from_margin_mm)
+            bound = _clamp_side(max(raw_bound, patient_cap), -1, cfg)
             u_lo = bound
             negative_found = True
         side_reports.append({"label": label, "physical_sign": sign,
-                             "neighbor_inner_u_mm": inner, "target_bound_u_mm": bound,
+                             "neighbor_inner_u_mm": inner, "raw_target_bound_u_mm": raw_bound,
+                             "target_bound_u_mm": bound, "margin_relative_cap_u_mm": patient_cap,
                              "target_signed_contact_mm": target})
 
     shell_conflicts = []
@@ -249,10 +261,19 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
         if len(pv) >= 8:
             neigh_v_lo.append(float(np.quantile(pv, cfg.neighbor_width_low_quantile)))
             neigh_v_hi.append(float(np.quantile(pv, cfg.neighbor_width_high_quantile)))
+    neighbor_v_lo = neighbor_v_hi = None
     if neigh_v_lo:
-        v_lo = min(v_lo, float(np.median(neigh_v_lo)))
+        neighbor_v_lo = max(
+            float(np.median(neigh_v_lo)),
+            margin_v_lo - float(cfg.neighbor_bl_extra_from_margin_mm),
+        )
+        v_lo = min(v_lo, neighbor_v_lo)
     if neigh_v_hi:
-        v_hi = max(v_hi, float(np.median(neigh_v_hi)))
+        neighbor_v_hi = min(
+            float(np.median(neigh_v_hi)),
+            margin_v_hi + float(cfg.neighbor_bl_extra_from_margin_mm),
+        )
+        v_hi = max(v_hi, neighbor_v_hi)
     v_lo = _clamp_side(v_lo, -1, cfg)
     v_hi = _clamp_side(v_hi, 1, cfg)
 
@@ -295,6 +316,8 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
                                "v_min": shell_v_lo, "v_max": shell_v_hi,
                                "top_z": shell_top},
         "neighbor_bl_prior_count": len(neigh_v_lo),
+        "neighbor_bl_capped_bounds": {"v_min": neighbor_v_lo, "v_max": neighbor_v_hi,
+                                      "extra_from_margin_mm": float(cfg.neighbor_bl_extra_from_margin_mm)},
         "antagonist": antagonist_report,
         "constraint_conflicts": shell_conflicts,
     }
@@ -361,7 +384,7 @@ def morph_embryo_to_patient_envelope(mesh, frame, margin, envelope: PatientEnvel
     au = axy @ md
     av = axy @ bl
     report = {
-        "mode": "NORMALISED_EMBRYO_TO_PATIENT_ENVELOPE_V2",
+        "mode": "NORMALISED_EMBRYO_TO_PATIENT_ENVELOPE_V3_BOUNDED_NEIGHBOR_HALO",
         "template_size_authoritative": False,
         "root_lock": "HARD_CERVICAL_ROOT_PLUS_SMOOTH_EMERGENCE",
         "cervical_immutable_mm": float(cfg.cervical_immutable_mm),
