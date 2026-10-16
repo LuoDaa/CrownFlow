@@ -2,7 +2,7 @@
 
 
 def test_final_geometry_guard_policy_is_active():
-    from app import v1_final_geometry_guards  # noqa: F401
+    from app import v1_final_geometry_guards
     from app import v1_test_geometry_overrides as width
     from app.geometry.crown_outer import auto_fit_adapter as fit
     from app.geometry.crown_outer import proximal_v9 as proximal
@@ -19,8 +19,9 @@ def test_final_geometry_guard_policy_is_active():
     assert 0.35 <= proximal.FINAL_KISS_MAX_MOVE_MM <= 0.50
     assert proximal.FINAL_KISS_MAX_PASSES >= 3
 
-    # Occlusal solve gets enough passes and antagonist ownership to clear angled
-    # opposing surfaces instead of relying on a nearly pure insertion-axis move.
+    # Occlusal solve is routed through the antagonist-owned target wrapper and
+    # the patient-space fitter that gives the primary occlusal pass 7 iterations
+    # without overriding explicit short recheck budgets.
     assert fit.OCCLUSAL_CONTACT_FRACTION >= 0.30
-    assert fit.MAX_PASSES >= 7
     assert fit._desired_targets is v1_final_geometry_guards._antagonist_owned_targets
+    assert fit.fit_stage is v1_final_geometry_guards._patient_space_fit_stage
