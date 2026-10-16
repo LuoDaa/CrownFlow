@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "backend/app/geometry/crown_outer/**"
+      - "backend/app/geometry/abutment_margin.py"
       - "backend/app/geometry/scan_pair_triage.py"
       - "backend/app/services/auto_fit_templates.py"
       - "backend/app/services/axial_placement.py"
@@ -13,6 +14,7 @@ on:
       - "backend/tests/integration/test_a0_draft_template_identity.py"
       - "backend/tests/integration/test_a1_placement_parity.py"
       - "backend/tests/integration/test_sectional_generation_dispatch.py"
+      - "backend/tests/unit/geometry/test_abutment_margin.py"
       - "backend/tests/unit/geometry/test_axial_placement.py"
       - "backend/tests/unit/geometry/test_crown_outer_confirmed_frame.py"
       - "backend/tests/unit/geometry/test_margin_contract.py"
@@ -54,6 +56,7 @@ jobs:
       - name: Run Crown 1.0 focused regressions
         run: |
           pytest -q \
+            tests/unit/geometry/test_abutment_margin.py \
             tests/unit/geometry/test_axial_placement.py \
             tests/unit/geometry/test_crown_outer_confirmed_frame.py \
             tests/unit/geometry/test_margin_contract.py \
