@@ -17,8 +17,11 @@ from typing import Literal
 
 from .routes import design_row, now
 from .auto_fit import candidate, checked
+from ..models import FinalizeRequest
 from ..revisions import DesignRevision, RevisionKind
-from ..services.design_dependencies import dependency_digest, file_digest, publish_artifacts
+from ..services.design_dependencies import (
+    dependency_digest, file_digest, publish_artifacts, require_current_final,
+)
 
 
 router = APIRouter(prefix="/api/designs")
@@ -46,9 +49,8 @@ def accept_complete_generated_crown(design_id: str, proposal_id: str, p: Complet
     """Publish AUTO candidates as outer + cutter + stitched final in one revision.
 
     This route intentionally shadows the legacy outer-only accept route because
-    it is included before ``auto_fit.router``.  Template-preview candidates keep
-    the legacy behaviour by returning ``404``-style fall-through is impossible in
-    Starlette, so their old acceptance contract is reproduced locally below.
+    it is included before ``auto_fit.router``. Template-preview candidates keep
+    their old outer-only semantics; one-click AUTO candidates must be complete.
     """
     d = checked(design_id, p.expected_input_digest, natural_only=False)
     r = candidate(design_id, proposal_id)
@@ -57,7 +59,7 @@ def accept_complete_generated_crown(design_id: str, proposal_id: str, p: Complet
 
     is_auto = r.payload.get('candidate_kind') == 'AUTO_FIT_CANDIDATE'
     if not is_auto:
-        # Preserve the existing template-preview acceptance contract.  A template
+        # Preserve the existing template-preview acceptance contract. A template
         # draft is only an anatomical reference; it is not a complete crown.
         if not (r.payload.get('type') in ('template_placement', 'template_draft')
                 and p.confirmed_template_anatomy
@@ -100,9 +102,8 @@ def accept_complete_generated_crown(design_id: str, proposal_id: str, p: Complet
         }
 
     # AUTO generation is not accepted into Step 5 until the same job produced a
-    # real intaglio and a watertight stitched final.  Warnings may remain review
-    # items, but missing geometry is not silently converted into an outer-only
-    # design.
+    # real intaglio and a watertight stitched final. Warnings may remain review
+    # items, but missing geometry is not silently converted into outer-only work.
     if not r.payload.get('complete_crown_ready'):
         reason = (r.payload.get('w3_preflight') or {}).get('reason') or '最终闭合或内冠尚未构建完成'
         raise HTTPException(409, {'message': '完整牙冠尚未生成，不能进入微调', 'reason': reason})
@@ -171,5 +172,30 @@ def accept_complete_generated_crown(design_id: str, proposal_id: str, p: Complet
         'revision_id': revision.id,
         'final_invalidated': False,
         'complete_crown_ready': True,
+        'release_status': 'ENGINEERING_ONLY',
+    }
+
+
+@router.post('/{design_id}/rebuild-cervical')
+def rebuild_cervical_idempotent(design_id: str, p: FinalizeRequest):
+    """Compatibility endpoint for the old UI; never rebuild an already-current final.
+
+    Generation now creates the intaglio and stitch before Step 5. Older clients
+    still issue one ``rebuild-cervical`` immediately after candidate acceptance.
+    Treat that call as a read of the already-current result instead of running the
+    expensive geometry a second time. If sculpting invalidated the final, the same
+    endpoint remains the internal sync operation used just before export.
+    """
+    d = design_row(design_id)
+    try:
+        require_current_final(d)
+    except HTTPException:
+        from .routes import _finalize
+        return _finalize(design_id, p, preserve_body=True)
+    return {
+        'qc': json.loads(d.get('qc_json') or '{}'),
+        'already_current': True,
+        'final_path': d.get('final_path'),
+        'cutter_path': d.get('cutter_path'),
         'release_status': 'ENGINEERING_ONLY',
     }
