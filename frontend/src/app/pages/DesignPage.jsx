@@ -103,7 +103,7 @@ export default function DesignPage({ wf }) {
             const sides = Object.entries(result.map.per_side || {}).filter(([side]) => wf.contactKind === "antagonist" ? side === "antagonist" : side !== "antagonist");
             const signed = [...sourceContacts.signed_mm], valid = [...sourceContacts.valid];
             ids.forEach((id,i) => {
-              const values = sides.flatMap(([,map])=>map.valid[i] && Number.isFinite(map.signed_mm[i])?[map.signed_mm[i]]:[]);
+              const values = sides.flatMap(([,map])=>map.valid[i] && Number.isFinite(map.signed_mm?.[i])?[map.signed_mm[i]]:[]);
               valid[id] = values.length > 0; signed[id] = values.length ? Math.min(...values) : null;
             });
             setPreviewContact({ ...sourceContacts, signed_mm: signed, valid });
@@ -260,7 +260,10 @@ export default function DesignPage({ wf }) {
           <button className="cd-btn ghost full" disabled={wf.busy||!session||syncState!=="SAVED"} onClick={()=>{clearPreview();wf.resetCrown();}}>重置牙冠外形</button>
         </Panel>
       </aside>
-      <ViewerStage wf={wf} mode={wf.hasFinal ? "final" : "outer"} renderSupport={false} showMargin={wf.marginConfirmed} editorScene={editorScene}
+      {/* The sculpt page edits the accepted OUTER geometry.  A successful intaglio/final
+          build must not replace that already-good anatomy with the stitched export mesh;
+          the final/intaglio remain available for thickness reference and export. */}
+      <ViewerStage wf={wf} mode="outer" renderSupport={false} showMargin={wf.marginConfirmed} editorScene={editorScene}
         legend={showContact&&syncState==="SAVED"?<Legend target={target}/>:null}
         strip={<>{scanToggle("upper","上颌")}{scanToggle("lower","下颌")}<span className="cd-swatch on">牙冠</span>
           <label className="cd-check"><input type="checkbox" checked={wf.view.scanOpacity<.4} onChange={e=>wf.setView(v=>({...v,scanOpacity:e.target.checked?.25:.62}))}/>淡化扫描</label>
