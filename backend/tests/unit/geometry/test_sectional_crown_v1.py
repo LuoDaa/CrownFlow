@@ -26,9 +26,12 @@ def _margin(n=64):
 
 
 def _prep():
-    # Portable trimesh primitive: base at z=0, apex at z=4; enough to exercise
-    # the RED minimum-wall floor without depending on optional creation helpers.
-    return trimesh.creation.cone(radius=2.55, height=4.0, sections=64)
+    # Explicitly place a 4-mm-high prep above the Margin plane.  Cylinder is used
+    # here because trimesh cone vertex distributions make a high quantile a poor
+    # deterministic statement of the intended fixture height.
+    mesh = trimesh.creation.cylinder(radius=2.15, height=4.0, sections=64)
+    mesh.apply_translation([0.0, 0.0, 2.0])
+    return mesh
 
 
 def _neighbors():
