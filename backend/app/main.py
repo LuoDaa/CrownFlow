@@ -36,16 +36,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Complete Crown 1.0 owns the accept + rebuild-cervical compatibility URLs.
+# It must be registered before the legacy routes with the same paths so an
+# already-generated intaglio/final is never discarded or rebuilt a second time.
+app.include_router(complete_generation_router)
 app.include_router(router)
 # CAD-1 工程测试允许同病例/同扫描重复定位。该 router 必须先于 designer_router，
 # 以保持原 URL 不变同时去掉旧的"已有 Margin/后续设计就禁止重定位"门禁。
 app.include_router(relocation_router)
 app.include_router(designer_router)
 app.include_router(inputs_router)
-# 一键生成候选现在已经包含 outer + intaglio + cervical stitch final。
-# complete_generation 必须位于旧 auto_fit accept route 之前，让相同 URL 先命中完整冠原子发布；
-# 模板预览仍由该路由复现原来的 outer-only 接受语义。
-app.include_router(complete_generation_router)
 app.include_router(auto_fit_router)
 app.include_router(abutment_fast_router)
 app.include_router(margin_router)
