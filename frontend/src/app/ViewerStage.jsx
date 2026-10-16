@@ -9,8 +9,8 @@ import ViewTools, { useViewTools } from "../components/ViewTools";
  * 1.0 预览策略：渲染与审核彻底解耦。只要本轮生成出了候选几何，画布
  * 就优先展示 candidatePreview；是否 PASS/REVIEW_REQUIRED/是否已采纳都
  * 不能阻止用户先看到结果。AUTO 候选同时发布设计时 intaglio preview；
- * W3 成功时还会有正式 intaglio_surface/cutter。画布必须使用候选真正存在
- * 的 artifact label，不能假设一个并不存在的 `intaglio` 路径。
+ * W3 成功后 `/inner-preview.stl` 优先返回与最终 Crown 共享 Margin seam 的
+ * intaglio_surface，而不是带人工下封口的 Boolean cutter。
  */
 export default function ViewerStage({
   wf, mode = "patient", renderUpper = true, renderLower = true, renderSupport = true,
@@ -36,10 +36,6 @@ export default function ViewerStage({
     : wf.candidatePreview ? "candidate"
       : wf.outer ? "accepted" : "none";
 
-  // Candidate revisions expose their real artifact names.  Normal AUTO runs
-  // currently publish `intaglio_preview`; a completed W3 run publishes
-  // `intaglio_surface` and `cutter`.  Pick an actually present artifact instead
-  // of constructing `/artifact/intaglio`, which 404s on normal AUTO candidates.
   const candidateArtifacts = wf.generatedCandidate?.artifacts || {};
   const candidateInnerLabel = candidateArtifacts.intaglio_surface ? "intaglio_surface"
     : candidateArtifacts.intaglio ? "intaglio"
@@ -49,13 +45,15 @@ export default function ViewerStage({
     ? `/api/designs/${wf.design.id}/auto-fit/${wf.generatedCandidate.id}/artifact/${candidateInnerLabel}?v=${wf.meshVersion}`
     : null;
 
-  // After acceptance generatedCandidate is cleared.  The read-only endpoint
-  // first serves the current finalized cutter; otherwise it SHA-matches the
-  // accepted outer back to the exact AUTO candidate and serves its intaglio.
+  // After acceptance/finalization always ask the semantic inner-preview endpoint
+  // first.  It serves W3 intaglio_surface when available, otherwise SHA-matches
+  // the accepted outer to its design intaglio.  The legacy cutter URL is only a
+  // fallback; showing it first made its artificial lower closure look like a
+  // Margin/intaglio mismatch.
   const acceptedInner = !hasFinal && !candidateInner && wf.design?.id && wf.outer
     ? `/api/designs/${wf.design.id}/inner-preview.stl?v=${wf.meshVersion}`
     : null;
-  const activeInner = candidateInner || wf.innerCrown || acceptedInner || null;
+  const activeInner = candidateInner || acceptedInner || wf.innerCrown || null;
 
   return <section className="cd-viewport-card">
     <div className="cd-viewport-head">
