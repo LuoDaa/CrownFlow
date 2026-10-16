@@ -14,7 +14,8 @@ from .design_dependencies import dependency_digest, file_digest
 
 LATEST_AUTO_NEIGHBOR_SCOPE = 'AUTO_CAD1_CORONAL_MD_NEIGHBOR_V5'
 CAD1_DEFAULT_PROXIMAL_TARGET_MM = -0.02
-CAD1_DEFAULT_OCCLUSAL_TARGET_MM = 0.02
+CAD1_DEFAULT_OCCLUSAL_TARGET_MM = 0.05
+CAD1_OCCLUSAL_SAFETY_FLOOR_MM = 0.05
 
 
 def _resolved_contact_targets(params):
@@ -56,9 +57,9 @@ def _apply_auto_candidate_safety(d, report, artifacts):
 def _publish_inner_artifact(artifacts):
     """Expose the best available inner geometry in every AUTO response.
 
-    W3 produces the authoritative intaglio surface.  Before/when W3 is blocked,
-    the already computed intaglio preview is still useful and must not disappear
-    from the review workspace just because final boolean construction failed.
+    W3 produces the authoritative intaglio surface. Before/when W3 is deferred or
+    blocked, the already computed intaglio preview is still useful and must not
+    disappear from the review workspace.
     """
     if artifacts.get('intaglio_surface'):
         artifacts['intaglio'] = str(artifacts['intaglio_surface'])
@@ -176,6 +177,13 @@ def generate_candidate(d, kind):
         effective_params = json.loads(d.get('parameters_json') or '{}')
         effective_params.setdefault('proximal_target_mm', state['proximal_target_mm'])
         effective_params.setdefault('occlusal_target_mm', state['occlusal_target_mm'])
+
+        # Preserve the user's requested occlusal target for reporting, but solve
+        # with a small positive engineering floor so the generated crown does not
+        # visually penetrate the antagonist because of discretisation/tolerance.
+        requested_occlusal = float(effective_params.get('occlusal_target_mm') or 0.0)
+        solver_occlusal = max(requested_occlusal, CAD1_OCCLUSAL_SAFETY_FLOOR_MM)
+        effective_params['occlusal_target_mm'] = solver_occlusal
         effective['parameters_json'] = json.dumps(effective_params, ensure_ascii=False)
         frame, ref = frame_from(effective)
 
@@ -208,9 +216,16 @@ def generate_candidate(d, kind):
 
         attempts = []
         try:
+            # Candidate generation now stops after outer + design intaglio. The
+            # one-click UI accepts the candidate and performs exact W3 finalization
+            # exactly once, eliminating the old preflight/finalize duplicate path
+            # without changing the final manufacturing-quality construction.
             _, report, artifacts = propose(
-                effective, frame, ref, state['automatic_mode'], baseline_path=baseline, run_w3_preflight=True,
+                effective, frame, ref, state['automatic_mode'], baseline_path=baseline, run_w3_preflight=False,
             )
+            report['occlusal_requested_target_mm'] = requested_occlusal
+            report['occlusal_solver_target_mm'] = solver_occlusal
+            report['occlusal_safety_floor_mm'] = CAD1_OCCLUSAL_SAFETY_FLOOR_MM
             if not seed_fallback and artifacts.get('outer'):
                 from .template_constrained_generation import guard_published_outer
                 guarded_outer, guard_report = guard_published_outer(baseline, artifacts['outer'])
