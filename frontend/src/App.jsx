@@ -16,21 +16,12 @@ const ABUTMENT_FLOW = [
   { ...FLOW.find((item) => item.id === S.DESIGN), n: 3, label: "自动设计 / 导出" },
 ];
 
-function openFinalAfterSync(wf) {
-  const popup = window.open("about:blank", "_blank");
-  return (async () => {
-    if (!wf.hasFinal) {
-      const result = await wf.finalize(true);
-      if (result === false) {
-        if (popup) popup.close();
-        return false;
-      }
-    }
-    const url = `/api/designs/${wf.design.id}/final.stl`;
-    if (popup) popup.location.href = url;
-    else window.location.href = url;
-    return true;
-  })();
+function exportCurrentCrown(wf) {
+  if (!wf.design?.id || !wf.hasOuter) return false;
+  const url = `/api/designs/${wf.design.id}/final.stl`;
+  const popup = window.open(url, "_blank");
+  if (!popup) window.location.href = url;
+  return true;
 }
 
 /** 每一步底部的主动作：生成页自己拥有“牙冠生成”，微调页直接拥有导出。 */
@@ -44,13 +35,12 @@ function primaryOf(wf, step) {
       if (!wf.frameConfirmed) return { label: "确认近中 / 颊侧方向", disabled: !wf.canConfirmMargin, run: wf.confirmFrame };
       return { label: "下一步：选择牙型", disabled: false, run: () => wf.go(S.SETUP) };
     case S.SETUP:
-      // SetupPage 右下角明确的“牙冠生成”按钮是唯一生成入口。
       return null;
     case S.DESIGN:
       return {
-        label: wf.hasFinal ? "导出 Final Crown STL" : "同步完整冠并导出",
+        label: "导出当前牙冠 STL",
         disabled: !wf.hasOuter,
-        run: () => openFinalAfterSync(wf),
+        run: () => exportCurrentCrown(wf),
       };
     default:
       return null;
@@ -79,9 +69,6 @@ function previousOf(step, fastAbutment) {
 export default function App() {
   const wf = useWorkflow();
   const fastAbutment = (wf.design?.support_type || wf.supportType) === "abutment";
-  // Legacy completed designs may still resume with step="review". 1.0 now maps
-  // that state back to the sculpt/export workspace instead of exposing a sixth
-  // mandatory page.
   const legacyNormalizedStep = wf.step === S.REVIEW ? S.DESIGN : wf.step;
   const displayStep = fastAbutment && [S.MARGIN, S.SETUP].includes(legacyNormalizedStep) ? S.CASE : legacyNormalizedStep;
   const primary = primaryOf(wf, displayStep);
