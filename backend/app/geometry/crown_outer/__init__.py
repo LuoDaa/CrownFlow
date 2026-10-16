@@ -89,9 +89,10 @@ __all__ = [
 
 # CrownFlow 1.0 active proximal policy.
 # Services import ``fit_proximal_envelopes`` directly from ``space_contact``.
-# V8 keeps V7's independent mesial/distal ownership and adds only a tightly
-# guarded micro-closure attempt for the last small visible interproximal sliver.
+# V9 keeps V8/V7 ownership and adds one final sub-0.2 mm contact "kiss" on the
+# physical side with the larger remaining residual.  It never hard-codes camera
+# left/right, and the opposite established contact remains protected.
 from . import space_contact as _space_contact
-from .proximal_v8 import fit_proximal_envelopes_v8 as _fit_proximal_envelopes_v8
+from .proximal_v9 import fit_proximal_envelopes_v9 as _fit_proximal_envelopes_v9
 
-_space_contact.fit_proximal_envelopes = _fit_proximal_envelopes_v8
+_space_contact.fit_proximal_envelopes = _fit_proximal_envelopes_v9
