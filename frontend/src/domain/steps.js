@@ -46,16 +46,19 @@ export function stepState(id, current) {
 }
 
 /**
- * 进入某一步的前置条件。事实由 useWorkflow 汇总（都来自服务端状态，不在前端猜）。
- * 回退到前面的步骤永远允许；只有"往前跳"需要满足判据。
+ * 1.0 生成优先：只有建立患者空间所必需的输入可以挡住生成前步骤。
+ * DESIGN/REVIEW 不再以“已采纳 outer / 已通过审核”为导航条件——用户必须
+ * 能进入画布查看本轮生成结果，再决定是否采纳、继续修复或导出。
+ *
+ * 质量审核仍由后端报告承担，但它只影响接受/制造语义，不影响预览。
  */
 export function gateFor(id, facts = {}) {
   const needs = {
     [S.CASE]: [],
     [S.MARGIN]: [["hasCase", "请先在首页新建或打开一个病例"]],
     [S.SETUP]: [["marginConfirmed", "请在第 3 步点击“确认当前 Margin”"], ["axisConfirmed", "请先确认插入轴"], ["frameConfirmed", "请在第 3 步确认近中/颊侧方向"]],
-    [S.DESIGN]: [["hasOuter", "请先自动生成并采纳牙冠候选"]],
-    [S.REVIEW]: [["hasOuter", "请先生成牙冠外形"]],
+    [S.DESIGN]: [],
+    [S.REVIEW]: [],
   }[id] || [];
   for (const [key, message] of needs) if (!facts[key]) return { ok: false, reason: message };
   return { ok: true, reason: null };
