@@ -9,12 +9,11 @@ This router therefore derives two hidden engineering references:
 * a right-handed patient frame from the working arch + insertion axis; and
 * mesial/distal neighbor reference surfaces from the working-jaw scan.
 
-The neighbor detector is anatomy/spatial driven rather than normal-only.  V4
+The neighbor detector is anatomy/spatial driven rather than normal-only.  V5
 separates the compact contact core used to identify the adjacent tooth from a
-larger connected reference surface and deliberately grows that surface inward
-past the expected contact wall.  The declared outward direction is estimated
-from winding-normalized core faces rather than assuming every proximal face is
-parallel to the patient-frame mesiodistal axis.
+larger connected reference surface, records each search population, and performs
+a deterministic broad connected fallback before declaring a visible side
+UNKNOWN.  ABSENT is reserved for sides with no coronal candidate at all.
 """
 from __future__ import annotations
 
@@ -230,6 +229,8 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
     strict, relaxed, side_x, half_x, half_y, z_hi = _neighbor_search_masks(
         local, areas, margin_local, side,
     )
+    strict_count = int(np.sum(strict))
+    relaxed_count = int(np.sum(relaxed))
     sign = 1.0 if side == "mesial" else -1.0
     frame_outward = -sign * np.asarray(frame.x, dtype=float)
     facing = normals @ frame_outward
@@ -243,9 +244,11 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
         return None, {
             "status": "ABSENT",
             "reason": "NO_CORONAL_NEIGHBOR_WITHIN_SEARCH_RANGE",
+            "strict_candidate_faces": strict_count,
+            "relaxed_candidate_faces": relaxed_count,
             "half_margin_width_mm": half_x,
             "search_reach_mm": 10.0,
-            "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V4",
+            "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V5",
         }
 
     nearest_x = float(np.percentile(side_x[candidates], 5))
@@ -266,7 +269,9 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
     distance = np.linalg.norm(centers - seed_center, axis=1)
 
     core_ids = np.zeros(0, dtype=int)
+    attempted_scales = []
     for scale in (1.0, 1.35, 1.75):
+        attempted_scales.append(float(scale))
         core_ids = _connected_patch(
             mesh, anatomical_band, seed,
             distance <= float(radius_mm) * scale,
@@ -274,18 +279,54 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
         if len(core_ids) >= 10:
             break
 
+    fallback_used = False
+    if len(core_ids) < 3:
+        # A real adjacent tooth may be represented by sparse/decimated triangles
+        # or the strict band may cut through its connected component.  Keep the
+        # same nearest-side seed but widen only the coronal/MD mask.  This is not
+        # allowed to manufacture ABSENT/CONFIRMED from an empty side: it runs only
+        # when relaxed candidates already proved visible anatomy exists.
+        fallback_band = (
+            relaxed
+            & (side_x <= nearest_x + 4.75)
+            & (np.abs(local[:, 1]) < half_y + 6.5)
+        )
+        for scale in (2.25, 3.0, 4.0):
+            attempted_scales.append(float(scale))
+            core_ids = _connected_patch(
+                mesh, fallback_band, seed,
+                distance <= float(radius_mm) * scale,
+            )
+            if len(core_ids) >= 3:
+                fallback_used = True
+                anatomical_band = fallback_band
+                search_mode = "CORONAL_CONNECTED_FALLBACK"
+                break
+        if len(core_ids) < 3:
+            # Final deterministic flood across the bounded coronal band.  On a
+            # connected IOS jaw this still cannot cross the MD/z limits above.
+            core_ids = _connected_patch(
+                mesh, fallback_band, seed, np.ones(len(mesh.faces), dtype=bool),
+            )
+            if len(core_ids) >= 3:
+                fallback_used = True
+                anatomical_band = fallback_band
+                search_mode = "CORONAL_COMPONENT_FALLBACK"
+
     if len(core_ids) < 3:
         return None, {
             "status": "UNKNOWN",
-            "reason": "CONNECTED_CORONAL_PATCH_TOO_SMALL",
+            "reason": "CONNECTED_CORONAL_PATCH_TOO_SMALL_AFTER_FALLBACK",
             "seed_face": seed,
-            "candidate_faces": int(len(candidates)),
-            "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V4",
+            "strict_candidate_faces": strict_count,
+            "relaxed_candidate_faces": relaxed_count,
+            "band_candidate_faces": int(len(band_candidates)),
+            "core_face_count": int(len(core_ids)),
+            "attempted_radius_scales": attempted_scales,
+            "nearest_side_percentile_mm": nearest_x,
+            "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V5",
         }
 
-    # V3 stopped at roughly half_x+0.1, which in the real FDI46 case put the open
-    # patch boundary inside the intended contact band. Move the reference-only
-    # inner edge inward while keeping the flood on connected coronal anatomy.
     inner_floor = max(0.35, half_x - 0.75, nearest_x - 2.25)
     halo_allowed = (
         (side_x > inner_floor)
@@ -295,9 +336,9 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
         & (local[:, 2] < z_hi + 8.75)
         & (areas > 1e-8)
     )
-    reference_radius = min(12.0, max(float(radius_mm) * 2.25, float(radius_mm) + 3.0))
+    reference_radius = min(14.0, max(float(radius_mm) * (2.6 if fallback_used else 2.25), float(radius_mm) + 3.0))
     radial_ids = _connected_patch(mesh, halo_allowed, seed, distance <= reference_radius)
-    graph_ids = _grow_face_halo(mesh, core_ids, halo_allowed, rings=12)
+    graph_ids = _grow_face_halo(mesh, core_ids, halo_allowed, rings=14 if fallback_used else 12)
     reference_ids = np.unique(np.r_[core_ids, radial_ids, graph_ids]).astype(int)
 
     region = mesh.submesh([reference_ids], append=True, repair=False)
@@ -308,7 +349,10 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
             "reason": "REFERENCE_PATCH_AREA_TOO_SMALL",
             "seed_face": seed,
             "area_mm2": float(region.area),
-            "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V4",
+            "core_face_count": int(len(core_ids)),
+            "reference_face_count": int(len(reference_ids)),
+            "fallback_used": fallback_used,
+            "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V5",
         }
 
     reference_outward = _robust_reference_outward(normals, areas, core_ids, frame_outward)
@@ -318,7 +362,12 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
     except ValueError as exc:
         return None, {
             "status": "UNKNOWN", "reason": str(exc), "seed_face": seed,
-            "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V4",
+            "strict_candidate_faces": strict_count,
+            "relaxed_candidate_faces": relaxed_count,
+            "core_face_count": int(len(core_ids)),
+            "reference_face_count": int(len(reference_ids)),
+            "fallback_used": fallback_used,
+            "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V5",
         }
 
     _cp, _fids, _signed, _dist, core_boundary_valid = fit.patch.closest_with_validity(
@@ -331,6 +380,9 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
     return (region, reference_ids, reference_outward), {
         "status": "CONFIRMED",
         "seed_face": seed,
+        "strict_candidate_faces": strict_count,
+        "relaxed_candidate_faces": relaxed_count,
+        "band_candidate_faces": int(len(band_candidates)),
         "core_face_count": int(len(core_ids)),
         "reference_face_count": int(len(reference_ids)),
         "halo_face_count": int(max(len(reference_ids) - len(core_ids), 0)),
@@ -344,12 +396,14 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
         "half_margin_buccolingual_mm": half_y,
         "coronal_z_reference_mm": z_hi,
         "patch_radius_mm": float(radius_mm),
+        "attempted_radius_scales": attempted_scales,
+        "fallback_used": bool(fallback_used),
         "search_mode": search_mode,
         "normal_facing_median": float(np.median(facing[core_ids])),
         "reference_outward": np.asarray(reference_outward, float).tolist(),
         "reference_outward_vs_frame_dot": float(reference_outward @ frame_outward),
         "core_normal_abs_dot_reference_median": float(np.median(align)),
-        "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V4",
+        "method": "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V5",
     }
 
 
@@ -357,7 +411,7 @@ def _automatic_neighbor_patch(mesh, frame, margin, side, radius_mm):
 def confirm_automatic_neighbors(design_id: str, p: AutoNeighborInput):
     d = checked(design_id, p.expected_input_digest, natural_only=False)
     if d["support_type"] != "abutment":
-        raise HTTPException(409, "自动邻牙接触面只用于基台快速流程；天然牙继续人工复核")
+        raise HTTPException(409, "自动基台接触面只用于已有实体基台冠；天然牙继续人工复核")
     frame, fref = frame_from(d)
     source_kind = "lower" if d["target_fdi"] >= 31 else "upper"
     source = asset(d["case_id"], source_kind)
@@ -374,7 +428,7 @@ def confirm_automatic_neighbors(design_id: str, p: AutoNeighborInput):
         revision_no=0,
         kind=RevisionKind.NEIGHBOR_CONFIRMED,
         payload={},
-        algorithm_version="welooai/abutment-auto-neighbor/4.0",
+        algorithm_version="welooai/abutment-auto-neighbor/5.0",
     )
 
     for side in ("mesial", "distal"):
@@ -396,7 +450,7 @@ def confirm_automatic_neighbors(design_id: str, p: AutoNeighborInput):
                 "instance_ref": uuid4().hex,
                 "instance_name": f"{side} 自动判定缺牙",
                 "frame_revision_id": fref["revision_id"],
-                "scope": "AUTO_CAD1_CORONAL_MD_NEIGHBOR_V4",
+                "scope": "AUTO_CAD1_CORONAL_MD_NEIGHBOR_V5",
                 "diagnostics": report,
                 "revision_id": revision.id,
             }
@@ -409,7 +463,7 @@ def confirm_automatic_neighbors(design_id: str, p: AutoNeighborInput):
                 "instance_ref": uuid4().hex,
                 "instance_name": f"{side} 自动邻牙未确认",
                 "frame_revision_id": fref["revision_id"],
-                "scope": "AUTO_CAD1_CORONAL_MD_NEIGHBOR_V4",
+                "scope": "AUTO_CAD1_CORONAL_MD_NEIGHBOR_V5",
                 "diagnostics": report,
                 "revision_id": revision.id,
             }
@@ -431,16 +485,16 @@ def confirm_automatic_neighbors(design_id: str, p: AutoNeighborInput):
             "outward_normal": np.asarray(outward, dtype=float).tolist(),
             "pollution_reviewed": False,
             "pollution_audit": {
-                "classification": "ENGINEERING_GEOMETRIC_HEURISTIC_V4",
+                "classification": "ENGINEERING_GEOMETRIC_HEURISTIC_V5",
                 "human_reviewed": False,
             },
-            "scope": "AUTO_CAD1_CORONAL_MD_NEIGHBOR_V4",
+            "scope": "AUTO_CAD1_CORONAL_MD_NEIGHBOR_V5",
             "diagnostics": report,
             "revision_id": revision.id,
         }
 
     revision.payload = {
-        "mode": "AUTO_ABUTMENT_CORONAL_MD_NEIGHBOR_V4",
+        "mode": "AUTO_ABUTMENT_CORONAL_MD_NEIGHBOR_V5",
         "frame_revision_id": fref["revision_id"],
         "neighbors": choices,
         "diagnostics": diagnostics,
