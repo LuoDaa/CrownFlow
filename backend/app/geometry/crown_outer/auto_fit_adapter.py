@@ -90,6 +90,46 @@ def fit_domains(mesh,frame,margin,surfaces,stage,protected=None):
     return masks,locked
 
 
+def _broaden_proximal_targets(reference, desired, masks, seed_groups, locked, adj, frame):
+    """把最近点产生的“针尖 seed”扩成有基底的近远中接触丘。
+
+    最近点目标只决定**中心位移量**；周围两圈同侧语义顶点沿确认的 M/D 轴按
+    0.65 / 0.35 衰减跟随。这样接触来自一块连续的 crown wall，而不是单顶点长触角。
+    颈缘、咬合区、protected 顶点仍由 ``locked`` 保持不动。
+    """
+    support=set()
+    per_side={}
+    for side,core in seed_groups.items():
+        core=set(core)
+        if not core or side not in ('mesial','distal'):
+            continue
+        allowed=set(map(int,np.flatnonzero(np.asarray(masks[side],bool)&~np.asarray(locked,bool))))
+        if not allowed:
+            continue
+        direction=np.asarray(frame.x,float)*(1.0 if side=='mesial' else -1.0)
+        direction/=max(float(np.linalg.norm(direction)),1e-12)
+        core_ids=np.asarray(sorted(core),int)
+        scalar=(desired[core_ids]-reference[core_ids])@direction
+        finite=scalar[np.isfinite(scalar)]
+        if not len(finite):
+            continue
+        drive=float(np.median(finite))
+        seen=set(core);front=set(core);added=[]
+        for decay in (.65,.35):
+            ring={v for u in front for v in adj[u]}-seen
+            ring&=allowed
+            if not ring:
+                front=set();continue
+            ids=np.asarray(sorted(ring),int)
+            # 只沿 M/D 轴铺开，不把最近点的切向/法向噪声复制给邻点。
+            desired[ids]=reference[ids]+(decay*drive)*direction[None,:]
+            support.update(ring);added.extend(ids.tolist())
+            seen|=ring;front=ring
+        per_side[side]={'core_seed_count':len(core),'support_seed_count':len(set(added)),
+                        'drive_mm':drive,'support_rings':2}
+    return support,per_side
+
+
 def fit_stage(mesh,frame,margin,surfaces,targets,stage,*,protected=None,domain_mesh=None,domain_masks=None,cut_only=False,transition_rings=None):
     reference=np.asarray(mesh.vertices).copy();faces=np.asarray(mesh.faces).copy()
     masks,locked=fit_domains(mesh if domain_mesh is None else domain_mesh,frame,margin,surfaces,stage,protected)
@@ -100,7 +140,7 @@ def fit_stage(mesh,frame,margin,surfaces,targets,stage,*,protected=None,domain_m
             masks[side]=mask&~locked
     initial={side:measure(reference,masks[side],surface,targets[side],kind=stage,side=side) for side,surface in surfaces.items()}
     before={side:value[0] for side,value in initial.items()}
-    desired=reference.copy();seeds=set();unreachable=False
+    desired=reference.copy();seeds=set();seed_groups={side:set() for side in surfaces};unreachable=False
     for side,surface in surfaces.items():
         _,query=measure(reference,masks[side],surface,targets[side],kind=stage,side=side)
         if query is None: continue
@@ -111,7 +151,7 @@ def fit_stage(mesh,frame,margin,surfaces,targets,stage,*,protected=None,domain_m
         normals_q=surface.patch.normals[fids]*surface.patch.normal_sign
         raw_target=cp[active]+normals_q[active]*targets[side]
         if stage=='PROXIMAL' and side in ('mesial','distal'):
-            # Fine contact is allowed to correct only a small residual.  Keep the
+            # Fine contact is allowed to correct only a small residual. Keep the
             # displacement predominantly along the confirmed mesial-distal axis
             # so a nearest-point correspondence cannot pull a narrow spike toward
             # one arbitrary point on the neighboring surface.
@@ -120,8 +160,10 @@ def fit_stage(mesh,frame,margin,surfaces,targets,stage,*,protected=None,domain_m
             delta=raw_target-reference[ids[active]]
             lateral=(delta@direction)[:,None]*direction[None,:]
             raw_target=reference[ids[active]]+lateral+.15*(delta-lateral)
-        desired[ids[active]]=raw_target
-        seeds.update(map(int,ids[active]))
+        active_ids=ids[active]
+        desired[active_ids]=raw_target
+        seeds.update(map(int,active_ids))
+        seed_groups[side].update(map(int,active_ids))
     base={'stage':stage,'before':before,'after':before,'trials':[],
         'locked_vertex_count':int(locked.sum()),'transition_rings':int(transition_rings if transition_rings is not None else (7 if stage=='PROXIMAL' else 3)),'status':'REVIEW_REQUIRED','reason':None}
     if not any(r['valid_count'] for r in before.values()):
@@ -130,6 +172,15 @@ def fit_stage(mesh,frame,margin,surfaces,targets,stage,*,protected=None,domain_m
         base.update(status='CONSTRAINT_CONFLICT' if unreachable else 'PASS_ENGINEERING',reason='TARGET_OUTSIDE_LOCAL_REACH' if unreachable else 'NO_CORRECTION_NEEDED');return mesh.copy(),base,masks
     adj=[set() for _ in reference]
     for a,b in np.asarray(mesh.edges_unique): adj[a].add(int(b));adj[b].add(int(a))
+
+    # Crown 1.0：近远中接触必须来自连续 wall patch，不允许单点/少数点“长触角”碰邻牙。
+    if stage=='PROXIMAL':
+        support,patch_report=_broaden_proximal_targets(reference,desired,masks,seed_groups,locked,adj,frame)
+        seeds|=support
+        base['proximal_patch']=patch_report
+        base['proximal_core_seed_count']=int(sum(len(v) for v in seed_groups.values()))
+        base['proximal_support_seed_count']=int(len(support))
+
     seen=seeds|set(map(int,np.flatnonzero(locked)));front=seeds.copy();free=set()
     rings=int(transition_rings if transition_rings is not None else (7 if stage=='PROXIMAL' else 3))
     rings=max(1,min(rings,12))
