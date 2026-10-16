@@ -47,8 +47,8 @@ _prox.FINAL_KISS_MAX_EXTRA_PENETRATION_MM = 0.10
 # visibly inside the opposing tooth even after several accepted axial moves.
 _fit.OCCLUSAL_CONTACT_FRACTION = 0.32
 _fit.OCCLUSAL_MAX_REACH_MM = 5.5
-_fit.MAX_PASSES = 7
 _ORIGINAL_DESIRED_TARGETS = _fit._desired_targets
+_ORIGINAL_FIT_STAGE = _fit.fit_stage
 
 
 def _antagonist_owned_targets(reference, ids, cp, fids, signed, distance, valid,
@@ -89,4 +89,28 @@ def _antagonist_owned_targets(reference, ids, cp, fids, signed, distance, valid,
     return seed_ids, targets, blocked
 
 
+def _patient_space_fit_stage(mesh, frame, margin, surfaces, targets, stage, *,
+                             protected=None, domain_mesh=None, domain_masks=None,
+                             cut_only=False, transition_rings=None, max_passes=None):
+    """Use extra iterations only for the main occlusal solve.
+
+    ``fit_stage``'s original default is bound at function-definition time, so
+    changing the module constant alone would not affect live calls.  Explicit
+    recheck budgets (for example max_passes=2 after shell repair) are preserved.
+    """
+    passes = max_passes
+    if passes is None:
+        passes = 7 if stage == "OCCLUSAL" else 5
+    return _ORIGINAL_FIT_STAGE(
+        mesh, frame, margin, surfaces, targets, stage,
+        protected=protected,
+        domain_mesh=domain_mesh,
+        domain_masks=domain_masks,
+        cut_only=cut_only,
+        transition_rings=transition_rings,
+        max_passes=passes,
+    )
+
+
 _fit._desired_targets = _antagonist_owned_targets
+_fit.fit_stage = _patient_space_fit_stage
