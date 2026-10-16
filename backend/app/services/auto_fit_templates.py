@@ -7,7 +7,7 @@ import mapbox_earcut
 from ..geometry.crown_outer.template import load_crown_template
 from ..geometry.crown_outer.collar_body_outer import _boundary_loops
 from ..geometry.nonplanar_crown import MarginCurtain
-from ..geometry.registration import initialize_from_margin
+from ..geometry.registration import initialize_from_margin, DEFAULT_CERVICAL_TRANSITION_MM
 
 # ── 库件缓存 ─────────────────────────────────────────────────────────────────
 # 这两个函数是**确定性**的（同库件字节 + 同牙位 + 同 Margin/帧 ⇒ 同结果），但每次都要解析
@@ -87,9 +87,19 @@ def _placed_library_crown_uncached(library,fdi,margin,frame):
     from ..geometry.crown_outer.patient_frame import confirmed_patient_frame
     local_frame=confirmed_patient_frame(np.zeros(3),(1.0,0.0,0.0),(0.0,1.0,0.0),(0.0,0.0,1.0))
     local_margin=(np.asarray(margin)-frame.origin)@frame.matrix()
-    placed=initialize_from_margin(open_crown,local_margin,[0,0,1],template_cervical_points=template.margin_loop,
-                                  patient_frame=local_frame)
+    placed=initialize_from_margin(
+        open_crown,local_margin,[0,0,1],template_cervical_points=template.margin_loop,
+        patient_frame=local_frame,
+    )
     placed.vertices=np.asarray(placed.vertices)@frame.matrix().T+frame.origin
-    return placed,{'library':library.name,'fdi':fdi,'margin_source':template.margin_source,
-        'template_summary':template.summary(),'label_semantics_status':'GEOMETRIC_CANDIDATE_NOT_CLINICALLY_VERIFIED',
-        'normalization':'confirmed_mesial_and_axis_frame','original_anatomy_review_required':True}
+    return placed,{
+        'library':library.name,
+        'fdi':fdi,
+        'margin_source':template.margin_source,
+        'template_summary':template.summary(),
+        'label_semantics_status':'GEOMETRIC_CANDIDATE_NOT_CLINICALLY_VERIFIED',
+        'normalization':'confirmed_mesial_buccal_axis_frame_with_tapered_cervical_fit',
+        'cervical_fit_policy':'MARGIN_OWNS_EMERGENCE_ONLY_CORONAL_ANATOMY_PRESERVED',
+        'cervical_transition_mm':float(DEFAULT_CERVICAL_TRANSITION_MM),
+        'original_anatomy_review_required':True,
+    }
