@@ -132,6 +132,20 @@ def require_current_outer_body(design):
         raise HTTPException(409,'现有冠形缺少可信主体版本，或基牙/轴/模板已改变；不能仅重建颈部，请重新生成外冠')
 
 
+def _validate_published_candidate_artifacts(proposal, accepted_artifacts):
+    """Only artifacts copied into the accepted design can invalidate acceptance."""
+    artifacts=json.loads(proposal['artifacts_json'] or '{}')
+    metadata=json.loads(proposal['payload_json'])
+    expected_hashes=metadata.get('artifact_sha256',{})
+    for label,path in artifacts.items():
+        if label not in accepted_artifacts:
+            continue
+        accepted_path=accepted_artifacts[label]
+        if (str(accepted_path)!=str(path) or not Path(path).is_file()
+                or file_digest(path)!=expected_hashes.get(label)):
+            raise HTTPException(409,'候选或预审产物已变化，不能采纳')
+
+
 def publish_artifacts(baseline, expected, updates, *, stage='final', revision=None):
     """Compare and publish in one SQLite write transaction, including slow task completion."""
     with db() as conn:
@@ -152,9 +166,8 @@ def publish_artifacts(baseline, expected, updates, *, stage='final', revision=No
             metadata_path=metadata.get('source_metadata_path')
             if metadata_path and (not Path(metadata_path).is_file() or file_digest(metadata_path)!=metadata.get('metadata_sha256')):
                 raise HTTPException(409,'牙库方向元数据已变化，请重新提案')
-            for label,path in json.loads(proposal['artifacts_json'] or '{}').items() if proposal else []:
-                if not Path(path).is_file() or file_digest(path)!=metadata.get('artifact_sha256',{}).get(label):
-                    raise HTTPException(409,'候选或预审产物已变化，不能采纳')
+            if proposal:
+                _validate_published_candidate_artifacts(proposal, revision.artifacts or {})
         updates['design_revision']=current['design_revision']+1
         merged={**current,**updates}
         if stage=='outer':
