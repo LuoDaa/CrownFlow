@@ -28,6 +28,34 @@ def test_intaglio_cache_ignores_contact_targets_but_tracks_gap_settings():
     assert runtime.stable_key(a) != runtime.stable_key(c)
 
 
+def test_intaglio_cache_ignores_candidate_revision_but_tracks_conditioned_geometry():
+    common = dict(
+        support_sha256="raw-support",
+        margin=[[0.1234567891, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        axis=[0.0, 0.0, 1.0],
+        parameters={"cement_gap_mm": 0.06, "proximal_target_mm": -0.02},
+    )
+    a = runtime.intaglio_cache_payload(**common, prepared_support={
+        "identity": {"source_revision_id": "round-1"},
+        "geometry": {"conditioned_mesh_sha256": "same-conditioned"},
+        "provenance": {"algorithm_version": "v4", "support_region_selection": {"loop": 3},
+                       "confirmation_basis": {"revision": "round-1"}},
+    })
+    b = runtime.intaglio_cache_payload(**common, prepared_support={
+        "identity": {"source_revision_id": "round-2"},
+        "geometry": {"conditioned_mesh_sha256": "same-conditioned"},
+        "provenance": {"algorithm_version": "v4", "support_region_selection": {"loop": 3},
+                       "confirmation_basis": {"revision": "round-2"}},
+    })
+    c = runtime.intaglio_cache_payload(**common, prepared_support={
+        "identity": {"source_revision_id": "round-2"},
+        "geometry": {"conditioned_mesh_sha256": "different-conditioned"},
+        "provenance": {"algorithm_version": "v4", "support_region_selection": {"loop": 3}},
+    })
+    assert runtime.stable_key(a) == runtime.stable_key(b)
+    assert runtime.stable_key(a) != runtime.stable_key(c)
+
+
 def test_disk_mesh_cache_reuses_invariant_geometry(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "CASE_DIR", tmp_path)
     calls = {"count": 0}
