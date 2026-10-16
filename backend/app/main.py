@@ -12,6 +12,7 @@ from .api.routes import router
 from .api.relocation import router as relocation_router
 from .api.designer import router as designer_router
 from .api.design_inputs import router as inputs_router
+from .api.complete_generation import router as complete_generation_router
 from .api.auto_fit import router as auto_fit_router
 from .api.abutment_fast import router as abutment_fast_router
 from .db import init_db
@@ -41,6 +42,10 @@ app.include_router(router)
 app.include_router(relocation_router)
 app.include_router(designer_router)
 app.include_router(inputs_router)
+# 一键生成候选现在已经包含 outer + intaglio + cervical stitch final。
+# complete_generation 必须位于旧 auto_fit accept route 之前，让相同 URL 先命中完整冠原子发布；
+# 模板预览仍由该路由复现原来的 outer-only 接受语义。
+app.include_router(complete_generation_router)
 app.include_router(auto_fit_router)
 app.include_router(abutment_fast_router)
 app.include_router(margin_router)
