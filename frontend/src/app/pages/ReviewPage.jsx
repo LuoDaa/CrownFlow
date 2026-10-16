@@ -58,17 +58,18 @@ export default function ReviewPage({ wf }) {
     { name: "Occlusion", state: occlusalState, ok: occlusal != null && occlusal >= -0.001,
       note: occlusal != null ? `最小有符号距离 ${occlusal.toFixed(3)} mm` : "缺少对颌参考" },
     { name: "Major Collision", state: occlusalState, ok: occlusal == null || occlusal >= -0.2,
-      note: occlusal != null && occlusal < -0.2 ? "存在明显穿插，请回设计页处理" : "未见明显穿插" },
-    { name: "Inner Crown", state: wf.innerCrown ? "ASSESSED" : "NOT_ASSESSED", ok: true,
-      note: wf.innerCrown ? "已生成内冠" : "尚未生成内冠" },
+      note: occlusal != null && occlusal < -0.2 ? "存在明显穿插，请返回微调处理" : "未见明显穿插" },
+    { name: "Inner Crown", state: wf.innerCrown ? "ASSESSED" : "NOT_ASSESSED", ok: Boolean(wf.innerCrown),
+      note: wf.innerCrown ? "已在自动生成阶段完成内冠" : "完整牙冠未包含内冠，请返回自动生成" },
   ];
-  const blocking = rows.filter((row) => row.state === "ASSESSED" && row.tone !== "ok" && row.name !== "Inner Crown");
+  const evaluatedRows = rows.map((row) => ({ ...row, ...verdict(row.state, row.ok, row.note) }));
+  const blocking = evaluatedRows.filter((row) => row.state === "ASSESSED" && row.tone !== "ok" && row.name !== "Inner Crown");
 
   const acceptance = measurements.validation?.qc?.final_acceptance || wf.qc?.final_acceptance || null;
   const designReady = acceptance?.status === "DESIGN_READY";
 
   return <div className="cd-page">
-    <PageHead eyebrow="STEP 6" title="检查与导出" hint="确认设计质量并输出最终牙冠。" />
+    <PageHead eyebrow="FINAL" title="检查与导出" hint="自动生成阶段已经完成外冠、内冠和颈缘闭合；这里仅检查并导出。" />
 
     <div className="cd-grid finalize">
       <Panel title="Final Crown Preview" subtitle={`FDI ${wf.fdi || "—"} · ${wf.supportType === "abutment" ? "种植基台" : "天然牙预备体"}`}>
@@ -76,36 +77,31 @@ export default function ReviewPage({ wf }) {
           showMargin={!wf.finalCrown} />
         <div className="cd-btn-row end">
           <button type="button" className="cd-btn secondary" disabled={wf.busy} onClick={() => wf.setStep("design")}>返回微调</button>
-          <button type="button" className="cd-btn ghost" disabled={wf.busy || !wf.hasOuter} onClick={() => wf.finalize(false)}>
-            {wf.busy ? "正在生成…" : wf.hasFinal ? "重新生成内冠与 QC" : "生成内冠与 QC"}
-          </button>
           <button type="button" className="cd-btn primary" disabled={!wf.hasFinal}
             onClick={() => window.open(adapter.finalCrownUrl(wf.design.id), "_blank")}>导出 Final Crown STL</button>
           <button type="button" className="cd-btn ghost" disabled={!wf.hasFinal}
             onClick={() => window.open(adapter.exportPackageUrl(wf.design.id), "_blank")}>导出交付包</button>
         </div>
+        {!wf.hasFinal && <Notice tone="warn">当前完整冠已失效或尚未生成。请返回微调页；离开微调时系统会自动同步闭合冠，不再单独执行“生成内冠”步骤。</Notice>}
       </Panel>
 
       <aside className="cd-rail">
         <Panel title="自动检查" subtitle="逐项来自真实测量结果">
-          {rows.map((row) => {
-            const result = verdict(row.state, row.ok, row.note);
-            return <div key={row.name} className="cd-qc">
-              <div><span>{row.name}</span><small>{result.note}</small></div>
-              <b className={result.tone}>{result.label}</b>
-            </div>;
-          })}
+          {evaluatedRows.map((row) => <div key={row.name} className="cd-qc">
+            <div><span>{row.name}</span><small>{row.note}</small></div>
+            <b className={row.tone}>{row.label}</b>
+          </div>)}
         </Panel>
         {designReady && <Notice tone="ok">
-          <b>设计完成</b> · 颈缘连接存在轻微几何警告 · 建议人工检查
+          <b>设计完成</b> · 完整冠已在自动设计 / 微调同步阶段构建
           {(acceptance.warnings || []).length > 0 && <span>（{acceptance.warnings.join("；")}）</span>}
           <br /><small>本结果用于设计确认，不用于制造放行（manufacturing_check: false）。</small>
         </Notice>}
         {loading && <Notice>正在读取接触与咬合测量…</Notice>}
         {blocking.length > 0
-          ? <Notice tone="warn">以下项目需要复核：{blocking.map((row) => row.name).join("、")}。可返回第 5 步继续微调。</Notice>
+          ? <Notice tone="warn">以下项目需要复核：{blocking.map((row) => row.name).join("、")}。可返回微调继续处理。</Notice>
           : <Notice tone="ok">所有可用检查项均已通过。导出仅代表工程口径完成，未做制造放行。</Notice>}
-        <StatusPill state={wf.hasFinal ? "ok" : ""}>{wf.hasFinal ? "最终牙冠已生成" : "尚未生成最终牙冠"}</StatusPill>
+        <StatusPill state={wf.hasFinal ? "ok" : ""}>{wf.hasFinal ? "完整牙冠可导出" : "完整牙冠未就绪"}</StatusPill>
       </aside>
     </div>
   </div>;
