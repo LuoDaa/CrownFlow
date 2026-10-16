@@ -8,6 +8,7 @@ on:
       - "backend/app/services/auto_fit_templates.py"
       - "backend/app/services/axial_placement.py"
       - "backend/tests/unit/geometry/test_axial_placement.py"
+      - "backend/tests/unit/geometry/test_crown_outer_confirmed_frame.py"
       - "backend/tests/unit/geometry/test_proximal_patch_broadening.py"
       - "backend/tests/unit/geometry/test_scan_pair_triage.py"
       - "backend/tests/unit/geometry/test_a0_patient_frame.py"
@@ -44,6 +45,7 @@ jobs:
         run: |
           pytest -q \
             tests/unit/geometry/test_axial_placement.py \
+            tests/unit/geometry/test_crown_outer_confirmed_frame.py \
             tests/unit/geometry/test_proximal_patch_broadening.py \
             tests/unit/geometry/test_scan_pair_triage.py \
             tests/unit/geometry/test_a0_patient_frame.py
