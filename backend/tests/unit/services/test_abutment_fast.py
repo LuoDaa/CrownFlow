@@ -61,7 +61,10 @@ def test_automatic_neighbor_patch_finds_coronal_surfaces_on_both_sides():
     assert distal_patch is not None
     assert mesial_report["status"] == "CONFIRMED"
     assert distal_report["status"] == "CONFIRMED"
-    assert mesial_report["method"] == "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V4"
+    assert mesial_report["method"] == "CORONAL_MD_CORE_PLUS_REFERENCE_HALO_AUTO_V5"
+    assert mesial_report["strict_candidate_faces"] >= 0
+    assert mesial_report["relaxed_candidate_faces"] >= mesial_report["strict_candidate_faces"]
+    assert isinstance(mesial_report["fallback_used"], bool)
     assert mesial_report["reference_face_count"] >= mesial_report["core_face_count"]
     assert distal_report["reference_face_count"] >= distal_report["core_face_count"]
     assert mesial_report["reference_inner_floor_mm"] < mesial_report["half_margin_width_mm"]
@@ -97,3 +100,5 @@ def test_automatic_neighbor_patch_classifies_empty_side_as_absent():
     assert patch is None
     assert report["status"] == "ABSENT"
     assert report["reason"] == "NO_CORONAL_NEIGHBOR_WITHIN_SEARCH_RANGE"
+    assert report["strict_candidate_faces"] == 0
+    assert report["relaxed_candidate_faces"] == 0
