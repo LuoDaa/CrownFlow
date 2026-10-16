@@ -1,5 +1,6 @@
 import React, { useRef } from "react";
 import { Field, PageHead, Panel, Segmented } from "../ui";
+import "../../styles/case-page.css";
 
 const FDI_OPTIONS = ["16", "15", "14", "13", "12", "11", "21", "22", "23", "24", "25", "26",
   "36", "35", "34", "33", "32", "31", "41", "42", "43", "44", "45", "46", "37", "47"];
