@@ -5,6 +5,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+# CrownFlow 1.0 engineering-test geometry policy.  Import this before the API /
+# service graph so patient-space sizing and safe anatomy refinement are the
+# defaults used by all subsequently imported generation code.
+from . import v1_test_geometry_overrides as _v1_test_geometry_overrides  # noqa: F401
+
 from .api.crown import router as crown_router
 from .api.importers import router as importers_router
 from .api.margin import router as margin_router
