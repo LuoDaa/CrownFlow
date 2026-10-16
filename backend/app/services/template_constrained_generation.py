@@ -1,11 +1,9 @@
-"""Morphology-prior + patient-distance deformation for CrownFlow AUTO 1.0.
+"""Morphology-prior + patient feasible-space deformation for CrownFlow AUTO 1.0.
 
 A complete library crown supplies anatomy and closed topology. Patient geometry
-supplies metric targets. The crown is deformed regionally: side walls carry most
-of the M/D and B/L adaptation, the occlusal anatomy core moves less, and the
-cervical band is left for the Margin/cervical solver.
-
-No boolean, remesh, face deletion or topology rewrite is used here.
+supplies *maximum feasible bounds*. The seed is never stretched merely to fill a
+six-face box. Only envelope violations are compressed; local proximal and
+occlusal solvers establish real contacts later.
 """
 from __future__ import annotations
 
@@ -17,7 +15,11 @@ import numpy as np
 
 from ..config import CASE_DIR, TOOTH_LIBRARY_ROOT
 from ..geometry.io import load_mesh, save_mesh
-from ..geometry.crown_outer.patient_envelope import PatientEnvelopeConfig, build_patient_envelope
+from ..geometry.crown_outer.patient_envelope import (
+    PatientEnvelopeConfig,
+    build_patient_envelope,
+    morph_embryo_to_patient_envelope,
+)
 from ..importers.tooth_library import discover_libraries
 from .auto_fit_templates import placed_library_crown
 from .design_dependencies import file_digest
@@ -167,33 +169,31 @@ def _build_envelope(d, frame, frame_ref, support, margin, parameters, state):
 
 
 def _regional_weights(u, v, h, extents, current_height):
-    """Return cervical lock, side-wall adaptation and anatomy preservation weights."""
+    """Compatibility helper used by tests and reports.
+
+    The current route no longer stretches the seed to target dimensions.  These
+    weights describe only where broad compression is allowed: cervical root is
+    frozen, side walls are freer, and the occlusal anatomy core is protected.
+    """
     h_pos = np.maximum(np.asarray(h, float), 0.0)
     h_frac = np.clip(h_pos / max(float(current_height), 1e-6), 0.0, 1.0)
     cervical = _smoothstep01((h_pos - .35) / 1.20)
-
     u_scale = max(float(extents['u_pos']), float(extents['u_neg']), .5)
     v_scale = max(float(extents['v_pos']), float(extents['v_neg']), .5)
     radial = np.sqrt((np.asarray(u, float) / u_scale) ** 2 + (np.asarray(v, float) / v_scale) ** 2)
     radial = np.clip(radial, 0.0, 1.4)
-
-    # Side walls should follow measured patient space strongly. The central
-    # occlusal anatomy (cusps/fossa/grooves) should keep more of the template.
     side_wall = np.clip(.35 + .85 * radial, .35, 1.0)
-    occlusal_core = (h_frac >= .62) & (radial <= .72)
+    occlusal_core = (h_frac >= .58) & (radial <= .72)
     anatomy_keep = np.ones(len(h_pos), float)
-    anatomy_keep[occlusal_core] = .35
+    anatomy_keep[occlusal_core] = .28
     adaptation = cervical * side_wall * anatomy_keep
-
-    # Height may change the occlusal table, but preserve cervical and avoid a
-    # uniform Z squash of the entire crown.
     height_weight = cervical * np.clip((h_frac - .30) / .55, 0.0, 1.0)
-    height_weight[occlusal_core] *= .60
+    height_weight[occlusal_core] *= .45
     return cervical, adaptation, height_weight, occlusal_core
 
 
 def build_template_constrained_seed(d, frame, frame_ref, support, margin, parameters, state):
-    """Build a closed morphology-prior crown adapted to patient distance targets."""
+    """Build a closed anatomy-preserving crown seed inside patient max bounds."""
     envelope, neighbors, antagonist, support_report = _build_envelope(
         d, frame, frame_ref, support, margin, parameters, state
     )
@@ -204,83 +204,15 @@ def build_template_constrained_seed(d, frame, frame_ref, support, margin, parame
     if not mesh.is_watertight or not mesh.is_winding_consistent or len(mesh.split(only_watertight=False)) != 1:
         raise ValueError('牙库模板放置后不是单一闭合实体')
 
-    original_world = np.asarray(mesh.vertices, float).copy()
-    local = _local(original_world, frame)
-    u, v = _uv(local, envelope)
-    h = local[:, 2] - float(envelope.margin_z)
-
-    current = {
-        'u_pos': _positive_extent(u), 'u_neg': _negative_extent(u),
-        'v_pos': _positive_extent(v), 'v_neg': _negative_extent(v),
-        'height': float(np.quantile(h[h > 0], .985)) if np.any(h > 0) else 0.0,
-    }
-    target = {
-        'u_pos': max(float(envelope.u_max), .1),
-        'u_neg': max(float(-envelope.u_min), .1),
-        'v_pos': max(float(envelope.v_max), .1),
-        'v_neg': max(float(-envelope.v_min), .1),
-        'height': None if envelope.target_top_z is None else max(float(envelope.target_top_z - envelope.margin_z), .1),
-    }
-
-    ratios = [
-        _safe_ratio(target['u_pos'], current['u_pos']),
-        _safe_ratio(target['u_neg'], current['u_neg']),
-        _safe_ratio(target['v_pos'], current['v_pos']),
-        _safe_ratio(target['v_neg'], current['v_neg']),
-    ]
-    if target['height'] is not None:
-        ratios.append(_safe_ratio(target['height'], current['height']))
-    # Overscale only enough to ensure the following patient adaptation is mostly
-    # subtractive. Keep it modest so the morphology prior remains recognizable.
-    uniform_scale = float(np.clip(max(1.0, max(ratios)) * 1.025, 1.0, 1.22))
-
-    cervical_weight = _smoothstep01((np.maximum(h, 0.0) - .35) / 1.20)
-    center = np.asarray(envelope.center_xy, float)
-    scaled = local.copy()
-    scaled[:, :2] = center + (local[:, :2] - center) * (1.0 + cervical_weight[:, None] * (uniform_scale - 1.0))
-    scaled[:, 2] = float(envelope.margin_z) + h * (1.0 + cervical_weight * (uniform_scale - 1.0))
-
-    su, sv = _uv(scaled, envelope)
-    sh = scaled[:, 2] - float(envelope.margin_z)
-    ext = {
-        'u_pos': _positive_extent(su), 'u_neg': _negative_extent(su),
-        'v_pos': _positive_extent(sv), 'v_neg': _negative_extent(sv),
-    }
-    current_height = float(np.quantile(sh[sh > 0], .985)) if np.any(sh > 0) else 0.0
-    _cervical, adapt_weight, height_weight, core_mask = _regional_weights(
-        su, sv, sh, ext, current_height
+    # One source of truth for global space adaptation.  The seed and the later
+    # GLOBAL_PREFIT now share the same one-sided operation, making the second pass
+    # idempotent instead of progressively flattening the tooth.
+    proposed, morph_report = morph_embryo_to_patient_envelope(
+        mesh, frame, np.asarray(margin, float), envelope, config=PatientEnvelopeConfig()
     )
-
-    factors = {
-        'u_pos': _safe_ratio(target['u_pos'], ext['u_pos']),
-        'u_neg': _safe_ratio(target['u_neg'], ext['u_neg']),
-        'v_pos': _safe_ratio(target['v_pos'], ext['v_pos']),
-        'v_neg': _safe_ratio(target['v_neg'], ext['v_neg']),
-    }
-    # Distance targets are authoritative, but avoid single-pass extreme stretch.
-    for key in factors:
-        factors[key] = float(np.clip(factors[key], .58, 1.08))
-
-    u_factor = np.where(su >= 0, factors['u_pos'], factors['u_neg'])
-    v_factor = np.where(sv >= 0, factors['v_pos'], factors['v_neg'])
-    du = su * (u_factor - 1.0)
-    dv = sv * (v_factor - 1.0)
-    adapted_u = su + adapt_weight * du
-    adapted_v = sv + adapt_weight * dv
-    adapted = _from_uv(scaled, adapted_u, adapted_v, envelope)
-
-    if target['height'] is not None and current_height > 1e-8:
-        height_factor = float(np.clip(_safe_ratio(target['height'], current_height), .62, 1.04))
-        adapted[:, 2] = float(envelope.margin_z) + sh * (1.0 + height_weight * (height_factor - 1.0))
-    else:
-        height_factor = 1.0
-
-    # Exact cervical preservation: the morphology prior does not own the root.
-    cervical_lock = np.asarray(h <= .45)
-    proposed_world = _world(adapted, frame)
-    proposed_world[cervical_lock] = original_world[cervical_lock]
-
-    safe_mesh, deformation_alpha, deformation_audit = _backoff_deformation(mesh, proposed_world)
+    safe_mesh, deformation_alpha, deformation_audit = _backoff_deformation(
+        mesh, np.asarray(proposed.vertices, float)
+    )
     if not safe_mesh.is_watertight or not safe_mesh.is_winding_consistent:
         safe_mesh = mesh.copy()
         deformation_alpha = 0.0
@@ -292,22 +224,15 @@ def build_template_constrained_seed(d, frame, frame_ref, support, margin, parame
     report = {
         'stage': 'MORPHOLOGY_DISTANCE_SEED',
         'status': 'PASS_ENGINEERING' if deformation_alpha > 0 else 'REVIEW_REQUIRED',
-        'route': 'MORPHOLOGY_PRIOR_PLUS_DISTANCE_CONSTRAINED_ADAPTATION_V1',
+        'route': 'MORPHOLOGY_PRIOR_IN_MAX_FEASIBLE_PATIENT_SPACE_V2',
         'template_used': True,
         'template_role': 'MORPHOLOGY_AND_CLOSED_TOPOLOGY_PRIOR',
-        'metric_owner': 'PATIENT_DISTANCE_ENVELOPE',
+        'metric_owner': 'PATIENT_MAX_FEASIBLE_ENVELOPE',
+        'envelope_semantics': 'MAXIMUM_BOUNDS_NOT_DIMENSION_TARGETS',
         'library': library.name,
         'library_user_selected': bool(user_selected),
         'template_metadata': metadata,
-        'uniform_overscale': uniform_scale,
-        'distance_factors': factors,
-        'height_factor': height_factor,
-        'regional_policy': {
-            'cervical_lock_mm': .45,
-            'sidewall_adaptation': 'HIGH',
-            'occlusal_anatomy_core_adaptation': 'LOW',
-            'occlusal_core_vertex_count': int(np.sum(core_mask)),
-        },
+        'morph': morph_report,
         'deformation_alpha': float(deformation_alpha),
         'deformation_audit': deformation_audit,
         'patient_envelope': envelope.as_report(),
@@ -327,11 +252,7 @@ def build_template_constrained_seed(d, frame, frame_ref, support, margin, parame
 
 
 def guard_published_outer(baseline_path, candidate_path):
-    """Never publish a visibly broken outer during 1.0 testing.
-
-    If a downstream solver returns an open/non-winding mesh, retain the complete
-    morphology+distance seed for the sculpt canvas and record the rollback.
-    """
+    """Never publish an open, non-winding or fragmented downstream outer."""
     baseline = load_mesh(Path(baseline_path))
     try:
         candidate = load_mesh(Path(candidate_path))
@@ -341,12 +262,13 @@ def guard_published_outer(baseline_path, candidate_path):
             and candidate.is_watertight
             and candidate.is_winding_consistent
             and len(candidate.split(only_watertight=False)) == 1
+            and not np.any(np.asarray(candidate.area_faces, float) < 1e-10)
         )
     except Exception as exc:
         valid = False
         reason = str(exc)
     else:
-        reason = None if valid else 'DOWNSTREAM_OUTER_NOT_SINGLE_WATERTIGHT_WINDING_COMPONENT'
+        reason = None if valid else 'DOWNSTREAM_OUTER_GEOMETRY_INVALID'
     if valid:
         return str(candidate_path), {'status': 'KEPT_SOLVER_OUTER', 'rollback': False}
     if not baseline.is_watertight or not baseline.is_winding_consistent:
