@@ -1,14 +1,14 @@
-"""Patient-owned 3D crown envelope for deterministic CAD-1.
+"""Patient-owned feasible crown envelope.
 
-The patient, never the library tooth, owns the six global limits of the crown:
+The envelope is a *maximum feasible space*, not a requested final tooth size.
+Margin, adjacent teeth, the inner shell and antagonist define where a crown may
+exist.  Library anatomy stays unchanged while it is already inside that space;
+only dimensions that exceed a patient-owned bound are compressed.
 
-* cervical/root: confirmed Margin;
-* two proximal limits: confirmed adjacent-tooth surfaces;
-* buccal/lingual width: Margin/intaglio floor plus adjacent-tooth BL envelope;
-* coronal limit: antagonist ceiling (when available).
-
-A library tooth may still provide topology and anatomical texture, but its metric
-width/height is normalised away before it is mapped into this envelope.
+This distinction is important: fitting every template exactly to the six bounds
+turns the envelope into a box-shaped morphology target and can flatten posterior
+crowns.  Local proximal and occlusal solvers own contact details after this broad
+feasibility pass.
 """
 from __future__ import annotations
 
@@ -21,19 +21,12 @@ from ..nonplanar_crown import MarginCurtain
 @dataclass(frozen=True)
 class PatientEnvelopeConfig:
     emergence_transition_mm: float = 1.60
-    # Margin/cervical geometry was already fitted before the contact solver.  Keep
-    # a real immutable band here too so global patient-space sizing can never pull
-    # the established cervical root away from the confirmed line.
     cervical_immutable_mm: float = 0.50
     absent_side_emergence_mm: float = 1.80
     bl_margin_emergence_mm: float = 1.60
     neighbor_inner_quantile: float = 0.10
     neighbor_width_low_quantile: float = 0.12
     neighbor_width_high_quantile: float = 0.88
-    # Automatic V5 neighbour references intentionally include a broad halo for
-    # robust distance queries.  That halo is NOT crown-size truth.  Cap how much
-    # it may enlarge the crown beyond the confirmed Margin in each horizontal
-    # direction; the compact contact solver handles the last local millimetres.
     neighbor_md_extra_from_margin_mm: float = 3.00
     neighbor_bl_extra_from_margin_mm: float = 2.20
     antagonist_low_quantile: float = 0.08
@@ -41,6 +34,13 @@ class PatientEnvelopeConfig:
     max_half_span_mm: float = 7.00
     min_half_span_mm: float = 1.20
     min_coronal_height_mm: float = 1.00
+    # Broad feasibility deformation must preserve tooth morphology.  Large case
+    # mismatches are left for the local surface solvers/review rather than being
+    # solved by one destructive global squash.
+    md_min_scale_per_pass: float = 0.70
+    bl_min_scale_per_pass: float = 0.80
+    height_min_scale_per_pass: float = 0.72
+    bl_core_preservation: float = 0.38
 
 
 @dataclass(frozen=True)
@@ -66,13 +66,12 @@ class PatientEnvelope:
 
     @property
     def height_mm(self) -> float | None:
-        if self.target_top_z is None:
-            return None
-        return float(self.target_top_z - self.margin_z)
+        return None if self.target_top_z is None else float(self.target_top_z - self.margin_z)
 
     def as_report(self) -> dict:
         return {
-            "mode": "PATIENT_6_FACE_ENVELOPE_V1",
+            "mode": "PATIENT_6_FACE_MAX_FEASIBLE_ENVELOPE_V2",
+            "semantics": "MAX_FEASIBLE_BOUNDS_NOT_TARGET_TOOTH_DIMENSIONS",
             "global_dimensions_source": "PATIENT_GEOMETRY_ONLY",
             "template_size_authoritative": False,
             "center_xy": list(self.center_xy),
@@ -137,19 +136,14 @@ def _near_direction(local, center_xy):
 
 
 def _md_axis(proximal_surfaces, frame, center_xy):
-    """Keep the confirmed PatientFrame X axis authoritative for M/D.
-
-    V5 neighbour patches contain a deliberately broad core+halo.  Inferring a new
-    global axis from that halo can rotate the entire crown toward gingiva/adjacent
-    anatomy and was the source of the long blue 'tongue' seen in CAD-1 tests.
-    Neighbour geometry owns only the +/-X bounds, never the coordinate frame.
-    """
     refs = []
     for label, surface in (proximal_surfaces or {}).items():
         local = _surface_local(surface, frame)
         direction = _near_direction(local, center_xy)
         if direction is not None:
             refs.append((str(label), direction, local))
+    # Confirmed PatientFrame owns anatomy axes.  Broad neighbour halos may own
+    # bounds, but never rotate the crown coordinate system.
     return np.array([1.0, 0.0]), refs, "CONFIRMED_PATIENT_FRAME_X"
 
 
@@ -165,28 +159,15 @@ def _clamp_side(value, sign, cfg):
 
 
 def _physical_side_sign(pu, direction, md_axis):
-    """Resolve +/-M-D from geometry, never from the clinical text label.
-
-    Auto frames are right-handed and stable, but the *name* attached to a patch
-    can be swapped by an upstream left/right interpretation.  The crown must not
-    jump to the wrong side because of that metadata.  Use the physical patch
-    position first; only use the near-patch direction as a deterministic tie-break
-    when the patch center lies almost on the frame origin.
-    """
     values = np.asarray(pu, float)
     finite = values[np.isfinite(values)]
     center_u = float(np.median(finite)) if len(finite) else 0.0
     direction_u = float(np.asarray(direction, float) @ np.asarray(md_axis, float))
     if abs(center_u) > 0.10:
-        sign = 1 if center_u > 0.0 else -1
-        source = "PATCH_POSITION"
-    elif abs(direction_u) > 1e-6:
-        sign = 1 if direction_u > 0.0 else -1
-        source = "NEAR_PATCH_DIRECTION"
-    else:
-        sign = 1
-        source = "DEGENERATE_TIE_BREAK_POSITIVE"
-    return sign, center_u, direction_u, source
+        return (1 if center_u > 0.0 else -1), center_u, direction_u, "PATCH_POSITION"
+    if abs(direction_u) > 1e-6:
+        return (1 if direction_u > 0.0 else -1), center_u, direction_u, "NEAR_PATCH_DIRECTION"
+    return 1, center_u, direction_u, "DEGENERATE_TIE_BREAK_POSITIVE"
 
 
 def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
@@ -194,12 +175,13 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
                            proximal_target_mm=0.0, antagonist_surface=None,
                            occlusal_target_mm=None,
                            config: PatientEnvelopeConfig | None = None):
-    """Build a six-direction crown cage using only patient geometry."""
+    """Build patient-owned maximum feasible bounds for a crown."""
     cfg = config or PatientEnvelopeConfig()
     margin_local = _local(margin, frame)
     margin_local = margin_local[np.isfinite(margin_local).all(axis=1)]
     if len(margin_local) < 8:
         raise ValueError("PatientEnvelope 需要有效的完整 Margin")
+
     center_xy = np.median(margin_local[:, :2], axis=0)
     margin_z = float(np.median(margin_local[:, 2]))
     md_axis, refs, axis_source = _md_axis(proximal_surfaces, frame, center_xy)
@@ -224,6 +206,8 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
             shell_v_hi = float(np.quantile(ev, .98) + thickness)
             shell_top = float(np.quantile(env[:, 2], .98) + thickness)
 
+    # Margin + emergence is the minimum sensible body envelope.  Confirmed
+    # neighbours can then replace M/D sides with the actual available space.
     u_lo = margin_u_lo - float(cfg.absent_side_emergence_mm)
     u_hi = margin_u_hi + float(cfg.absent_side_emergence_mm)
     if shell_u_lo is not None:
@@ -241,9 +225,10 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
             cutoff = float(np.quantile(radial, .35))
             near = radial <= cutoff
             if int(near.sum()) >= 10:
-                pu = pu[near]
-                pv = pv[near]
-        sign, physical_center_u, direction_u, sign_source = _physical_side_sign(pu, direction, md_axis)
+                pu, pv = pu[near], pv[near]
+        sign, physical_center_u, direction_u, sign_source = _physical_side_sign(
+            pu, direction, md_axis
+        )
         clinical_sign = 1 if label == "mesial" else -1 if label == "distal" else None
         if sign > 0:
             inner = float(np.quantile(pu, cfg.neighbor_inner_quantile))
@@ -280,6 +265,10 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
     if shell_u_hi is not None and shell_u_hi > u_hi:
         shell_conflicts.append({"side": "positive", "required_u": shell_u_hi, "patient_limit_u": u_hi})
 
+    # B/L is intentionally not inferred as a target tooth width from neighbour
+    # halos.  Margin/emergence and the inner shell establish a safe envelope;
+    # neighbouring teeth only provide a conservative prior that may enlarge that
+    # envelope.  They never globally squeeze the buccal or lingual anatomy.
     v_lo = margin_v_lo - float(cfg.bl_margin_emergence_mm)
     v_hi = margin_v_hi + float(cfg.bl_margin_emergence_mm)
     if shell_v_lo is not None:
@@ -294,22 +283,17 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
             neigh_v_hi.append(float(np.quantile(pv, cfg.neighbor_width_high_quantile)))
     neighbor_v_lo = neighbor_v_hi = None
     if neigh_v_lo:
-        neighbor_v_lo = max(
-            float(np.median(neigh_v_lo)),
-            margin_v_lo - float(cfg.neighbor_bl_extra_from_margin_mm),
-        )
+        neighbor_v_lo = max(float(np.median(neigh_v_lo)),
+                            margin_v_lo - float(cfg.neighbor_bl_extra_from_margin_mm))
         v_lo = min(v_lo, neighbor_v_lo)
     if neigh_v_hi:
-        neighbor_v_hi = min(
-            float(np.median(neigh_v_hi)),
-            margin_v_hi + float(cfg.neighbor_bl_extra_from_margin_mm),
-        )
+        neighbor_v_hi = min(float(np.median(neigh_v_hi)),
+                            margin_v_hi + float(cfg.neighbor_bl_extra_from_margin_mm))
         v_hi = max(v_hi, neighbor_v_hi)
     v_lo = _clamp_side(v_lo, -1, cfg)
     v_hi = _clamp_side(v_hi, 1, cfg)
 
-    # Material thickness is a minimum height floor, not a requested crown height.
-    # Only the antagonist may become the coronal size owner.
+    # Inner shell top is a material floor. Antagonist is the only coronal ceiling.
     target_top = shell_top
     antagonist_report = {"used": False}
     if antagonist_surface is not None and occlusal_target_mm is not None:
@@ -330,12 +314,16 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
                     target_top = shell_top
                     shell_conflicts.append({"side": "occlusal", "required_top_z": shell_top,
                                             "antagonist_limit_z": candidate})
-                antagonist_report = {"used": True, "ceiling_z": ceiling,
-                                     "target_clearance_mm": float(occlusal_target_mm),
-                                     "sample_count": int(len(zvals)),
-                                     "target_top_z": float(target_top)}
+                antagonist_report = {
+                    "used": True,
+                    "ceiling_z": ceiling,
+                    "target_clearance_mm": float(occlusal_target_mm),
+                    "sample_count": int(len(zvals)),
+                    "target_top_z": float(target_top),
+                }
 
     sources = {
+        "semantics": "MAX_FEASIBLE_BOUNDS_NOT_TARGET_TOOTH_DIMENSIONS",
         "md_axis_source": axis_source,
         "confirmed_neighbor_count": len(refs),
         "positive_neighbor": positive_found,
@@ -358,23 +346,36 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
                            None if target_top is None else float(target_top), sources)
 
 
+def _side_scale(extent, limit, floor):
+    extent = max(float(extent), 1e-8)
+    limit = max(float(limit), 1e-8)
+    if extent <= limit + 1e-6:
+        return 1.0
+    return float(max(limit / extent, float(floor)))
+
+
 def morph_embryo_to_patient_envelope(mesh, frame, margin, envelope: PatientEnvelope,
                                      *, config: PatientEnvelopeConfig | None = None):
-    """Normalise embryo metric size, then map anatomy into patient-owned bounds."""
+    """Compress only envelope violations; never expand anatomy to fill a box.
+
+    This is deliberately one-sided.  M/D contact reach is solved later against
+    real neighbour surfaces.  B/L morphology is kept from the library unless it
+    genuinely exceeds the broad patient envelope.  Antagonist height acts as a
+    ceiling, never as a requested crown height.
+    """
     cfg = config or PatientEnvelopeConfig()
     out = mesh.copy()
-    local = _local(out.vertices, frame)
+    original_world = np.asarray(out.vertices, float).copy()
+    local = _local(original_world, frame)
     center = np.asarray(envelope.center_xy, float)
     md = np.asarray(envelope.md_axis_xy, float)
     bl = np.asarray(envelope.bl_axis_xy, float)
     xy = local[:, :2] - center
     u0 = xy @ md
     v0 = xy @ bl
-    height = MarginCurtain(margin, frame.z).axial_above(out.vertices)
-    weight = _smoothstep01(height / max(float(cfg.emergence_transition_mm), 1e-6))
-    # The already established Margin is an actual immutable root, not merely a
-    # low-weight suggestion.  All broad MD/BL/height growth starts above it.
-    weight[height <= float(cfg.cervical_immutable_mm)] = 0.0
+    height = MarginCurtain(margin, frame.z).axial_above(original_world)
+    base_weight = _smoothstep01(height / max(float(cfg.emergence_transition_mm), 1e-6))
+    base_weight[height <= float(cfg.cervical_immutable_mm)] = 0.0
     body = height > max(.30, cfg.emergence_transition_mm * .30)
     if int(body.sum()) < 16:
         body = height > 0.05
@@ -385,48 +386,76 @@ def morph_embryo_to_patient_envelope(mesh, frame, margin, envelope: PatientEnvel
     u_pos = max(abs(float(np.quantile(u0[body], .98))), .25)
     v_neg = max(abs(float(np.quantile(v0[body], .02))), .25)
     v_pos = max(abs(float(np.quantile(v0[body], .98))), .25)
-    un = np.where(u0 >= 0.0, np.clip(u0 / u_pos, 0.0, 1.35), np.clip(u0 / u_neg, -1.35, 0.0))
-    vn = np.where(v0 >= 0.0, np.clip(v0 / v_pos, 0.0, 1.35), np.clip(v0 / v_neg, -1.35, 0.0))
-    target_u = np.where(un >= 0.0, un * envelope.u_max, (-un) * envelope.u_min)
-    target_v = np.where(vn >= 0.0, vn * envelope.v_max, (-vn) * envelope.v_min)
-    u = u0 + weight * (target_u - u0)
-    v = v0 + weight * (target_v - v0)
-    local[:, 0] = center[0] + u * md[0] + v * bl[0]
-    local[:, 1] = center[1] + u * md[1] + v * bl[1]
+
+    su_pos = _side_scale(u_pos, envelope.u_max, cfg.md_min_scale_per_pass)
+    su_neg = _side_scale(u_neg, -envelope.u_min, cfg.md_min_scale_per_pass)
+    sv_pos = _side_scale(v_pos, envelope.v_max, cfg.bl_min_scale_per_pass)
+    sv_neg = _side_scale(v_neg, -envelope.v_min, cfg.bl_min_scale_per_pass)
+
+    # M/D may adapt broadly, but the B/L occlusal core retains more anatomy so a
+    # narrow margin cannot turn the whole crown into a flat slab.
+    radial_u = np.abs(u0) / max(u_pos, u_neg, .25)
+    radial_v = np.abs(v0) / max(v_pos, v_neg, .25)
+    radial = np.sqrt(radial_u * radial_u + radial_v * radial_v)
+    top_h = max(float(np.quantile(np.maximum(height[body], 0.0), .98)), .25)
+    h_frac = np.clip(np.maximum(height, 0.0) / top_h, 0.0, 1.2)
+    occlusal_core = (h_frac >= .58) & (radial <= .72)
+    bl_weight = base_weight.copy()
+    bl_weight[occlusal_core] *= float(cfg.bl_core_preservation)
+
+    u_factor = np.where(u0 >= 0.0, su_pos, su_neg)
+    v_factor = np.where(v0 >= 0.0, sv_pos, sv_neg)
+    u = u0 + base_weight * (u0 * u_factor - u0)
+    v = v0 + bl_weight * (v0 * v_factor - v0)
+    local[:, :2] = center + u[:, None] * md + v[:, None] * bl
 
     z_before = local[:, 2].copy()
     top_before = float(np.quantile(z_before[body], .98))
     antagonist_used = bool((envelope.sources.get("antagonist") or {}).get("used"))
-    # A shell/intaglio top is a lower bound only.  It must never shrink a natural
-    # embryo to minimum thickness.  Metric height remapping is allowed only when
-    # the antagonist has supplied a real patient coronal ceiling.
-    if envelope.target_top_z is not None and antagonist_used:
+    height_scale = 1.0
+    if envelope.target_top_z is not None and antagonist_used and top_before > float(envelope.target_top_z) + 1e-6:
         current_h = max(top_before - envelope.margin_z, .25)
         target_h = max(float(envelope.target_top_z) - envelope.margin_z, .25)
-        zn = np.clip((z_before - envelope.margin_z) / current_h, -0.25, 1.35)
-        target_z = envelope.margin_z + zn * target_h
-        local[:, 2] = z_before + weight * (target_z - z_before)
+        height_scale = float(max(target_h / current_h, cfg.height_min_scale_per_pass))
+        positive = np.maximum(z_before - envelope.margin_z, 0.0)
+        z_weight = base_weight * _smoothstep01((h_frac - .25) / .55)
+        target_z = envelope.margin_z + positive * height_scale
+        local[:, 2] = z_before + z_weight * (target_z - z_before)
 
     out.vertices = _world(local, frame)
+    # Exact hard root lock after all broad deformation.
+    locked = height <= float(cfg.cervical_immutable_mm)
+    out.vertices[locked] = original_world[locked]
     if not np.isfinite(np.asarray(out.vertices, float)).all():
         raise ValueError("PatientEnvelope morph 产生 NaN/Inf")
+
     after = _local(out.vertices, frame)
     axy = after[:, :2] - center
-    au = axy @ md
-    av = axy @ bl
+    au, av = axy @ md, axy @ bl
     report = {
-        "mode": "NORMALISED_EMBRYO_TO_PATIENT_ENVELOPE_V3_BOUNDED_NEIGHBOR_HALO",
+        "mode": "ONE_SIDED_MAX_FEASIBLE_ENVELOPE_V4",
+        "semantics": "COMPRESS_VIOLATIONS_ONLY_NEVER_FILL_BOX",
         "template_size_authoritative": False,
         "root_lock": "HARD_CERVICAL_ROOT_PLUS_SMOOTH_EMERGENCE",
         "cervical_immutable_mm": float(cfg.cervical_immutable_mm),
         "transition_mm": float(cfg.emergence_transition_mm),
-        "height_owner": "ANTAGONIST" if antagonist_used else "UNCHANGED_EXCEPT_SEPARATE_MATERIAL_FLOOR",
-        "before": {"u_p02": float(np.quantile(u0[body], .02)), "u_p98": float(np.quantile(u0[body], .98)),
-                   "v_p02": float(np.quantile(v0[body], .02)), "v_p98": float(np.quantile(v0[body], .98)),
-                   "top_p98": top_before},
-        "after": {"u_p02": float(np.quantile(au[body], .02)), "u_p98": float(np.quantile(au[body], .98)),
-                  "v_p02": float(np.quantile(av[body], .02)), "v_p98": float(np.quantile(av[body], .98)),
-                  "top_p98": float(np.quantile(after[body, 2], .98))},
-        "max_cervical_weight": float(np.max(weight[height <= .20])) if np.any(height <= .20) else None,
+        "height_owner": "ANTAGONIST_CEILING_ONLY" if antagonist_used else "UNCHANGED_EXCEPT_MATERIAL_FLOOR",
+        "scales": {
+            "md_positive": su_pos, "md_negative": su_neg,
+            "bl_positive": sv_pos, "bl_negative": sv_neg,
+            "height": height_scale,
+        },
+        "occlusal_bl_core_vertices": int(np.sum(occlusal_core)),
+        "before": {
+            "u_p02": float(np.quantile(u0[body], .02)), "u_p98": float(np.quantile(u0[body], .98)),
+            "v_p02": float(np.quantile(v0[body], .02)), "v_p98": float(np.quantile(v0[body], .98)),
+            "top_p98": top_before,
+        },
+        "after": {
+            "u_p02": float(np.quantile(au[body], .02)), "u_p98": float(np.quantile(au[body], .98)),
+            "v_p02": float(np.quantile(av[body], .02)), "v_p98": float(np.quantile(av[body], .98)),
+            "top_p98": float(np.quantile(after[body, 2], .98)),
+        },
+        "max_cervical_weight": float(np.max(base_weight[height <= .20])) if np.any(height <= .20) else None,
     }
     return out, report
