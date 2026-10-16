@@ -3,7 +3,9 @@
 覆盖：
 1. **可行**：冠太高但区间放得下 ⇒ 轴向缩放把冠顶压进区间，且**颈缘带位移精确为 0**；
 2. **不可行**：lower > upper ⇒ 明确 ``INSUFFICIENT_OCCLUSAL_SPACE``，不返回被压坏的网格
-   （不让下游咬合求解器去削 3–6mm）。
+   （不让下游咬合求解器去削 3–6mm）；
+3. **Crown 1.0**：冠虽然已在可行区间内，但明显低于对颌安全上界时，有限增高到 upper，
+   而不是把一个“咬不到”的短冠交给后续局部咬合求解器。
 """
 import json
 
@@ -26,7 +28,7 @@ def _ring(radius, z):
 
 
 def _cone_crown(top_z=6.0, apex_z=7.0, bottom_radius=2.0, top_radius=1.2):
-    """下环 = Margin(z=0) → 上环 → 顶点：一个 7mm 高的合成冠。"""
+    """下环 = Margin(z=0) → 上环 → 顶点：一个简单合成冠。"""
     bottom, top = _ring(bottom_radius, 0.0), _ring(top_radius, top_z)
     vertices = np.vstack([bottom, top, np.array([[0.0, 0.0, apex_z]])])
     faces = []
@@ -104,6 +106,41 @@ def test_feasible_crown_is_axially_scaled_into_the_interval(tmp_path, frame):
     # 颈缘环（下环）逐点不动
     assert np.allclose(np.asarray(placed.vertices, float)[:_ring(2.0, 0.0).shape[0]],
                        np.asarray(crown.vertices, float)[:_ring(2.0, 0.0).shape[0]])
+
+
+def test_short_but_feasible_crown_grows_toward_antagonist(tmp_path, frame):
+    """冠顶只要还明显低于 upper，就不能因为“已经可行”而停在半空。"""
+    design = _design(_prep_file(tmp_path, height=4.0))
+    crown = _cone_crown(top_z=4.7, apex_z=5.2)
+    envelope = occlusal_envelope(design, _margin_curve(), AXIS, frame,
+                                 surface=_antagonist_plate(6.0), crown_mesh=crown)
+
+    assert envelope["status"] == "FEASIBLE", envelope
+    assert envelope["lower_bound_mm"] < envelope["crown_top_mm"] < envelope["upper_bound_mm"]
+    plan = plan_axial_placement(envelope, crown_top_mm=envelope["crown_top_mm"])
+    assert plan["mechanism"] == "AXIAL_SCALE", plan
+    assert 1.0 < plan["axial_scale"] <= 1.35
+
+    placed, report = apply_axial_placement(crown, _margin_curve(), AXIS, plan)
+    assert placed is not None and report["applied"] and report["gate_ok"], report
+    assert report["crown_top_after_mm"] == pytest.approx(envelope["upper_bound_mm"], abs=1e-6)
+    assert report["crown_top_after_mm"] > report["crown_top_before_mm"]
+    assert report["cervical_band_displacement_max_mm"] == 0.0
+    np.testing.assert_allclose(placed.vertices[:SEGMENTS], crown.vertices[:SEGMENTS], atol=0)
+
+
+def test_antagonist_deadband_does_not_churn_geometry():
+    envelope = {"status": "FEASIBLE", "lower_bound_mm": 5.0, "upper_bound_mm": 6.0}
+    plan = plan_axial_placement(envelope, crown_top_mm=5.95)
+    assert plan["mechanism"] == "TRANSLATE" and plan["feasible"], plan
+    assert plan["axial_scale"] == 1.0
+
+
+def test_excessive_axial_growth_is_refused():
+    envelope = {"status": "FEASIBLE", "lower_bound_mm": 4.5, "upper_bound_mm": 8.0}
+    plan = plan_axial_placement(envelope, crown_top_mm=5.0)
+    assert plan["mechanism"] == "REQUIRED_AXIAL_SCALE_OUT_OF_RANGE", plan
+    assert not plan["feasible"] and plan["axial_scale"] > 1.35
 
 
 def test_insufficient_occlusal_space_is_reported_not_carved(tmp_path, frame):
