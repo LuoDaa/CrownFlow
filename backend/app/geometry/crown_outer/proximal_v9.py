@@ -1,13 +1,13 @@
 """Final guarded one-side proximal micro adjustment for CrownFlow 1.0.
 
-V8 already solves the larger mesial/distal problem independently.  V9 is only
-for the visual last sliver: select the physical side with the larger remaining
+V8 already solves the larger mesial/distal problem independently. V9 is for the
+remaining visible sliver: select the physical side with the larger remaining
 contact error (never screen/camera "right"), freeze the opposite contact, Margin
-and occlusal owners, and give that side one tiny extra inward contact attempt.
+and occlusal owners, and give that side a small bounded final contact attempt.
 
 The trial is accepted only when it improves the original clinical target (or
 adds useful contact vertices), does not worsen the opposite side, stays inside a
-very small whole-crown move budget, and does not create excessive penetration.
+small whole-crown move budget, and does not create excessive penetration.
 """
 from __future__ import annotations
 
@@ -17,15 +17,19 @@ from . import proximal_v8 as v8
 from . import proximal_v7 as v7
 
 
-FINAL_KISS_TRIGGER_P95_MM = 0.32
-FINAL_KISS_MIN_P95_MM = 0.018
-FINAL_KISS_TARGET_BIAS_MM = 0.012
-FINAL_KISS_MAX_MOVE_MM = 0.18
-FINAL_KISS_NON_TARGET_TOL_MM = 0.006
+# Real-case tuning: the previous 0.32 mm trigger was too conservative for a
+# clearly visible last-side gap.  This remains a local contact refinement, not a
+# whole-crown M/D scale operation.
+FINAL_KISS_TRIGGER_P95_MM = 0.60
+FINAL_KISS_MIN_P95_MM = 0.010
+FINAL_KISS_TARGET_BIAS_MM = 0.006
+FINAL_KISS_MAX_MOVE_MM = 0.30
+FINAL_KISS_NON_TARGET_TOL_MM = 0.008
 FINAL_KISS_MIN_IMPROVEMENT_MM = 0.002
 FINAL_KISS_MIN_CONTACT_GAIN = 2
-FINAL_KISS_MAX_EXTRA_PENETRATION_MM = 0.08
-FINAL_KISS_TRANSITION_RINGS = 4
+FINAL_KISS_MAX_EXTRA_PENETRATION_MM = 0.07
+FINAL_KISS_TRANSITION_RINGS = 5
+FINAL_KISS_MAX_PASSES = 2
 
 
 def _p95(state):
@@ -44,14 +48,14 @@ def _state_for(report, side):
 
 def fit_proximal_envelopes_v9(mesh, frame, margin, surfaces, target, *, protected=None,
                               transition_rings=10, max_passes=None):
-    """Run V8 then one tiny geometry-driven final closure on the worse side."""
+    """Run V8 then one bounded geometry-driven final closure on the worse side."""
     kwargs = dict(protected=protected, transition_rings=transition_rings)
     if max_passes is not None:
         kwargs["max_passes"] = max_passes
     current, report, domains = v8.fit_proximal_envelopes_v8(
         mesh, frame, margin, surfaces, target, **kwargs,
     )
-    report["solver"] = "SPACE_DRIVEN_PROXIMAL_FINAL_KISS_V9"
+    report["solver"] = "SPACE_DRIVEN_PROXIMAL_FINAL_KISS_V9_1"
     report["final_kiss"] = {"status": "NOT_NEEDED"}
 
     if not surfaces:
@@ -69,12 +73,13 @@ def fit_proximal_envelopes_v9(mesh, frame, margin, surfaces, target, *, protecte
     if not candidates:
         report["final_kiss"] = {
             "status": "SKIPPED",
-            "reason": "NO_MICRO_SCALE_RESIDUAL",
+            "reason": "NO_BOUNDED_RESIDUAL_SIDE",
             "residual_p95_mm": before_p95,
+            "trigger_p95_mm": FINAL_KISS_TRIGGER_P95_MM,
         }
         return current, report, domains
 
-    # "Right" in the viewer is camera-dependent.  Always refine the physical
+    # "Right" in the viewer is camera-dependent. Always refine the physical
     # side that objectively has the larger residual to the real neighbour.
     target_side = max(candidates, key=lambda side: before_p95[side])
     micro_protected, protection_detail = v8._protect_other_contacts(
@@ -91,7 +96,7 @@ def fit_proximal_envelopes_v9(mesh, frame, margin, surfaces, target, *, protecte
         biased_target,
         protected=micro_protected,
         transition_rings=FINAL_KISS_TRANSITION_RINGS,
-        max_passes=1,
+        max_passes=FINAL_KISS_MAX_PASSES,
     )
     displacement = np.linalg.norm(np.asarray(trial.vertices, float) - reference, axis=1)
     max_move = float(displacement.max(initial=0.0))
@@ -151,6 +156,7 @@ def fit_proximal_envelopes_v9(mesh, frame, margin, surfaces, target, *, protecte
         "protected_other_contacts": protection_detail,
         "max_whole_crown_move_mm": max_move,
         "move_budget_mm": FINAL_KISS_MAX_MOVE_MM,
+        "passes_budget": FINAL_KISS_MAX_PASSES,
         "non_target_sides_nonworse": non_target_nonworse,
         "target_p95_improved": p95_improved,
         "target_contact_area_grew": contact_gain,
@@ -162,7 +168,6 @@ def fit_proximal_envelopes_v9(mesh, frame, margin, surfaces, target, *, protecte
         return current, report, domains
 
     report.setdefault("physical_after", {})[target_side] = after_states[target_side]
-    # Preserve V8/V7 diagnostics but append this pass with an explicit marker.
     report.setdefault("passes", []).extend(
         {"final_kiss": True, **p} for p in trial_report.get("passes", [])
     )
@@ -177,5 +182,5 @@ def fit_proximal_envelopes_v9(mesh, frame, margin, surfaces, target, *, protecte
 
     merged_domains = dict(domains)
     merged_domains.update(trial_domains)
-    report["solver"] = "SPACE_DRIVEN_PROXIMAL_FINAL_KISS_V9"
+    report["solver"] = "SPACE_DRIVEN_PROXIMAL_FINAL_KISS_V9_1"
     return trial, report, merged_domains
