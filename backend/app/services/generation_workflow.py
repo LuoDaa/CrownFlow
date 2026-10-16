@@ -1,8 +1,8 @@
-"""Read-only eligibility and generation candidates without replacing accepted geometry."""
+"""Read-only eligibility and deterministic generation candidates."""
 import json
 from pathlib import Path
 from fastapi import HTTPException
-from .design_dependencies import confirmed_inputs, dependency_digest, file_digest, require_current_outer
+from .design_dependencies import confirmed_inputs, dependency_digest, file_digest
 
 LATEST_AUTO_NEIGHBOR_SCOPE = 'AUTO_CAD1_CORONAL_MD_NEIGHBOR_V5'
 CAD1_DEFAULT_PROXIMAL_TARGET_MM = -0.02
@@ -13,7 +13,7 @@ def _resolved_contact_targets(params):
     """CAD-1 always has explicit usable contact defaults.
 
     Existing designs created before these fields were persisted must not silently
-    degrade to PROXIMAL_ONLY / no occlusion.  User values still win.
+    degrade to PROXIMAL_ONLY / no occlusion. User values still win.
     """
     p = params.get('proximal_target_mm')
     o = params.get('occlusal_target_mm')
@@ -123,24 +123,17 @@ def generate_candidate(d,kind):
         raise HTTPException(422,{'message':'预备体组件或边界不满足构冠要求，请检查边缘或上传独立预备体',
             'geometry':diagnostics,'repair_stage':'PREP'})
 
-    placement={}
-    if kind=='AUTO' and d.get('outer_path'):
-        require_current_outer(d)
-        baseline=Path(d['outer_path'])
-        placement={
-            'template_source':None,
-            'template_source_warning':None,
-            'frame_source':'CONFIRMED_FRAME',
-            'placement_path':'CURRENT_PATIENT_OUTER_REFINEMENT',
-        }
-    else:
-        placement,baseline=initialize_draft_outer(
-            d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
+    # One-click AUTO is an idempotent build from the same confirmed inputs.
+    # Never use a previously accepted outer as the next automatic baseline:
+    # doing so compounds proximal/occlusal deformation every time the user clicks
+    # Generate (and the former three-pass UI amplified it further). Manual edits
+    # remain revisions of the accepted outer in the sculpt workflow, not here.
+    placement,baseline=initialize_draft_outer(
+        d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
+    if kind=='AUTO':
+        placement['placement_path']='FRESH_TEMPLATE_INITIALIZATION'
 
     if kind=='AUTO':
-        # Auto-fit consumes the resolved policy values even for legacy designs
-        # whose persisted JSON predates the contact fields.  This closes the
-        # FDI46 failure where mode=BOTH was intended but occlusion received None.
         effective=dict(d)
         effective_params=json.loads(d['parameters_json'])
         effective_params.setdefault('proximal_target_mm',state['proximal_target_mm'])
