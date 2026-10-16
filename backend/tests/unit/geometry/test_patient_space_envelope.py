@@ -44,7 +44,9 @@ def _uv_extents(mesh, env, frame):
     xy = local[:, :2] - np.asarray(env.center_xy)
     u = xy @ np.asarray(env.md_axis_xy)
     v = xy @ np.asarray(env.bl_axis_xy)
-    body = local[:, 2] > 2.0
+    # Use homologous relative coronal anatomy.  An absolute Z cut would select
+    # different anatomical bands from two deliberately scaled embryos.
+    body = local[:, 2] >= np.quantile(local[:, 2], .50)
     return np.quantile(u[body], [.02, .98]), np.quantile(v[body], [.02, .98])
 
 
@@ -102,8 +104,6 @@ def test_proximal_bounds_are_owned_by_real_neighbors_and_allow_small_negative_ta
         proximal_target_mm=-.03,
     )
 
-    # Negative signed target lets the crown extend slightly farther into both
-    # contact sides; clinical labels are irrelevant to the physical bounds.
     assert envn.u_max > env0.u_max
     assert envn.u_min < env0.u_min
     assert abs((envn.u_max - env0.u_max) - .03) < .015
@@ -136,8 +136,6 @@ def test_bl_width_comes_from_margin_shell_and_neighbor_width_not_template():
         minimum_thickness_mm=.8, proximal_surfaces=surfaces,
     )
 
-    # Neighbour patches are 8.2 mm wide in BL, so patient BL is driven above the
-    # narrow margin/intaglio floor without consulting embryo dimensions.
     assert env.bl_width_mm > 7.0
     assert env.sources["neighbor_bl_prior_count"] == 2
 
