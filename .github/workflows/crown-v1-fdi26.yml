@@ -7,6 +7,8 @@ on:
       - "backend/app/geometry/scan_pair_triage.py"
       - "backend/app/services/auto_fit_templates.py"
       - "backend/app/services/axial_placement.py"
+      - "backend/app/services/sectional_generation.py"
+      - "backend/app/services/generation_workflow.py"
       - "backend/tests/integration/test_a0_draft_template_identity.py"
       - "backend/tests/integration/test_a1_placement_parity.py"
       - "backend/tests/unit/geometry/test_axial_placement.py"
