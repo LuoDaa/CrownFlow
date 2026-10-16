@@ -25,6 +25,84 @@ def _resolved_contact_targets(params):
     )
 
 
+def _latest_stage(report, *names):
+    """Return the last matching stage report without assuming stage ordering."""
+    wanted = set(names)
+    for stage in reversed((report or {}).get('stages') or []):
+        if stage.get('stage') in wanted:
+            return stage
+    return None
+
+
+def _apply_auto_candidate_safety(d, report, artifacts):
+    """Fail closed when a generated outer did not actually satisfy patient space.
+
+    AUTO candidates used to stay accept-able merely because an ``outer`` artifact
+    existed, even if the run had silently degraded to PROXIMAL_ONLY or the inner
+    shell pass had moved a large part of the mesh and ended in REVIEW_REQUIRED.
+    That is exactly the failure mode that can compound template deformation and
+    feed a self-intersecting crown into final construction.
+
+    This policy does not discard diagnostic artifacts.  It only changes the
+    candidate kind/status so the existing accept endpoint cannot treat an unsafe
+    AUTO result as an automatically acceptable crown.
+    """
+    reasons = []
+
+    if d.get('support_type') == 'abutment':
+        if report.get('mode') != 'BOTH':
+            reasons.append({
+                'code': 'ABUTMENT_AUTO_REQUIRES_PROXIMAL_AND_OCCLUSAL_SPACE',
+                'mode': report.get('mode'),
+            })
+        height = _latest_stage(report, 'OCCLUSAL_HEIGHT_PREFIT')
+        occlusion = _latest_stage(report, 'OCCLUSAL', 'OCCLUSAL_RECHECK_AFTER_SHELL')
+        if not report.get('bite_revision_id') or height is None or occlusion is None:
+            reasons.append({
+                'code': 'OCCLUSAL_STAGE_MISSING',
+                'bite_revision_id': report.get('bite_revision_id'),
+                'height_stage_present': height is not None,
+                'occlusal_stage_present': occlusion is not None,
+            })
+
+    shell_decision = _latest_stage(report, 'SHELL_REPAIR_DECISION')
+    shell_final = _latest_stage(report, 'INNER_SHELL_FINAL_AUDIT')
+    if shell_decision and shell_decision.get('major_change'):
+        shell_ok = shell_final and shell_final.get('status') == 'PASS_ENGINEERING'
+        if not shell_ok:
+            reasons.append({
+                'code': 'LARGE_SHELL_DEFORMATION_NOT_CERTIFIED',
+                'moved_vertices': shell_decision.get('moved_vertices'),
+                'moved_fraction': shell_decision.get('moved_fraction'),
+                'max_move_mm': shell_decision.get('max_move_mm'),
+                'shell_final_status': None if shell_final is None else shell_final.get('status'),
+            })
+
+    if reasons:
+        report['candidate_kind'] = 'AUTO_FIT_BLOCKED'
+        report['status'] = 'REVIEW_REQUIRED'
+        report['complete_crown_ready'] = False
+        report['automatic_accept_allowed'] = False
+        report['generation_safety'] = {
+            'status': 'BLOCKED',
+            'policy': 'PATIENT_SPACE_FAIL_CLOSED_V1',
+            'reasons': reasons,
+        }
+        report.setdefault('warnings', []).append({
+            'stage': 'GENERATION_SAFETY',
+            'reason': 'PATIENT_SPACE_CONSTRAINTS_NOT_CERTIFIED',
+            'details': reasons,
+        })
+    else:
+        report['automatic_accept_allowed'] = report.get('status') == 'PASS_ENGINEERING'
+        report['generation_safety'] = {
+            'status': 'PASS_ENGINEERING',
+            'policy': 'PATIENT_SPACE_FAIL_CLOSED_V1',
+            'reasons': [],
+        }
+    return report, artifacts
+
+
 def eligibility(d):
     from ..api.routes import asset
     from ..api.auto_fit import frame_from
@@ -156,6 +234,7 @@ def generate_candidate(d,kind):
             report['warnings'].append({'stage':'FINAL_CONSTRUCTION','reason':
                 (report.get('w3_preflight') or {}).get('reason') or 'FINAL_OR_INTAGLIO_NOT_CONSTRUCTED'})
             report['status']='REVIEW_REQUIRED'
+        report,artifacts=_apply_auto_candidate_safety(effective,report,artifacts)
     else:
         report={'type':'template_draft','candidate_kind':'TEMPLATE_ONLY_DRAFT','status':'TEMPLATE_REVIEW_REQUIRED',
             'stages':[{'stage':'TEMPLATE','status':'PLACED'},{'stage':'PROXIMAL','status':'NOT_ASSESSED'},
