@@ -2,9 +2,8 @@
 
 AUTO v1.0 is generation-first. Margin/frame/support are the only inputs that can
 prevent a run from starting. The primary route fuses a complete library crown
-(morphology/topology prior) with patient-owned M/D, B/L and occlusal distances.
-
-The older procedural patient-space embryo remains a fail-open fallback.
+(morphology/topology prior) with patient-owned maximum M/D, B/L and occlusal
+space, then refines contacts without treating those bounds as a target box.
 """
 import json
 from pathlib import Path
@@ -52,6 +51,24 @@ def _apply_auto_candidate_safety(d, report, artifacts):
     }
     report['automatic_accept_allowed'] = False
     return report, artifacts
+
+
+def _publish_inner_artifact(artifacts):
+    """Expose the best available inner geometry in every AUTO response.
+
+    W3 produces the authoritative intaglio surface.  Before/when W3 is blocked,
+    the already computed intaglio preview is still useful and must not disappear
+    from the review workspace just because final boolean construction failed.
+    """
+    if artifacts.get('intaglio_surface'):
+        artifacts['intaglio'] = str(artifacts['intaglio_surface'])
+        artifacts['intaglio_role'] = 'FINAL_INNER_SURFACE'
+    elif artifacts.get('intaglio_preview'):
+        artifacts['intaglio'] = str(artifacts['intaglio_preview'])
+        artifacts['intaglio_role'] = 'DESIGN_INNER_PREVIEW'
+    if artifacts.get('cutter'):
+        artifacts['inner_cavity_cutter'] = str(artifacts['cutter'])
+    return artifacts
 
 
 def eligibility(d):
@@ -110,7 +127,7 @@ def eligibility(d):
         'neighbors': sides, 'bite_confirmed': bite_valid,
         'proximal_target_mm': proximal_target, 'occlusal_target_mm': occlusal_target,
         'proximal_target_source': prox_source, 'occlusal_target_source': occl_source,
-        'generation_policy': 'MORPHOLOGY_DISTANCE_FAIL_OPEN_TEST_V1',
+        'generation_policy': 'MAX_FEASIBLE_ENVELOPE_MORPHOLOGY_V2',
         'release_status': 'NOT_PRODUCTION_APPROVED',
     }
 
@@ -167,12 +184,12 @@ def generate_candidate(d, kind):
             from .template_constrained_generation import build_template_constrained_seed
             baseline, seed_report = build_template_constrained_seed(effective, frame, ref, support, margin, effective_params, state)
             placement = {
-                'placement_path': 'MORPHOLOGY_PRIOR_PLUS_DISTANCE_ADAPTATION_V1',
+                'placement_path': 'MORPHOLOGY_PRIOR_IN_MAX_FEASIBLE_PATIENT_SPACE_V2',
                 'frame_source': 'CONFIRMED_FRAME',
                 'template_source': {
                     'status': 'USED_AS_MORPHOLOGY_TOPOLOGY_PRIOR',
                     'library': seed_report.get('library'),
-                    'route': 'MORPHOLOGY_PRIOR_PLUS_DISTANCE_CONSTRAINED_ADAPTATION_V1',
+                    'route': 'MORPHOLOGY_PRIOR_IN_MAX_FEASIBLE_PATIENT_SPACE_V2',
                 },
                 'template_source_warning': None,
             }
@@ -213,13 +230,14 @@ def generate_candidate(d, kind):
             artifacts = {'outer': str(baseline)}
             attempts.append({'attempt': 'SINGLE_CONSTRAINT_PASS', 'status': 'NOT_COMPLETED', 'reason': str(exc), 'outer': str(baseline), 'output_preserved': True})
 
+        artifacts = _publish_inner_artifact(artifacts)
         report.setdefault('stages', [])
         report['stages'] = [seed_report] + report['stages']
         report['generation_attempts'] = attempts
         report['candidate_kind'] = 'AUTO_FIT_CANDIDATE'
         report['baseline_source'] = 'MORPHOLOGY_DISTANCE_WATERTIGHT_SEED' if not seed_fallback else 'PATIENT_ENVELOPE_PROCEDURAL_FALLBACK'
         report['generation_route'] = (
-            'MORPHOLOGY_PRIOR_TO_PATIENT_DISTANCE_REGIONAL_DEFORMATION_TO_SINGLE_CONSTRAINT_PASS_V1'
+            'MORPHOLOGY_PRIOR_MAX_FEASIBLE_SPACE_TO_SINGLE_CONSTRAINT_PASS_V2'
             if not seed_fallback else 'PROCEDURAL_FALLBACK_TO_SINGLE_CONSTRAINT_PASS_V1'
         )
         report['template_role'] = 'MORPHOLOGY_AND_CLOSED_TOPOLOGY_PRIOR' if not seed_fallback else 'TEMPLATE_ROUTE_FAILED_FALLBACK_USED'
@@ -229,17 +247,20 @@ def generate_candidate(d, kind):
         artifacts['morphology_distance_seed' if not seed_fallback else 'space_seed'] = str(baseline)
         report['complete_crown_ready'] = bool(
             (report.get('w3_preflight') or {}).get('status') == 'CONSTRUCTED_ENGINEERING'
-            and artifacts.get('final') and artifacts.get('cutter')
+            and artifacts.get('final') and artifacts.get('intaglio_surface')
         )
+        report['inner_geometry_ready'] = bool(artifacts.get('intaglio'))
+        report['inner_geometry_role'] = artifacts.get('intaglio_role')
         report, artifacts = _apply_auto_candidate_safety(effective, report, artifacts)
 
     report.update(
         eligibility=state,
         input_diagnostics=diagnostics,
         manufacturing_status='NOT_PRODUCTION_APPROVED',
-        output_policy='ALWAYS_RETURN_LATEST_GEOMETRY_TEST_V1',
+        output_policy='ALWAYS_RETURN_LATEST_GEOMETRY_TEST_V2',
         candidate_outer_sha256=file_digest(artifacts['outer']),
-        artifact_sha256={k: file_digest(v) for k, v in artifacts.items() if isinstance(v, (str, Path)) and Path(v).is_file()},
+        artifact_sha256={k: file_digest(v) for k, v in artifacts.items()
+                         if isinstance(v, (str, Path)) and Path(v).is_file()},
     )
     report['template_source'] = placement.get('template_source') or report.get('template_source')
     report['frame_source'] = placement.get('frame_source') or report.get('frame_source')
