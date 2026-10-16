@@ -164,6 +164,31 @@ def _clamp_side(value, sign, cfg):
     return float(np.clip(value, -cfg.max_half_span_mm, -cfg.min_half_span_mm))
 
 
+def _physical_side_sign(pu, direction, md_axis):
+    """Resolve +/-M-D from geometry, never from the clinical text label.
+
+    Auto frames are right-handed and stable, but the *name* attached to a patch
+    can be swapped by an upstream left/right interpretation.  The crown must not
+    jump to the wrong side because of that metadata.  Use the physical patch
+    position first; only use the near-patch direction as a deterministic tie-break
+    when the patch center lies almost on the frame origin.
+    """
+    values = np.asarray(pu, float)
+    finite = values[np.isfinite(values)]
+    center_u = float(np.median(finite)) if len(finite) else 0.0
+    direction_u = float(np.asarray(direction, float) @ np.asarray(md_axis, float))
+    if abs(center_u) > 0.10:
+        sign = 1 if center_u > 0.0 else -1
+        source = "PATCH_POSITION"
+    elif abs(direction_u) > 1e-6:
+        sign = 1 if direction_u > 0.0 else -1
+        source = "NEAR_PATCH_DIRECTION"
+    else:
+        sign = 1
+        source = "DEGENERATE_TIE_BREAK_POSITIVE"
+    return sign, center_u, direction_u, source
+
+
 def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
                            minimum_thickness_mm=None, proximal_surfaces=None,
                            proximal_target_mm=0.0, antagonist_surface=None,
@@ -209,7 +234,7 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
     target = float(proximal_target_mm or 0.0)
     side_reports = []
     positive_found = negative_found = False
-    for label, _direction, local in refs:
+    for label, direction, local in refs:
         pu, pv = _project_uv(local, center_xy, md_axis, bl_axis)
         radial = np.sqrt(pu * pu + pv * pv)
         if len(radial) > 20:
@@ -218,12 +243,8 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
             if int(near.sum()) >= 10:
                 pu = pu[near]
                 pv = pv[near]
-        if label == "mesial":
-            sign = 1
-        elif label == "distal":
-            sign = -1
-        else:
-            sign = 1 if float(np.median(pu)) >= 0.0 else -1
+        sign, physical_center_u, direction_u, sign_source = _physical_side_sign(pu, direction, md_axis)
+        clinical_sign = 1 if label == "mesial" else -1 if label == "distal" else None
         if sign > 0:
             inner = float(np.quantile(pu, cfg.neighbor_inner_quantile))
             raw_bound = inner - target
@@ -238,10 +259,20 @@ def build_patient_envelope(*, frame, margin, inner_envelope_mesh=None,
             bound = _clamp_side(max(raw_bound, patient_cap), -1, cfg)
             u_lo = bound
             negative_found = True
-        side_reports.append({"label": label, "physical_sign": sign,
-                             "neighbor_inner_u_mm": inner, "raw_target_bound_u_mm": raw_bound,
-                             "target_bound_u_mm": bound, "margin_relative_cap_u_mm": patient_cap,
-                             "target_signed_contact_mm": target})
+        side_reports.append({
+            "label": label,
+            "clinical_expected_sign": clinical_sign,
+            "clinical_label_matches_physical_side": clinical_sign is None or clinical_sign == sign,
+            "physical_sign": sign,
+            "physical_sign_source": sign_source,
+            "physical_center_u_mm": physical_center_u,
+            "near_direction_u": direction_u,
+            "neighbor_inner_u_mm": inner,
+            "raw_target_bound_u_mm": raw_bound,
+            "target_bound_u_mm": bound,
+            "margin_relative_cap_u_mm": patient_cap,
+            "target_signed_contact_mm": target,
+        })
 
     shell_conflicts = []
     if shell_u_lo is not None and shell_u_lo < u_lo:
