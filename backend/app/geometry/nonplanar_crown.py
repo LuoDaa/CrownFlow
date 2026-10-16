@@ -7,7 +7,7 @@ from trimesh.proximity import closest_point
 from .boolean import crown_minus_cutter
 from .crown_outer.collar_body_outer import _clip_by_scalar, _boundary_loops
 from .crown_outer.patient_frame import build_patient_frame
-from .margin_seam import stitch_cervical_surfaces, margin_plane_diagnostics
+from .margin_seam import stitch_cervical_surfaces, margin_plane_diagnostics, _polyline_distances
 
 #: clean cervical ring 的弧长等距采样点数（工程默认）
 CERVICAL_RING_SAMPLES = 128
@@ -91,7 +91,6 @@ def audit_margin_on_scan(support,curve,*,expected_margin_boundary=False):
     boundary=_boundary_loops(faces)
     boundary_vertices={i for loop in boundary for i in loop}
     if expected_margin_boundary:
-        from .margin_seam import _polyline_distances
         ids=np.asarray(sorted(boundary_vertices),int)
         near=_polyline_distances(support.vertices[ids],curve)<=.05
         boundary_vertices=set(ids[~near].tolist())
@@ -127,18 +126,91 @@ def fitting_support_above_margin(support,margin,axis,*,prepared=False):
         'method':'3d_margin_curtain_above_domain_no_model_base_projection','scan_adherence':scan}
 
 
+def _cap_boundary_loop(mesh, loop):
+    """Cap one *non-cervical* derived clip loop without touching the kept loop.
+
+    The source outer/cutter are trusted closed meshes. Extra loops created by the
+    non-planar transition clip are therefore derived clip artefacts, not a new
+    clinical Margin.  We triangulate only those extra loops in their own best-fit
+    plane; the loop selected as the cervical opening remains byte-for-byte in the
+    vertex array and stays open for the prescribed Margin stitch.
+    """
+    ids=np.asarray(loop,np.int64)
+    if len(ids)<3:return mesh
+    points=np.asarray(mesh.vertices,float)[ids]
+    center=points.mean(axis=0)
+    _,_,basis=np.linalg.svd(points-center,full_matrices=False)
+    xy=(points-center)@basis[:2].T
+    import mapbox_earcut
+    try:
+        tri=mapbox_earcut.triangulate_float64(np.ascontiguousarray(xy),np.array([len(ids)],dtype=np.uint32))
+    except Exception:
+        return mesh
+    if not len(tri):return mesh
+    new_faces=np.vstack((np.asarray(mesh.faces,np.int64),ids[np.asarray(tri,np.int64).reshape(-1,3)]))
+    out=trimesh.Trimesh(np.asarray(mesh.vertices,float).copy(),new_faces,process=False)
+    trimesh.repair.fix_normals(out,multibody=True)
+    out.remove_unreferenced_vertices()
+    return out
+
+
+def _recover_single_cervical_loop(part, curtain):
+    """Keep the boundary loop geometrically belonging to the confirmed Margin.
+
+    Older code required a clipped component to already have exactly one boundary
+    loop.  Real watertight crowns can produce a second tiny loop where the curved
+    Margin curtain grazes a fold; rejecting the whole crown made 26-5 fail even
+    though its Margin adherence was ~machine precision.  Here the confirmed Margin
+    is the authority: choose the loop nearest that curve and cap only the other
+    derived openings.  If recovery cannot prove a single remaining loop, fail.
+    """
+    loops=_boundary_loops(np.asarray(part.faces,np.int64))
+    if not loops:return None,{'status':'NO_BOUNDARY_LOOP'}
+    scored=[]
+    for loop in loops:
+        pts=np.asarray(part.vertices,float)[np.asarray(loop,np.int64)]
+        distance=_polyline_distances(pts,curtain.points)
+        scored.append((float(np.median(distance)),float(np.quantile(distance,.95)),len(loop),loop))
+    scored.sort(key=lambda item:(item[0],item[1],-item[2]))
+    keep=scored[0][3]
+    recovered=part.copy()
+    capped=0
+    for _median,_p95,_count,loop in scored[1:]:
+        candidate=_cap_boundary_loop(recovered,loop)
+        if len(_boundary_loops(np.asarray(candidate.faces,np.int64))) < len(_boundary_loops(np.asarray(recovered.faces,np.int64))):
+            recovered=candidate;capped+=1
+    remaining=_boundary_loops(np.asarray(recovered.faces,np.int64))
+    if len(remaining)!=1:
+        return None,{'status':'RECOVERY_FAILED','input_loop_count':len(loops),'remaining_loop_count':len(remaining),
+            'selected_margin_distance_median_mm':scored[0][0],'selected_margin_distance_p95_mm':scored[0][1],
+            'capped_extra_loops':capped}
+    return recovered,{'status':'RECOVERED' if len(loops)>1 else 'UNCHANGED','input_loop_count':len(loops),
+        'remaining_loop_count':1,'selected_margin_distance_median_mm':scored[0][0],
+        'selected_margin_distance_p95_mm':scored[0][1],'capped_extra_loops':capped}
+
+
 def _single_open_surface_above_margin(source, curtain, transition_mm, role, *, invert=False):
     """Extract one open cervical surface directly from a trusted source mesh."""
     values=-curtain.axial_above(source.vertices)
     vertices,faces,_=_clip_by_scalar(source.vertices,source.faces,values,level=-float(transition_mm))
     clipped=trimesh.Trimesh(vertices,faces,process=False)
     clipped.remove_unreferenced_vertices()
-    parts=list(clipped.split(only_watertight=False))
-    eligible=[p for p in parts if len(p.faces)>=3 and len(_boundary_loops(p.faces))==1]
-    if not eligible:
-        raise MarginBuildError(f'{role} 在 Margin 过渡面以上不能提取单一开放颈环面')
-    chosen=max(eligible,key=lambda p: float(p.area))
-    discarded_area=float(sum(float(p.area) for p in parts if p is not chosen))
+    parts=[p for p in clipped.split(only_watertight=False) if len(p.faces)>=3]
+    candidates=[]
+    for part in parts:
+        loops=_boundary_loops(np.asarray(part.faces,np.int64))
+        if not loops:continue
+        score=min(float(np.median(_polyline_distances(np.asarray(part.vertices)[np.asarray(loop,np.int64)],curtain.points))) for loop in loops)
+        candidates.append((score,-float(part.area),part))
+    if not candidates:
+        raise MarginBuildError(f'{role} 在 Margin 过渡面以上没有可追踪的颈环面')
+    candidates.sort(key=lambda item:(item[0],item[1]))
+    chosen=candidates[0][2]
+    recovered,recovery=_recover_single_cervical_loop(chosen,curtain)
+    if recovered is None:
+        raise MarginBuildError(f'{role} 在 Margin 过渡面以上不能恢复唯一颈环面: {recovery}')
+    chosen=recovered
+    discarded_area=float(sum(float(p.area) for p in parts if p is not candidates[0][2]))
     chosen.remove_unreferenced_vertices()
     if invert:
         chosen.invert()
@@ -147,11 +219,13 @@ def _single_open_surface_above_margin(source, curtain, transition_mm, role, *, i
         'source_faces':int(len(source.faces)),
         'clipped_faces':int(len(clipped.faces)),
         'component_count':int(len(parts)),
-        'eligible_single_loop_components':int(len(eligible)),
+        'eligible_single_loop_components':int(sum(len(_boundary_loops(p.faces))==1 for p in parts)),
         'selected_faces':int(len(chosen.faces)),
         'selected_area_mm2':float(chosen.area),
         'discarded_component_area_mm2':discarded_area,
         'boundary_loop_count':int(len(_boundary_loops(chosen.faces))),
+        'ring_recovery':recovery,
+        'selection':'NEAREST_CONFIRMED_MARGIN_LOOP_THEN_AREA',
         'inverted_for_material_orientation':bool(invert),
     }
 
@@ -161,13 +235,13 @@ def _separate_cervical_source_surfaces(outside, inside, curtain, transition_mm,
                                        iterations=4):
     """Move only the *outer* cervical source skin outward when it crosses intaglio.
 
-    DIRECT_SOURCE_CLIP keeps the intaglio authoritative because it comes from the
-    prepared-abutment blockout + cement-gap field.  Real IOS meshes can leave the
-    source outer skin only ~0.01 mm from that intaglio in the cervical offset band;
-    the two skins then intersect hundreds of times before the stitch strip is even
-    built.  This stage establishes a small engineering separation by moving the
-    external cervical skin radially outward.  It never changes the confirmed
-    Margin curve or the intaglio fit surface and fades out coronally.
+    The intaglio remains authoritative because it comes from the prepared-abutment
+    blockout + cement-gap field.  Real IOS meshes can leave the source outer skin
+    only ~0.01 mm from that intaglio in the cervical offset band; the two skins then
+    intersect hundreds of times before the stitch strip is even built.  This stage
+    establishes a small engineering separation by moving the external cervical
+    skin radially outward.  It never changes the confirmed Margin curve or the
+    intaglio fit surface and fades out coronally.
     """
     result=outside.copy()
     total_moved=set();max_move=0.0;passes=[]
@@ -287,12 +361,16 @@ def build_nonplanar_crown(outer,cutter,support,margin,axis,*,transition_mm,prepa
         inside,inner_extract=_single_open_surface_above_margin(cutter,curtain,transition_mm,'INTAGLIO',invert=True)
         surface_extraction.update(method='DIRECT_SOURCE_CLIP',fallback_used=True,outer=outer_extract,intaglio=inner_extract)
 
-    if surface_extraction.get('fallback_used'):
-        outside,separation=_separate_cervical_source_surfaces(
-            outside,inside,curtain,float(transition_mm),
-            min_clearance_mm=0.18,band_mm=max(2.0,float(transition_mm)*2.0),iterations=4,
-        )
-        surface_extraction['cervical_separation']=separation
+    # Always separate the cervical source skins before stitching.  This is not a
+    # fallback/QC relaxation: the intaglio and confirmed Margin remain unchanged,
+    # while only the external skin in the transition band may move outward.  The
+    # old fallback-only guard left BOOLEAN_SPLIT cases free to enter stitch with
+    # source-surface crossings (26-4: hundreds/thousands of pairs).
+    outside,separation=_separate_cervical_source_surfaces(
+        outside,inside,curtain,float(transition_mm),
+        min_clearance_mm=0.20,band_mm=max(2.0,float(transition_mm)*2.0),iterations=5,
+    )
+    surface_extraction['cervical_separation']=separation
 
     record_topology('05_split_outside',outside)
     record_topology('06_split_inside',inside)
@@ -309,7 +387,7 @@ def build_nonplanar_crown(outer,cutter,support,margin,axis,*,transition_mm,prepa
         outside,border=build_crown_border(outside,curtain.points,axis,parameters,float(transition_mm))
     from .cervical_cleanup import mesh_diagnostics
     cervical_ring_report={'status':'DIAGNOSTIC_ONLY_GEOMETRY_UNCHANGED',
-        'reason':'bulk weld breaks watertight; coarse ring+collar regresses (5 -> 113 self-intersections, 98 degenerate faces)',
+        'reason':'bulk weld breaks watertight; canonical loop recovery + outer-only separation is used instead',
         'outer_before':mesh_diagnostics(outside,curtain.points),
         'inner_before':mesh_diagnostics(inside,curtain.points),
         'scope':'CROWN_CERVICAL_REGION_ONLY','margin_curve_untouched':True}
