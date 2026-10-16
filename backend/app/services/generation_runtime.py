@@ -1,7 +1,7 @@
 """Runtime audit + reuse cache for CAD-1 automatic crown generation.
 
 Every expensive stage is durably timed and invariant patient geometry is cached
-by content-derived keys.  Runtime/candidate revision ids never belong in a
+by content-derived keys. Runtime/candidate revision ids never belong in a
 geometry cache key.
 """
 from __future__ import annotations
@@ -51,8 +51,8 @@ def _stable_support_fingerprint(prepared_support):
 
     ``PreparedSurfaceContract.as_report`` includes design/source revision ids that
     legitimately change after each accepted outer candidate even though the
-    conditioned abutment mesh does not.  FDI46 exposed this as three guaranteed
-    cache misses.  Only conditioned geometry + extraction algorithm/selection own
+    conditioned abutment mesh does not. FDI46 exposed this as three guaranteed
+    cache misses. Only conditioned geometry + extraction algorithm/selection own
     the actual intaglio preview.
     """
     if not isinstance(prepared_support, dict):
@@ -80,7 +80,11 @@ def intaglio_cache_payload(*, support_sha256, margin, axis, parameters, prepared
         "border_vertical_mm", "tool_radius_mm", "tool_compensation_enabled",
     )
     return {
-        "version": "intaglio-preview-cache/v2-stable-geometry-owner",
+        # v3 changes the cached mesh from the Boolean cutter body to the real
+        # fitting surface clipped by the confirmed non-planar Margin. Bumping the
+        # key is required so existing case caches cannot keep rendering the old
+        # below-Margin artificial closure.
+        "version": "intaglio-preview-cache/v3-margin-clipped-fitting-surface",
         "support_sha256": support_sha256,
         "margin": _rounded_geometry(margin),
         "axis": _rounded_geometry(axis),
