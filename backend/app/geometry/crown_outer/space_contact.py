@@ -13,7 +13,8 @@ The solver therefore has two deliberately separate scales:
 The confirmed PatientFrame remains authoritative: X is mesial/distal, Y is
 buccal/lingual and Z is insertion/occlusal. Automatic V5 neighbour patches may
 contain a broad halo for robust queries, but that halo is never allowed to rotate
-or unboundedly stretch the crown.
+or unboundedly stretch the crown. Clinical side labels are audit metadata only;
+the actual +/-X side is derived from the patch geometry.
 """
 from __future__ import annotations
 
@@ -72,8 +73,7 @@ def _smoothstep01(value):
 def _neighbors(mesh):
     adj = [set() for _ in mesh.vertices]
     for a, b in np.asarray(mesh.edges_unique, int):
-        adj[int(a)].add(int(b))
-        adj[int(b)].add(int(a))
+        adj[int(a)].add(int(b));adj[int(b)].add(int(a))
     return adj
 
 
@@ -98,12 +98,15 @@ def _margin_center(margin, frame):
 
 
 def _physical_reference(surface, frame, center_xy, side=None):
-    """Return a bounded crown-growth direction and the nearest neighbour face.
+    """Return a bounded physical crown-growth direction and neighbour face.
 
     The raw patch direction remains useful as a local cue, but V5 reference halos
-    can be strongly oblique.  For named clinical sides we constrain that cue to a
-    small cone around confirmed PatientFrame +/-X so a halo can never turn a
-    proximal fit into a long buccal/gingival tongue.
+    can be strongly oblique. The old implementation trusted the strings
+    ``mesial``/``distal`` to decide +/-X; if those labels were swapped upstream it
+    deliberately grew the crown toward the wrong tooth. Here the patch's actual
+    PatientFrame position determines its side. The clinical label is retained only
+    in diagnostics. The direction is then constrained to a small cone around that
+    physical +/-X side, preventing a broad halo from becoming a buccal tongue.
     """
     local = _to_local(surface.mesh.vertices, frame)
     local = local[np.isfinite(local).all(axis=1)]
@@ -122,23 +125,31 @@ def _physical_reference(surface, frame, center_xy, side=None):
     if norm < 1e-8:
         return None
     raw /= norm
+
+    near_u = float(np.median(near[:, 0]))
+    patch_u = float(np.median(radial[:, 0]))
+    if abs(near_u) > 0.10:
+        physical_sign = 1 if near_u > 0.0 else -1
+        sign_source = "NEAREST_PATCH_POSITION"
+    elif abs(patch_u) > 0.10:
+        physical_sign = 1 if patch_u > 0.0 else -1
+        sign_source = "PATCH_POSITION"
+    else:
+        physical_sign = 1 if float(raw[0]) >= 0.0 else -1
+        sign_source = "RAW_DIRECTION_TIE_BREAK"
+    expected = np.array([float(physical_sign), 0.0])
+
     direction = raw.copy()
-    expected = None
-    if side == "mesial":
-        expected = np.array([1.0, 0.0])
-    elif side == "distal":
-        expected = np.array([-1.0, 0.0])
-    if expected is not None:
-        parallel = float(direction @ expected)
-        if parallel <= 1e-6:
-            direction = expected.copy()
-        else:
-            perpendicular = direction - parallel * expected
-            pn = float(np.linalg.norm(perpendicular))
-            angle = float(np.arctan2(pn, parallel))
-            max_angle = float(np.deg2rad(MAX_REFERENCE_ANGLE_DEG))
-            if pn > 1e-8 and angle > max_angle:
-                direction = np.cos(max_angle) * expected + np.sin(max_angle) * (perpendicular / pn)
+    parallel = float(direction @ expected)
+    if parallel <= 1e-6:
+        direction = expected.copy()
+    else:
+        perpendicular = direction - parallel * expected
+        pn = float(np.linalg.norm(perpendicular))
+        angle = float(np.arctan2(pn, parallel))
+        max_angle = float(np.deg2rad(MAX_REFERENCE_ANGLE_DEG))
+        if pn > 1e-8 and angle > max_angle:
+            direction = np.cos(max_angle) * expected + np.sin(max_angle) * (perpendicular / pn)
     direction /= max(float(np.linalg.norm(direction)), 1e-12)
     world = _to_world_vector(np.r_[direction, 0.0][None, :], frame)[0]
     world /= max(float(np.linalg.norm(world)), 1e-12)
@@ -147,6 +158,7 @@ def _physical_reference(surface, frame, center_xy, side=None):
     if len(positive) < 8:
         positive = projection
     reference_angle = float(np.degrees(np.arccos(np.clip(float(raw @ direction), -1.0, 1.0))))
+    clinical_sign = 1 if side == "mesial" else -1 if side == "distal" else None
     return {
         "direction_local_xy": direction,
         "raw_direction_local_xy": raw,
@@ -155,6 +167,13 @@ def _physical_reference(surface, frame, center_xy, side=None):
         "patch_nearest_radius_mm": float(np.quantile(radius, 0.02)),
         "patch_median_radius_mm": float(np.median(radius)),
         "reference_direction_clamp_deg": reference_angle,
+        "physical_sign": int(physical_sign),
+        "physical_sign_source": sign_source,
+        "physical_near_u_mm": near_u,
+        "physical_patch_u_mm": patch_u,
+        "clinical_label": side,
+        "clinical_expected_sign": clinical_sign,
+        "clinical_label_matches_physical_side": clinical_sign is None or clinical_sign == physical_sign,
     }
 
 
@@ -353,7 +372,10 @@ def build_proximal_domains(mesh, frame, margin, surfaces, *, protected=None, zon
         ids = np.flatnonzero(side_candidate)
         diag = {
             "clinical_label": label,
-            "selection": "PATIENT_FRAME_BOUNDED_BROAD_SIDE_DOMAIN",
+            "clinical_label_matches_physical_side": bool(ref.get("clinical_label_matches_physical_side", True)),
+            "physical_sign": int(ref.get("physical_sign", 0)),
+            "physical_sign_source": ref.get("physical_sign_source"),
+            "selection": "PATIENT_FRAME_BOUNDED_BROAD_SIDE_DOMAIN_PHYSICAL_SIDE_V6",
             "direction_world": ref["direction_world"].tolist(),
             "raw_direction_local_xy": ref["raw_direction_local_xy"].tolist(),
             "reference_direction_clamp_deg": float(ref["reference_direction_clamp_deg"]),
@@ -544,7 +566,7 @@ def fit_proximal_envelopes(mesh, frame, margin, surfaces, target, *, protected=N
         "large_scale_reach": reach_report, "passes": [], "trials": [],
         "zone_model": ZONE_MODEL_VERSION, "domain_quality": domain_quality,
         "locked_vertex_count": int(locked.sum()), "transition_rings": int(transition_rings),
-        "solver": "SPACE_DRIVEN_PROXIMAL_BOUNDED_FRAME_V5", "target_mm": float(target),
+        "solver": "SPACE_DRIVEN_PROXIMAL_BOUNDED_FRAME_V6_PHYSICAL_SIDE", "target_mm": float(target),
         "axial_policy": "PROXIMAL_SOLVER_PRESERVES_PATIENT_FRAME_Z",
     }
     for side in surfaces:
