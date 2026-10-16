@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from app.geometry.io import save_mesh
+from app.geometry.io import load_mesh,save_mesh
 from app.geometry.crown_outer.patient_frame import confirmed_patient_frame
 from app.services.sculpt_final_sync import sync_complete_final
 
@@ -33,6 +33,10 @@ def test_step5_outer_edit_keeps_complete_final_watertight_and_intaglio_unchanged
     outer_path=tmp_path/'outer_surface.stl';inner_path=tmp_path/'intaglio_surface.stl'
     save_mesh(final,final_path);save_mesh(intaglio,cutter_path)
     save_mesh(outer_surface,outer_path);save_mesh(intaglio,inner_path)
+    # The production helper reads the persisted STL.  STL round-trip may reorder
+    # vertices/faces, so topology preservation must be compared against that exact
+    # persisted baseline rather than the pre-export trimesh indexing.
+    persisted_final=load_mesh(final_path)
     cutter_before=cutter_path.read_bytes()
     design={
         'final_path':str(final_path),'cutter_path':str(cutter_path),
@@ -48,11 +52,12 @@ def test_step5_outer_edit_keeps_complete_final_watertight_and_intaglio_unchanged
     assert report['intaglio_unchanged'] is True
     assert report['cervical_stitch_topology_unchanged'] is True
     assert synced.is_watertight and synced.is_winding_consistent
-    assert np.array_equal(np.asarray(synced.faces),np.asarray(final.faces))
+    assert np.array_equal(np.asarray(synced.faces),np.asarray(persisted_final.faces))
     assert cutter_path.read_bytes()==cutter_before
     assert report['edited_final_vertices']>0
     # Cervical band is immutable; the outer displacement only propagates above it.
-    low=np.asarray(final.vertices)[:,2]<=-1.5
-    assert np.allclose(np.asarray(synced.vertices)[low],np.asarray(final.vertices)[low],atol=1e-10)
-    assert np.max(np.linalg.norm(np.asarray(synced.vertices)-np.asarray(final.vertices),axis=1))<=0.081
+    baseline=np.asarray(persisted_final.vertices,float)
+    low=baseline[:,2]<=-1.5
+    assert np.allclose(np.asarray(synced.vertices)[low],baseline[low],atol=1e-10)
+    assert np.max(np.linalg.norm(np.asarray(synced.vertices)-baseline,axis=1))<=0.081
     assert np.isfinite(np.asarray(updated_outer.vertices)).all()
