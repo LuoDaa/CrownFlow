@@ -95,9 +95,15 @@ def test_antagonist_height_solver_corrects_large_global_penetration():
     )
     height = report["height"]
     assert height["applied"] is True, height
-    assert height["mode"] == "ONE_SIDED_AXIAL_CLOSED_LOOP_ANTAGONIST_HEIGHT_V3", height
+    assert height["mode"] == "CURVED_COLUMN_PLUS_GLOBAL_PENETRATION_GUARD_V5", height
+    assert height["global_penetration_guard_used"] is True, height
     assert height["envelope"]["method"] == "AXIAL_FIRST_HIT_FROM_CERVICAL_SIDE", height
     assert height["final"]["penetration_p95_mm"] <= 0.02 + 1e-9, height
+    # Occlusion owns only patient-frame Z; the already-solved horizontal crown
+    # envelope must remain untouched.
+    assert np.allclose(result.vertices[:, :2], crown.vertices[:, :2], atol=1e-10), height
+    root = np.asarray(crown.vertices)[:, 2] <= 0.45
+    assert np.allclose(np.asarray(result.vertices)[root], np.asarray(crown.vertices)[root], atol=1e-8), height
     assert np.max(result.vertices[:, 2]) < np.max(crown.vertices[:, 2]), height
 
 
