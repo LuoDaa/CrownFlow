@@ -17,17 +17,18 @@ from . import proximal_v8 as v8
 from . import proximal_v7 as v7
 
 
-# Real-case tuning: the previous 0.32 mm trigger was too conservative for a
-# clearly visible last-side gap.  This remains a local contact refinement, not a
-# whole-crown M/D scale operation.
-FINAL_KISS_TRIGGER_P95_MM = 0.60
-FINAL_KISS_MIN_P95_MM = 0.010
-FINAL_KISS_TARGET_BIAS_MM = 0.006
-FINAL_KISS_MAX_MOVE_MM = 0.30
+# Real-case tuning: keep the independent-side ownership, but allow the visibly
+# open side to close a little more even when the user already requested a
+# negative contact target.  The extra bias is tiny and still guarded by the
+# opposite-side non-worsening, penetration and whole-crown displacement checks.
+FINAL_KISS_TRIGGER_P95_MM = 0.70
+FINAL_KISS_MIN_P95_MM = 0.008
+FINAL_KISS_TARGET_BIAS_MM = 0.012
+FINAL_KISS_MAX_MOVE_MM = 0.32
 FINAL_KISS_NON_TARGET_TOL_MM = 0.008
 FINAL_KISS_MIN_IMPROVEMENT_MM = 0.002
 FINAL_KISS_MIN_CONTACT_GAIN = 2
-FINAL_KISS_MAX_EXTRA_PENETRATION_MM = 0.07
+FINAL_KISS_MAX_EXTRA_PENETRATION_MM = 0.08
 FINAL_KISS_TRANSITION_RINGS = 5
 FINAL_KISS_MAX_PASSES = 2
 
@@ -55,7 +56,7 @@ def fit_proximal_envelopes_v9(mesh, frame, margin, surfaces, target, *, protecte
     current, report, domains = v8.fit_proximal_envelopes_v8(
         mesh, frame, margin, surfaces, target, **kwargs,
     )
-    report["solver"] = "SPACE_DRIVEN_PROXIMAL_FINAL_KISS_V9_1"
+    report["solver"] = "SPACE_DRIVEN_PROXIMAL_FINAL_KISS_V9_2"
     report["final_kiss"] = {"status": "NOT_NEEDED"}
 
     if not surfaces:
@@ -79,8 +80,6 @@ def fit_proximal_envelopes_v9(mesh, frame, margin, surfaces, target, *, protecte
         }
         return current, report, domains
 
-    # "Right" in the viewer is camera-dependent. Always refine the physical
-    # side that objectively has the larger residual to the real neighbour.
     target_side = max(candidates, key=lambda side: before_p95[side])
     micro_protected, protection_detail = v8._protect_other_contacts(
         current, domains, surfaces, float(target), margin, target_side, protected,
@@ -182,5 +181,5 @@ def fit_proximal_envelopes_v9(mesh, frame, margin, surfaces, target, *, protecte
 
     merged_domains = dict(domains)
     merged_domains.update(trial_domains)
-    report["solver"] = "SPACE_DRIVEN_PROXIMAL_FINAL_KISS_V9_1"
+    report["solver"] = "SPACE_DRIVEN_PROXIMAL_FINAL_KISS_V9_2"
     return trial, report, merged_domains
