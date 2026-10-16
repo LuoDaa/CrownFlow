@@ -33,10 +33,26 @@ function primaryOf(wf, step, fastAbutment) {
       return { label: wf.hasOuter ? "下一步：牙冠设计" : "请先自动生成并采纳牙冠", disabled: !wf.hasOuter,
         run: () => wf.go(S.DESIGN) };
     case S.DESIGN:
-      return { label: "下一步：检查 / 导出", disabled: !wf.hasOuter, run: () => wf.go(S.REVIEW) };
+      return {
+        label: "下一步：检查 / 导出",
+        disabled: !wf.hasOuter,
+        run: async () => {
+          // 一键生成进入微调前已经有 intaglio + cervical stitch + final。
+          // 若用户在 Step 5 改了外表面，服务端会把旧 final 标为 stale；这里在离开
+          // 微调页时只做一次内部同步，不再暴露“生成内冠/缝合”的第二流程。
+          if (!wf.hasFinal) {
+            const result = await wf.finalize(true);
+            if (result === false) return;
+          }
+          wf.setStep(S.REVIEW);
+        },
+      };
     case S.REVIEW:
-      return { label: wf.hasFinal ? "导出 Final Crown STL" : "生成内冠与 QC", disabled: false,
-        run: () => (wf.hasFinal ? window.open(`/api/designs/${wf.design.id}/final.stl`, "_blank") : wf.finalize(false)) };
+      return {
+        label: "导出 Final Crown STL",
+        disabled: !wf.hasFinal,
+        run: () => wf.hasFinal && window.open(`/api/designs/${wf.design.id}/final.stl`, "_blank"),
+      };
     default:
       return null;
   }
