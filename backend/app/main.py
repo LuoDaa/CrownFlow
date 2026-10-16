@@ -9,6 +9,7 @@ from .api.crown import router as crown_router
 from .api.importers import router as importers_router
 from .api.margin import router as margin_router
 from .api.routes import router
+from .api.relocation import router as relocation_router
 from .api.designer import router as designer_router
 from .api.design_inputs import router as inputs_router
 from .api.auto_fit import router as auto_fit_router
@@ -35,6 +36,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+# CAD-1 工程测试允许同病例/同扫描重复定位。该 router 必须先于 designer_router，
+# 以保持原 URL 不变同时去掉旧的"已有 Margin/后续设计就禁止重定位"门禁。
+app.include_router(relocation_router)
 app.include_router(designer_router)
 app.include_router(inputs_router)
 app.include_router(auto_fit_router)
