@@ -10,7 +10,11 @@ import numpy as np
 from ..config import CASE_DIR
 from ..geometry.io import load_mesh, save_mesh
 from ..geometry.crown_outer.auto_fit_adapter import FitSurface
-from ..geometry.crown_outer.patient_envelope import PatientEnvelopeConfig, build_patient_envelope
+from ..geometry.crown_outer.patient_envelope import (
+    PatientEnvelope,
+    PatientEnvelopeConfig,
+    build_patient_envelope,
+)
 from ..geometry.crown_outer.procedural_embryo import build_procedural_crown_embryo
 from ..geometry.crown_outer.anatomy_refinement import refine_crown_anatomy
 from .design_dependencies import file_digest
@@ -55,8 +59,55 @@ def _confirmed_antagonist_surface(d, frame, frame_ref):
     return FitSurface(mesh, (-np.asarray(frame.z, float)).tolist())
 
 
+def _margin_fallback_envelope(frame, margin, reason):
+    """Conservative seed envelope used only when full patient-envelope build fails.
+
+    This keeps v1.0 test runs inspectable.  It is deliberately marked review-only
+    and never claims neighbor/antagonist constraints were solved.
+    """
+    origin = np.asarray(frame.origin, float)
+    matrix = np.asarray(frame.matrix(), float)
+    local = (np.asarray(margin, float) - origin) @ matrix
+    finite = local[np.isfinite(local).all(axis=1)]
+    if len(finite) < 8:
+        raise ValueError('Margin fallback 也无法建立：有效点不足')
+    center = np.median(finite[:, :2], axis=0)
+    x = finite[:, 0] - center[0]
+    y = finite[:, 1] - center[1]
+    pad_x = 1.8
+    pad_y = 1.6
+    u_min = float(np.quantile(x, .02) - pad_x)
+    u_max = float(np.quantile(x, .98) + pad_x)
+    v_min = float(np.quantile(y, .02) - pad_y)
+    v_max = float(np.quantile(y, .98) + pad_y)
+    margin_z = float(np.median(finite[:, 2]))
+    return PatientEnvelope(
+        center_xy=(float(center[0]), float(center[1])),
+        md_axis_xy=(1.0, 0.0),
+        bl_axis_xy=(0.0, 1.0),
+        u_min=u_min,
+        u_max=u_max,
+        v_min=v_min,
+        v_max=v_max,
+        margin_z=margin_z,
+        target_top_z=None,
+        sources={
+            'fallback': True,
+            'fallback_mode': 'MARGIN_ONLY_CONSERVATIVE_ENVELOPE',
+            'fallback_reason': str(reason),
+            'antagonist': {'used': False},
+            'constraint_conflicts': [],
+        },
+    )
+
+
 def build_space_driven_seed(d, frame, frame_ref, support, margin, parameters, state):
-    """Build PatientEnvelope first, then generate a template-free embryo."""
+    """Build PatientEnvelope first, then generate a template-free embryo.
+
+    In v1.0 test mode, failure to assemble the complete six-direction envelope
+    falls back to a conservative Margin-only envelope so the run still produces
+    geometry and a reviewable report.
+    """
     neighbors = _confirmed_neighbor_surfaces(d, frame_ref)
     antagonist = _confirmed_antagonist_surface(d, frame, frame_ref)
 
@@ -75,17 +126,23 @@ def build_space_driven_seed(d, frame, frame_ref, support, margin, parameters, st
     if thickness is not None and np.isfinite(thickness) and thickness > 0:
         shell_required = thickness + max(cement, 0.0)
 
-    envelope = build_patient_envelope(
-        frame=frame,
-        margin=np.asarray(margin, float),
-        inner_envelope_mesh=support,
-        minimum_thickness_mm=shell_required,
-        proximal_surfaces=neighbors,
-        proximal_target_mm=float(state['proximal_target_mm']),
-        antagonist_surface=antagonist,
-        occlusal_target_mm=float(state['occlusal_target_mm']) if antagonist is not None else None,
-        config=PatientEnvelopeConfig(),
-    )
+    fallback_reason = None
+    try:
+        envelope = build_patient_envelope(
+            frame=frame,
+            margin=np.asarray(margin, float),
+            inner_envelope_mesh=support,
+            minimum_thickness_mm=shell_required,
+            proximal_surfaces=neighbors,
+            proximal_target_mm=float(state['proximal_target_mm']),
+            antagonist_surface=antagonist,
+            occlusal_target_mm=float(state['occlusal_target_mm']) if antagonist is not None else None,
+            config=PatientEnvelopeConfig(),
+        )
+    except Exception as exc:
+        fallback_reason = str(exc)
+        envelope = _margin_fallback_envelope(frame, margin, exc)
+
     mesh, seed_report = build_procedural_crown_embryo(
         frame, np.asarray(margin, float), envelope, fdi=int(d['target_fdi'])
     )
@@ -94,7 +151,11 @@ def build_space_driven_seed(d, frame, frame_ref, support, margin, parameters, st
     seed_report['artifact'] = str(path)
     seed_report['sha256'] = file_digest(path)
     seed_report['neighbor_surface_count'] = int(len(neighbors))
-    seed_report['antagonist_used'] = bool(antagonist is not None)
+    seed_report['antagonist_used'] = bool(antagonist is not None and fallback_reason is None)
+    seed_report['envelope_status'] = 'FALLBACK_MARGIN_ENVELOPE' if fallback_reason else 'PATIENT_ENVELOPE'
+    if fallback_reason:
+        seed_report['status'] = 'REVIEW_REQUIRED'
+        seed_report['fallback_reason'] = fallback_reason
     return path, seed_report
 
 
