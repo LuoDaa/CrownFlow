@@ -20,6 +20,7 @@ from .api.design_inputs import router as inputs_router
 from .api.complete_generation import router as complete_generation_router
 from .api.auto_fit import router as auto_fit_router
 from .api.abutment_fast import router as abutment_fast_router
+from .api.inner_preview import router as inner_preview_router
 from .db import init_db
 
 
@@ -45,6 +46,7 @@ app.add_middleware(
 # It must be registered before the legacy routes with the same paths so an
 # already-generated intaglio/final is never discarded or rebuilt a second time.
 app.include_router(complete_generation_router)
+app.include_router(inner_preview_router)
 app.include_router(router)
 # CAD-1 工程测试允许同病例/同扫描重复定位。该 router 必须先于 designer_router，
 # 以保持原 URL 不变同时去掉旧的"已有 Margin/后续设计就禁止重定位"门禁。
