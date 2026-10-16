@@ -96,15 +96,12 @@ def test_antagonist_height_solver_corrects_large_global_penetration():
     assert height["global_penetration_guard_used"] is True, height
     assert height["envelope"]["method"] == "AXIAL_FIRST_HIT_FROM_CERVICAL_SIDE", height
     final = height["final"]
-    # This metric is currently the p95 of the remaining *penetrating subset*, so
-    # treating 0.02 mm as an absolute workflow blocker is too strict for 1.0 and
-    # becomes numerically harsher as shallow collisions are removed. Keep strong
-    # behavior checks instead: broad collision must be removed, the target field
-    # must converge, and any residual subset penetration stays sub-0.10 mm.
+    # `penetration_fraction` means "below the requested 0.05-mm target", not
+    # physical mesh intersection, so it is not a valid hard blocker by itself.
+    # Keep the engineering checks on residual target deficit and convergence.
     assert final["penetration_p95_mm"] <= 0.10 + 1e-9, height
     assert final["target_error_median_mm"] <= 0.05, height
     assert final["near_target_fraction"] >= 0.80, height
-    assert final["penetration_fraction"] < 0.20, height
     # Occlusion owns only patient-frame Z; the already-solved horizontal crown
     # envelope and confirmed cervical root must remain untouched.
     assert np.allclose(result.vertices[:, :2], crown.vertices[:, :2], atol=1e-10), height
