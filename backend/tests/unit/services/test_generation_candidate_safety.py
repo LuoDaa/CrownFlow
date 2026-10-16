@@ -1,7 +1,7 @@
 from app.services.generation_workflow import _apply_auto_candidate_safety
 
 
-def test_abutment_auto_blocks_when_occlusal_stage_missing():
+def test_abutment_auto_review_preserves_output_when_occlusal_stage_missing():
     d = {'support_type': 'abutment'}
     report = {
         'mode': 'PROXIMAL_ONLY',
@@ -19,16 +19,17 @@ def test_abutment_auto_blocks_when_occlusal_stage_missing():
     result, kept = _apply_auto_candidate_safety(d, report, artifacts)
 
     assert kept is artifacts
-    assert result['candidate_kind'] == 'AUTO_FIT_BLOCKED'
+    assert result['candidate_kind'] == 'AUTO_FIT_REVIEW'
     assert result['status'] == 'REVIEW_REQUIRED'
-    assert result['complete_crown_ready'] is False
+    assert result['complete_crown_ready'] is True
     assert result['automatic_accept_allowed'] is False
+    assert result['generation_safety']['output_preserved'] is True
     codes = {item['code'] for item in result['generation_safety']['reasons']}
-    assert 'ABUTMENT_AUTO_REQUIRES_PROXIMAL_AND_OCCLUSAL_SPACE' in codes
+    assert 'ABUTMENT_FULL_SPACE_NOT_AVAILABLE' in codes
     assert 'OCCLUSAL_STAGE_MISSING' in codes
 
 
-def test_large_shell_change_requires_final_shell_pass():
+def test_large_shell_change_marks_review_but_does_not_remove_outer():
     d = {'support_type': 'prep'}
     report = {
         'mode': 'BOTH',
@@ -48,10 +49,13 @@ def test_large_shell_change_requires_final_shell_pass():
         'candidate_kind': 'AUTO_FIT_CANDIDATE',
         'complete_crown_ready': True,
     }
+    artifacts = {'outer': '/tmp/crown.stl'}
 
-    result, _ = _apply_auto_candidate_safety(d, report, {'outer': '/tmp/crown.stl'})
+    result, kept = _apply_auto_candidate_safety(d, report, artifacts)
 
-    assert result['candidate_kind'] == 'AUTO_FIT_BLOCKED'
+    assert kept['outer'] == '/tmp/crown.stl'
+    assert result['candidate_kind'] == 'AUTO_FIT_REVIEW'
+    assert result['generation_safety']['output_preserved'] is True
     reason = result['generation_safety']['reasons'][0]
     assert reason['code'] == 'LARGE_SHELL_DEFORMATION_NOT_CERTIFIED'
     assert reason['moved_vertices'] == 1220
