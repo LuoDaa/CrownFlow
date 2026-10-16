@@ -8,9 +8,9 @@ import ViewTools, { useViewTools } from "../components/ViewTools";
  *
  * 1.0 预览策略：渲染与审核彻底解耦。只要本轮生成出了候选几何，画布
  * 就优先展示 candidatePreview；是否 PASS/REVIEW_REQUIRED/是否已采纳都
- * 不能阻止用户先看到结果。AUTO 候选同时发布 intaglio artifact，因此
- * 外冠出来时内冠也立即显示；采纳后若 final cutter 尚未完成，则通过
- * 当前 outer SHA 找回同一候选的 intaglio，避免内冠从画布消失。
+ * 不能阻止用户先看到结果。AUTO 候选同时发布设计时 intaglio preview；
+ * W3 成功时还会有正式 intaglio_surface/cutter。画布必须使用候选真正存在
+ * 的 artifact label，不能假设一个并不存在的 `intaglio` 路径。
  */
 export default function ViewerStage({
   wf, mode = "patient", renderUpper = true, renderLower = true, renderSupport = true,
@@ -36,15 +36,23 @@ export default function ViewerStage({
     : wf.candidatePreview ? "candidate"
       : wf.outer ? "accepted" : "none";
 
-  // AUTO generation stores the best available inner surface under the candidate
-  // artifact label `intaglio`: final W3 intaglio when available, otherwise the
-  // design-time intaglio preview.  Derive that URL from the candidate URL before
-  // acceptance.  After acceptance, `inner-preview.stl` only returns an intaglio
-  // whose candidate outer SHA exactly matches the current accepted outer.
-  const candidateInner = !hasFinal && wf.candidatePreview
-    ? wf.candidatePreview.replace(/\/candidate\.stl(?:\?.*)?$/, "/artifact/intaglio")
+  // Candidate revisions expose their real artifact names.  Normal AUTO runs
+  // currently publish `intaglio_preview`; a completed W3 run publishes
+  // `intaglio_surface` and `cutter`.  Pick an actually present artifact instead
+  // of constructing `/artifact/intaglio`, which 404s on normal AUTO candidates.
+  const candidateArtifacts = wf.generatedCandidate?.artifacts || {};
+  const candidateInnerLabel = candidateArtifacts.intaglio_surface ? "intaglio_surface"
+    : candidateArtifacts.intaglio ? "intaglio"
+      : candidateArtifacts.intaglio_preview ? "intaglio_preview"
+        : candidateArtifacts.cutter ? "cutter" : null;
+  const candidateInner = !hasFinal && wf.generatedCandidate?.id && candidateInnerLabel
+    ? `/api/designs/${wf.design.id}/auto-fit/${wf.generatedCandidate.id}/artifact/${candidateInnerLabel}?v=${wf.meshVersion}`
     : null;
-  const acceptedInner = !hasFinal && !wf.candidatePreview && wf.design?.id && wf.outer
+
+  // After acceptance generatedCandidate is cleared.  The read-only endpoint
+  // first serves the current finalized cutter; otherwise it SHA-matches the
+  // accepted outer back to the exact AUTO candidate and serves its intaglio.
+  const acceptedInner = !hasFinal && !candidateInner && wf.design?.id && wf.outer
     ? `/api/designs/${wf.design.id}/inner-preview.stl?v=${wf.meshVersion}`
     : null;
   const activeInner = candidateInner || wf.innerCrown || acceptedInner || null;
