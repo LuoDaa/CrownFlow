@@ -1,9 +1,10 @@
 """CrownFlow 1.0 test-stage geometry overrides.
 
 Keep generation visible and conservative while the patient-space route is being
-validated on real cases.  These overrides intentionally tighten M/D expansion,
-add a bounded patient-derived B/L body-width correction, and prevent anatomy
-fairing from publishing locally inverted/collapsed faces.
+validated on real cases. These overrides intentionally tighten M/D expansion,
+add a bounded patient-derived B/L body-width correction, disable normal B/L
+compression, and prevent anatomy fairing from publishing locally inverted or
+collapsed faces.
 """
 from __future__ import annotations
 
@@ -22,27 +23,33 @@ _refine = _anatomy.refine_crown_anatomy
 _morph = _envelope.morph_embryo_to_patient_envelope
 
 
-# 1.0 patient-width tuning.  The envelope remains a maximum feasible space, but
-# posterior crowns that are visibly too slim may expand toward a patient-derived
-# B/L target built from the gingival/emergence width and confirmed neighbour
-# widths.  This is deliberately modest and never stretches to fill the box.
+# 1.0 patient-width tuning. The envelope remains the patient-space reference,
+# but normal B/L sizing is now fullness-first: posterior crowns that are too slim
+# may expand toward a patient-derived target and are not globally squeezed just
+# because a broad six-face bound is a little narrower. A small safety pad and a
+# strict expansion cap still protect against pathological run-away geometry.
 BL_PATIENT_TARGET_MARGIN_WEIGHT = 0.50
 BL_PATIENT_TARGET_NEIGHBOR_WEIGHT = 0.50
-BL_MAX_EXPANSION_SCALE = 1.12
-BL_MIN_EXPANSION_MM = 0.10
+BL_MAX_EXPANSION_SCALE = 1.16
+BL_MIN_EXPANSION_MM = 0.08
 BL_CERVICAL_LOCK_MM = 0.50
-BL_FULL_BODY_START_MM = 1.25
+BL_FULL_BODY_START_MM = 1.20
 BL_OCCLUSAL_CORE_WEIGHT = 0.38
+BL_ENVELOPE_SAFETY_PAD_MM = 0.35
 
 
 def _patient_envelope_config(*args, **kwargs):
-    # M/D belongs to the available interproximal space.  The old 3 mm halo cap
+    # M/D belongs to the available interproximal space. The old 3 mm halo cap
     # was intentionally generous and can create an over-wide molar on broad
-    # automatic neighbour patches.  Keep enough room for a molar but stop the
+    # automatic neighbour patches. Keep enough room for a molar but stop the
     # halo from becoming crown-size truth.
     kwargs.setdefault("neighbor_md_extra_from_margin_mm", 2.10)
     kwargs.setdefault("neighbor_inner_quantile", 0.08)
     kwargs.setdefault("max_half_span_mm", 6.25)
+    # B/L is not a subtractive box constraint in 1.0. Setting the per-pass floor
+    # to 1.0 makes the base envelope morph a no-op for B/L compression while M/D
+    # and occlusal limits keep their existing behaviour.
+    kwargs.setdefault("bl_min_scale_per_pass", 1.0)
     return _EnvelopeConfig(*args, **kwargs)
 
 
@@ -84,7 +91,7 @@ def _bl_patient_target_width(envelope, cfg):
         margin_width = float(margin_bounds["v_max"]) - float(margin_bounds["v_min"])
     except (KeyError, TypeError, ValueError):
         return None, {"reason": "MARGIN_BL_WIDTH_UNAVAILABLE"}
-    # A bare finish-line width is not the desired crown-body width.  Add the
+    # A bare finish-line width is not the desired crown-body width. Add the
     # emergence allowance on both sides before blending it with neighbouring
     # clinical crown width.
     gingival_body_width = margin_width + 2.0 * float(getattr(cfg, "bl_margin_emergence_mm", 1.60))
@@ -103,9 +110,12 @@ def _bl_patient_target_width(envelope, cfg):
     else:
         target = gingival_body_width
         source = "GINGIVAL_EMERGENCE_ONLY"
-    # The six-face envelope remains the hard maximum.  This target only asks for
-    # a more natural body width inside that feasible space.
-    target = min(float(target), float(envelope.bl_width_mm))
+
+    # The old hard cap at envelope.bl_width_mm could immediately cancel the
+    # fullness correction when the broad B/L envelope was itself conservative.
+    # Keep only a small engineering safety pad around that reference instead.
+    safety_width = float(envelope.bl_width_mm) + 2.0 * BL_ENVELOPE_SAFETY_PAD_MM
+    target = min(float(target), safety_width)
     return target, {
         "source": source,
         "margin_width_mm": float(margin_width),
@@ -114,6 +124,7 @@ def _bl_patient_target_width(envelope, cfg):
         "target_width_mm": float(target),
         "margin_weight": BL_PATIENT_TARGET_MARGIN_WEIGHT,
         "neighbor_weight": BL_PATIENT_TARGET_NEIGHBOR_WEIGHT,
+        "envelope_safety_pad_mm": BL_ENVELOPE_SAFETY_PAD_MM,
     }
 
 
@@ -156,8 +167,8 @@ def _bounded_bl_expand(mesh, frame, margin, envelope, cfg):
     radial = np.sqrt(radial_u * radial_u + radial_v * radial_v)
     occlusal_core = (h_frac >= 0.62) & (radial <= 0.72)
 
-    # Root/Margin stays immutable.  Axial walls receive the full correction;
-    # the occlusal morphology core receives only a small fraction so cusp/fossa
+    # Root/Margin stays immutable. Axial walls receive the full correction; the
+    # occlusal morphology core receives only a small fraction so cusp/fossa
     # anatomy is not stretched flat.
     weight = _smoothstep01((height - BL_CERVICAL_LOCK_MM) /
                            max(BL_FULL_BODY_START_MM - BL_CERVICAL_LOCK_MM, 1e-6))
@@ -165,8 +176,11 @@ def _bounded_bl_expand(mesh, frame, margin, envelope, cfg):
     weight[occlusal_core] *= BL_OCCLUSAL_CORE_WEIGHT
 
     proposed_v = v * scale
-    # Never cross patient-owned B/L maximum bounds.
-    proposed_v = np.clip(proposed_v, float(envelope.v_min), float(envelope.v_max))
+    proposed_v = np.clip(
+        proposed_v,
+        float(envelope.v_min) - BL_ENVELOPE_SAFETY_PAD_MM,
+        float(envelope.v_max) + BL_ENVELOPE_SAFETY_PAD_MM,
+    )
     v_new = v + weight * (proposed_v - v)
     local[:, :2] = center + u[:, None] * md + v_new[:, None] * bl
     proposed_world = local @ matrix.T + origin
@@ -227,6 +241,7 @@ def _patient_width_morph(mesh, frame, margin, envelope, *, config=None):
     expanded, bl_report = _bounded_bl_expand(base, frame, margin, envelope, cfg)
     merged = dict(report or {})
     merged["bl_patient_target_expansion"] = bl_report
+    merged["bl_global_compression_disabled"] = True
     return expanded, merged
 
 
@@ -257,9 +272,6 @@ def _safe_refine_crown_anatomy(mesh, frame, margin, *, fdi: int, config=None):
         cosine = np.einsum("ij,ij->i", b[valid], a[valid]) / (bn[valid] * an[valid])
         flip_count = int(np.sum(cosine <= 0.0))
 
-    # Any inverted face can appear as a visible hole with back-face culling.
-    # For the test phase, preserve the pre-anatomy crown rather than publishing
-    # a damaged-looking refinement.
     if flip_count or collapsed_count:
         fallback = mesh.copy()
         return fallback, {
