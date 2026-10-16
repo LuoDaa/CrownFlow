@@ -8,7 +8,7 @@ from .nonplanar_crown import MarginCurtain, MarginBuildError, audit_margin_on_sc
 from .crown_outer.collar_body_outer import _clip_by_scalar, _boundary_loops
 from .margin_seam import _polyline_distances
 
-VERSION='abutment_support/margin_split_seed_flood/1.2'
+VERSION='abutment_support/margin_split_seed_flood/1.3'
 
 class SupportExtractionError(MarginBuildError):
     def __init__(self,code,message,diagnostics=None):
@@ -33,6 +33,70 @@ def _inside(points,polygon):
     denominator=b[:,1]-a[:,1]
     intercept=a[None,:,0]+(p[:,None,1]-a[None,:,1])*(b-a)[None,:,0]/np.where(abs(denominator)>1e-12,denominator,1e-12)[None,:]
     return np.sum(cross&(p[:,None,0]<intercept),axis=1)%2==1
+
+def _loop_length(points):
+    p=np.asarray(points,float)
+    if len(p)<2:return 0.0
+    return float(np.linalg.norm(np.roll(p,-1,axis=0)-p,axis=1).sum())
+
+def _margin_loop_metrics(points,curve,gate_mm=.05):
+    """Score a candidate boundary in both directions so a tiny sliver cannot win.
+
+    The old selector minimised only ``loop -> Margin`` distance.  A short loop that
+    happens to sit on a few Margin samples can therefore beat the true finish-line
+    loop by floating-point noise.  The authoritative loop must also reproduce the
+    *whole* confirmed Margin (``Margin -> loop``), and its perimeter must be of the
+    same order as the Margin perimeter.
+    """
+    points=np.asarray(points,float);curve=np.asarray(curve,float)
+    if len(points)<3 or len(curve)<3:
+        return {'eligible':False,'reason':'TOO_SHORT','coverage_fraction':0.0}
+    forward=np.asarray(_polyline_distances(points,curve),float)
+    reverse=np.asarray(_polyline_distances(curve,points),float)
+    finite_f=np.isfinite(forward);finite_r=np.isfinite(reverse)
+    if not np.all(finite_f) or not np.all(finite_r):
+        return {'eligible':False,'reason':'NONFINITE_DISTANCE','coverage_fraction':0.0}
+    loop_len=_loop_length(points);margin_len=_loop_length(curve)
+    length_ratio=min(loop_len,margin_len)/max(loop_len,margin_len,1e-12)
+    coverage=float(np.mean(reverse<=float(gate_mm)))
+    fp95=float(np.quantile(forward,.95));fmax=float(np.max(forward))
+    rp95=float(np.quantile(reverse,.95));rmax=float(np.max(reverse))
+    eligible=bool(coverage>=.98 and rp95<=gate_mm and fp95<=gate_mm and length_ratio>=.55)
+    return {
+        'eligible':eligible,'reason':'FULL_MARGIN_COVERAGE' if eligible else 'INSUFFICIENT_FULL_LOOP_COVERAGE',
+        'loop_point_count':int(len(points)),'margin_point_count':int(len(curve)),
+        'loop_length_mm':loop_len,'margin_length_mm':margin_len,'length_ratio':float(length_ratio),
+        'coverage_fraction':coverage,'gate_mm':float(gate_mm),
+        'loop_to_margin_p95_mm':fp95,'loop_to_margin_max_mm':fmax,
+        'margin_to_loop_p95_mm':rp95,'margin_to_loop_max_mm':rmax,
+    }
+
+def _select_margin_loop(vertices,loops,curve,*,gate_mm=.05):
+    scored=[]
+    for loop in loops:
+        arr=np.asarray(loop,int)
+        metrics=_margin_loop_metrics(np.asarray(vertices,float)[arr],curve,gate_mm=gate_mm)
+        scored.append((arr,metrics))
+    eligible=[item for item in scored if item[1].get('eligible')]
+    pool=eligible if eligible else scored
+    if not pool:
+        raise SupportExtractionError('SUPPORT_EXTRACTION_AMBIGUOUS','支撑没有可用边界环')
+    # Full reverse coverage dominates.  Floating-point sub-nanometre differences
+    # are intentionally lower priority than reproducing the complete finish line.
+    pool.sort(key=lambda item:(
+        -float(item[1].get('coverage_fraction',0.0)),
+        float(item[1].get('margin_to_loop_p95_mm',float('inf'))),
+        -float(item[1].get('length_ratio',0.0)),
+        float(item[1].get('loop_to_margin_p95_mm',float('inf'))),
+        -len(item[0]),
+    ))
+    selected,metrics=pool[0]
+    diagnostics={'method':'BIDIRECTIONAL_FULL_MARGIN_LOOP_V1','candidate_count':len(scored),
+                 'eligible_count':len(eligible),'selected':metrics,
+                 'candidates':[m for _l,m in scored]}
+    if not metrics.get('eligible'):
+        raise SupportExtractionError('MARGIN_NOT_ON_SUPPORT','没有边界环能完整覆盖确认终止线',diagnostics)
+    return selected,diagnostics
 
 def _embed_boundary(mesh,source_ids,ring,margin):
     vertices=mesh.vertices.tolist();faces=mesh.faces.tolist();sources=source_ids.tolist();anchors=[];errors=[]
@@ -131,21 +195,21 @@ def margin_ribbon_field(support,curve):
 
 
 def _rank_margin_components(cut,faces,labels,vertices,curve,seed=None):
-    """Rank distinct post-cut components whose boundary reproduces the Margin."""
+    """Rank distinct post-cut components whose boundary reproduces the whole Margin."""
     candidates=[]
     seed_point=None if seed is None else np.asarray(seed,float)
     for label in np.unique(labels):
         ids=np.flatnonzero(labels==label)
         component_loops=[]
         for loop in _boundary_loops(faces[ids]):
-            error=_polyline_distances(vertices[loop],curve)
-            p95=float(np.quantile(error,.95));mx=float(np.max(error))
-            if p95<.05 and mx<.1:
-                component_loops.append((p95,mx,np.asarray(loop,int)))
+            arr=np.asarray(loop,int)
+            metrics=_margin_loop_metrics(vertices[arr],curve)
+            if metrics.get('eligible'):
+                component_loops.append((metrics,arr))
         if not component_loops:
             continue
-        component_loops.sort(key=lambda item:(item[0],item[1],-len(item[2])))
-        p95,mx,loop=component_loops[0]
+        component_loops.sort(key=lambda item:(-item[0]['coverage_fraction'],item[0]['margin_to_loop_p95_mm'],-item[0]['length_ratio']))
+        metrics,loop=component_loops[0]
         area=float(np.sum(cut.area_faces[ids]))
         seed_distance=None
         if seed_point is not None:
@@ -155,13 +219,15 @@ def _rank_margin_components(cut,faces,labels,vertices,curve,seed=None):
             except Exception:
                 seed_distance=None
         candidates.append({'label':int(label),'loop':loop,'area_mm2':area,'face_count':int(len(ids)),
-            'margin_p95_mm':p95,'margin_max_mm':mx,'seed_distance_mm':seed_distance})
+            'margin_p95_mm':metrics['loop_to_margin_p95_mm'],'margin_max_mm':metrics['loop_to_margin_max_mm'],
+            'margin_reverse_p95_mm':metrics['margin_to_loop_p95_mm'],'margin_coverage_fraction':metrics['coverage_fraction'],
+            'margin_loop_length_ratio':metrics['length_ratio'],'seed_distance_mm':seed_distance})
     return candidates
 
 
 def _select_margin_component(candidates,seed=None):
     public=[{k:v for k,v in c.items() if k!='loop'} for c in candidates]
-    diagnostics={'method':'MARGIN_MATCH_COMPONENT_RANK_V2','candidate_count':len(candidates),'candidates':public}
+    diagnostics={'method':'MARGIN_MATCH_COMPONENT_RANK_V3_BIDIRECTIONAL','candidate_count':len(candidates),'candidates':public}
     if not candidates:
         return None,diagnostics
     if len(candidates)==1:
@@ -170,19 +236,20 @@ def _select_margin_component(candidates,seed=None):
 
     ranked=list(candidates)
     if seed is not None and any(c['seed_distance_mm'] is not None for c in ranked):
-        ranked.sort(key=lambda c:(float('inf') if c['seed_distance_mm'] is None else c['seed_distance_mm'],-c['area_mm2'],c['margin_p95_mm']))
+        ranked.sort(key=lambda c:(float('inf') if c['seed_distance_mm'] is None else c['seed_distance_mm'],-c['margin_coverage_fraction'],-c['area_mm2']))
         first,second=ranked[0],ranked[1]
         d0=first['seed_distance_mm'];d1=second['seed_distance_mm']
         if d0 is not None and (d1 is None or d0+0.15<d1):
             diagnostics.update(selection='SEED_DOMINANT',confidence='high',selected_label=first['label'])
             return first,diagnostics
 
-    ranked.sort(key=lambda c:(-c['area_mm2'],c['margin_p95_mm'],c['margin_max_mm'],-c['face_count']))
+    ranked.sort(key=lambda c:(-c['margin_coverage_fraction'],-c['area_mm2'],c['margin_reverse_p95_mm'],-c['margin_loop_length_ratio'],-c['face_count']))
     first,second=ranked[0],ranked[1]
     area_ratio=first['area_mm2']/max(second['area_mm2'],1e-12)
     face_ratio=first['face_count']/max(second['face_count'],1)
-    error_better=(first['margin_p95_mm']+0.005<second['margin_p95_mm'] and first['margin_p95_mm']<=0.70*max(second['margin_p95_mm'],1e-9))
-    dominant=area_ratio>=1.20 or face_ratio>=1.25 or error_better
+    coverage_better=first['margin_coverage_fraction']>=second['margin_coverage_fraction']+.05
+    error_better=(first['margin_reverse_p95_mm']+0.005<second['margin_reverse_p95_mm'])
+    dominant=coverage_better or area_ratio>=1.20 or face_ratio>=1.25 or error_better
     diagnostics.update(area_ratio_to_second=float(area_ratio),face_ratio_to_second=float(face_ratio))
     if dominant:
         diagnostics.update(selection='DOMINANT_MARGIN_CONNECTED_REGION',confidence='engineering_high',selected_label=first['label'])
@@ -227,19 +294,20 @@ def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=
     ids=np.flatnonzero(labels==label)
     mesh=trimesh.Trimesh(vertices,faces[ids],process=False);mesh.remove_unreferenced_vertices();mapping=mapping[ids]
     loops=_boundary_loops(mesh.faces)
-    crown=min(loops,key=lambda loop:np.max(_polyline_distances(mesh.vertices[loop],curve)))
+    crown,crown_selection_before=_select_margin_loop(mesh.vertices,loops,curve)
     mesh,mapping,embedding=_embed_boundary(mesh,mapping,crown.copy(),curve)
     if not np.isfinite(np.asarray(mesh.vertices,dtype=float)).all():
         raise SupportExtractionError('NONFINITE_SUPPORT_GEOMETRY','支撑提取产物含 NaN/Inf，禁止标记 READY')
     loops=_boundary_loops(mesh.faces)
-    crown=min(loops,key=lambda loop:np.max(_polyline_distances(mesh.vertices[loop],curve)))
+    crown,crown_selection_after=_select_margin_loop(mesh.vertices,loops,curve)
     ring_local=curtain.local[:,:2];next_local=np.roll(ring_local,-1,axis=0)
     area=abs(np.sum(ring_local[:,0]*next_local[:,1]-ring_local[:,1]*next_local[:,0]))/2
     radius=np.sqrt(area/np.pi);classified=[];operations=[];cap_faces=[]
     for loop in loops:
+        loop=np.asarray(loop,int)
         points=mesh.vertices[loop];local=(points-curtain.frame.origin)@curtain.frame.matrix()
         loop_id=sha256(np.round(np.sort(points,axis=0),6).tobytes()).hexdigest()[:20]
-        if loop==crown:kind='CROWN_MARGIN'
+        if np.array_equal(loop,crown):kind='CROWN_MARGIN'
         else:
             centered=local[:,:2]-local[:,:2].mean(0);_,_,basis=np.linalg.svd(points-points.mean(0),full_matrices=False)
             candidate=(_inside(local[:,:2],ring_local).all() and np.median(local[:,2])>np.max(curtain.local[:,2])+.3
@@ -264,16 +332,20 @@ def extract_abutment_support(support,margin,axis,*,seed=None,confirmed_loop_ids=
             'area_mm2':float(mesh.area_faces[start:].sum())})
     cut_points=mesh.vertices[crown] if len(crown) else np.zeros((0,3))
     cut_distance=_polyline_distances(cut_points,curve) if len(cut_points) else np.zeros(0)
-    margin_cut={'method':'margin_ribbon_along_support_normals/1','margin_curve_points':int(len(curve)),
+    reverse_cut_distance=_polyline_distances(curve,cut_points) if len(cut_points) else np.zeros(0)
+    margin_cut={'method':'bidirectional_full_margin_loop/1','margin_curve_points':int(len(curve)),
         'cut_boundary_points':int(len(cut_points)),
+        'margin_coverage_fraction':float(np.mean(reverse_cut_distance<=.05)) if len(reverse_cut_distance) else 0.0,
         'point_to_margin_distance_mm':({'mean_mm':float(np.mean(cut_distance)),
             'p95_mm':float(np.quantile(cut_distance,.95)),'max_mm':float(np.max(cut_distance)),
-            'gate_mm':0.05,'passes':bool(np.quantile(cut_distance,.95)<0.05)} if len(cut_distance) else None)}
+            'reverse_p95_mm':float(np.quantile(reverse_cut_distance,.95)),
+            'gate_mm':0.05,'passes':bool(np.quantile(cut_distance,.95)<0.05 and np.quantile(reverse_cut_distance,.95)<0.05)} if len(cut_distance) else None)}
     pending=[entry for entry in classified if entry['classification']=='SCREW_CHANNEL_CANDIDATE' and not entry['confirmed']]
     unknown=[entry for entry in classified if entry['classification']=='UNKNOWN_HOLE']
     report={'algorithm_version':VERSION,'loops':classified,'source_face_ids':sorted(set(mapping.tolist())),
         'output_face_source_ids':mapping.tolist()+[-1]*len(cap_faces),'source_to_output_mapping':{str(i):np.flatnonzero(mapping==i).tolist() for i in np.unique(mapping)},
         'margin_embedding':embedding,'support_region_selection':selection,
+        'margin_loop_selection_before_embed':crown_selection_before,'margin_loop_selection_after_embed':crown_selection_after,
         'screw_channel_present':any(e['classification']=='SCREW_CHANNEL_CANDIDATE' for e in classified),
         'virtual_cap_operations':operations,'virtual_cap_face_ids':cap_faces,'capped_region_area_mm2':sum(o['area_mm2'] for o in operations),
         'unresolved_support_holes':len(pending)+len(unknown),'source_geometry_sha256':original_hash,'conditioned_support_sha256':mesh_digest(mesh),
