@@ -5,9 +5,11 @@ from app.geometry.crown_outer.auto_fit_adapter import FitSurface
 from app.geometry.crown_outer.patient_frame import confirmed_patient_frame
 from app.geometry.crown_outer.space_contact import build_proximal_domains
 from app.geometry.crown_outer.space_morph import (
+    _antagonist_axial_clearance,
     audit_inner_envelope_clearance,
     space_driven_embryo_prefit,
 )
+from app.geometry.crown_outer.zones import build_crown_zones
 
 
 def _frame():
@@ -46,7 +48,7 @@ def test_global_prefit_uses_patient_envelope_not_template_metric_size():
     small,rs=space_driven_embryo_prefit(_crown(.70),frame,margin,proximal_surfaces=surfaces,proximal_target_mm=-.02)
     large,rl=space_driven_embryo_prefit(_crown(1.40),frame,margin,proximal_surfaces=surfaces,proximal_target_mm=-.02)
 
-    assert rs['algorithm']=='PATIENT_6_FACE_ENVELOPE_PLUS_LOCAL_REFINEMENT_V5'
+    assert rs['algorithm']=='PATIENT_6_FACE_ENVELOPE_PLUS_LOCAL_REFINEMENT_V6'
     assert rs['template_size_authoritative'] is False
     assert rs['patient_envelope']['global_dimensions_source']=='PATIENT_GEOMETRY_ONLY'
     sw=rs['patient_envelope']['md_width_mm'];lw=rl['patient_envelope']['md_width_mm']
@@ -116,9 +118,40 @@ def test_antagonist_height_pass_preserves_xy_and_closes_gap():
     assert report['patient_envelope']['reason']=='HEIGHT_ONLY_PASS_PRESERVES_XY'
     assert np.allclose(np.asarray(result.vertices)[:,:2],xy0,atol=1e-10)
     assert report['height']['applied'] is True
+    assert report['height']['mode']=='CURVED_COLUMN_ANTAGONIST_ENVELOPE_V4'
     accepted=[p for p in report['height']['passes'] if p.get('accepted')]
     assert accepted
-    assert accepted[-1]['after']['gap_quantile_mm']<accepted[0]['before']['gap_quantile_mm']
+    assert accepted[-1]['after']['target_error_median_mm']<accepted[0]['before']['target_error_median_mm']
+
+
+def test_curved_antagonist_lifts_low_occlusal_columns_without_moving_margin_root():
+    mesh=_crown();frame=_frame();margin=_margin()
+    antagonist=trimesh.creation.box(extents=[12.0,12.0,0.8])
+    transform=trimesh.transformations.rotation_matrix(np.deg2rad(8.0),[0.0,1.0,0.0])
+    antagonist.apply_transform(transform);antagonist.apply_translation([0.0,0.0,8.4])
+    surface=FitSurface(antagonist)
+
+    zones=build_crown_zones(mesh,frame,margin)
+    ids=np.flatnonzero(zones.occlusal)
+    before_clear,before_valid,_=_antagonist_axial_clearance(np.asarray(mesh.vertices)[ids],surface,frame)
+    before_err=np.abs(before_clear[before_valid]-.05)
+    root=np.asarray(mesh.vertices)[:,2]<=.45
+    root_before=np.asarray(mesh.vertices)[root].copy()
+
+    result,report=space_driven_embryo_prefit(
+        mesh,frame,margin,antagonist_surface=surface,occlusal_target_mm=.05,
+    )
+
+    after_clear,after_valid,_=_antagonist_axial_clearance(np.asarray(result.vertices)[ids],surface,frame)
+    valid=np.asarray(before_valid)&np.asarray(after_valid)
+    after_err=np.abs(after_clear[valid]-.05)
+    assert int(valid.sum())>=12
+    assert float(np.median(after_err))<float(np.median(before_err[np.asarray(after_valid)[before_valid]]))
+    assert np.allclose(np.asarray(result.vertices)[root],root_before,atol=1e-8)
+    assert np.allclose(np.asarray(result.vertices)[:,:2],np.asarray(mesh.vertices)[:,:2],atol=1e-10)
+    assert report['height']['mode']=='CURVED_COLUMN_ANTAGONIST_ENVELOPE_V4'
+    assert 'target_reached' in report['height']
+    assert np.all(np.einsum('ij,ij->i',mesh.face_normals,result.face_normals)>0.0)
 
 
 def test_proximal_domain_cannot_collapse_to_a_handful_of_vertices():
