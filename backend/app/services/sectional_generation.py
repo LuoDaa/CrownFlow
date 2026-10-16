@@ -1,7 +1,7 @@
 """Live adapter for the RED/GREEN/BLUE Sectional Crown 1.0 geometry.
 
 This service resolves only *confirmed* patient context, creates the Sectional
-baseline, then applies a GREEN-only proximal rounding pass.  The rounding pass is
+baseline, then applies a GREEN-only neighbour-facing surface pass.  The pass is
 strictly isolated from the hard Margin, BLUE occlusal rim/cap and the downstream
 W3 intaglio path, so Crown 1.0 can improve neighbour contact morphology without
 regressing the already-working inner crown or occlusion.
@@ -95,7 +95,7 @@ def build_sectional_baseline(d, frame, frame_ref, support_mesh, margin_points):
     """Create and persist the Crown 1.0 patient-geometry baseline for AUTO/BOTH.
 
     RED  : exact confirmed Margin + prep/minimum-wall safety.
-    GREEN: broad rounded proximal patch with denser side lofts.
+    GREEN: neighbour inward-facing patch -> broad contact band -> rounded BL loft.
     BLUE : unchanged antagonist ceiling / static occlusal capability.
 
     Final intaglio is intentionally still delegated to the existing W3 blockout +
@@ -113,8 +113,10 @@ def build_sectional_baseline(d, frame, frame_ref, support_mesh, margin_points):
     neighbors, neighbor_provenance = _confirmed_neighbor_meshes(d, frame_ref)
     antagonist, bite_provenance = _confirmed_antagonist(d, frame_ref)
 
-    # Crown 1.0 morphology tuning: widen neighbour evidence and sample the side
-    # profile more densely.  The hard RED/BLUE constraints remain unchanged.
+    # The Sectional baseline still provides RED/BLUE hard geometry and a safe
+    # initial GREEN envelope.  The following patch-surface stage owns the final
+    # proximal shape, so these values are intentionally permissive rather than
+    # trying to solve contact with isolated rays.
     config = SectionalV1Config(
         min_wall_mm=float(minimum),
         proximal_gap_mm=float(proximal),
@@ -136,20 +138,24 @@ def build_sectional_baseline(d, frame, frame_ref, support_mesh, margin_points):
         config=config,
     )
 
-    # GREEN-only finishing pass.  It moves only middle side rings; ring 0 (Margin)
-    # and the final side ring + all BLUE cap vertices are protected by hard checks.
-    mesh, proximal_rounding = round_proximal_contacts(
+    # GREEN-only surface stage.  Confirmed neighbour triangles are queried as a
+    # real facing surface in PatientFrame Y/Z; only middle side-ring X/Y vertices
+    # can move.  Margin, every axial height, occlusal rim/cap and W3 intaglio are
+    # protected by hard invariants inside round_proximal_contacts().
+    mesh, proximal_surface = round_proximal_contacts(
         mesh,
         margin_points,
         frame,
         neighbors=neighbors,
         sectional_config=config,
     )
-    geometry["green_rounding"] = proximal_rounding
+    geometry["green_surface"] = proximal_surface
+    # Compatibility key retained for existing reports/UI consumers.
+    geometry["green_rounding"] = proximal_surface
     for side in ("mesial", "distal"):
         if side in geometry.get("green_lateral", {}):
             geometry["green_lateral"][side]["post_rounding"] = (
-                proximal_rounding.get("per_side", {}).get(side, {}))
+                proximal_surface.get("per_side", {}).get(side, {}))
 
     prefix = CASE_DIR / d["case_id"] / ("%s_sectional_v1_%s" % (d["id"], uuid4().hex))
     outer_path = prefix.with_suffix(".stl")
@@ -158,14 +164,14 @@ def build_sectional_baseline(d, frame, frame_ref, support_mesh, margin_points):
 
     confirmed_sides = [side for side, value in neighbor_provenance.items()
                        if value.get("status") == "CONFIRMED"]
-    rounded_statuses = [
-        proximal_rounding.get("per_side", {}).get(side, {}).get("status")
+    proximal_statuses = [
+        proximal_surface.get("per_side", {}).get(side, {}).get("status")
         for side in confirmed_sides
     ]
     lateral_status = (
-        "PASS_ENGINEERING" if rounded_statuses
-        and all(value == "PASS_ENGINEERING" for value in rounded_statuses)
-        else "REVIEW_REQUIRED" if rounded_statuses else "NOT_ASSESSED"
+        "PASS_ENGINEERING" if proximal_statuses
+        and all(value == "PASS_ENGINEERING" for value in proximal_statuses)
+        else "REVIEW_REQUIRED" if proximal_statuses else "NOT_ASSESSED"
     )
 
     report = {
@@ -173,20 +179,22 @@ def build_sectional_baseline(d, frame, frame_ref, support_mesh, margin_points):
         "candidate_kind": "AUTO_FIT_CANDIDATE",
         "generator": "SECTIONAL_RED_GREEN_BLUE_V1",
         "status": geometry["status"],
-        "solver_version": "sectional-envelope/1 + proximal-rounding/1 + local-band-fine-fit/1",
+        "solver_version": "sectional-envelope/1 + proximal-facing-surface/2 + local-band-fine-fit/1",
         "stages": [
             {"stage": "MARGIN", "status": "PASS_ENGINEERING",
              "max_error_mm": geometry["margin"]["max_error_mm"], "hard_boundary": True},
             {"stage": "PROXIMAL", "status": lateral_status,
              "per_side": geometry["green_lateral"],
-             "rounding": proximal_rounding},
+             "surface": proximal_surface},
             {"stage": "OCCLUSAL", "status": geometry["blue_occlusal"]["status"],
              "details": geometry["blue_occlusal"],
-             "preserved_by_proximal_rounding": bool(
-                 proximal_rounding.get("blue_occlusal_vertices_preserved"))},
+             "preserved_by_proximal_surface": bool(
+                 proximal_surface.get("blue_occlusal_vertices_preserved")),
+             "axial_heights_preserved": bool(
+                 proximal_surface.get("axial_heights_preserved"))},
             {"stage": "INTAGLIO", "status": "DEFERRED_TO_W3_PREFLIGHT",
              "mechanism": "prepared_support -> blockout -> gap field -> exact boolean",
-             "policy_changed_by_proximal_rounding": False},
+             "policy_changed_by_proximal_surface": False},
         ],
         "sectional_geometry": geometry,
         "neighbor_provenance": neighbor_provenance,
