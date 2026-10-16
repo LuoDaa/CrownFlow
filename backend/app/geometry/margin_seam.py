@@ -222,12 +222,27 @@ def margin_plane_diagnostics(points):
     }
 
 
-def _polyline_distances(points, ring):
+def _polyline_distances(points, ring, *, strict=False):
     a = np.asarray(ring, float)
+    # 相邻重合点（零长度段）在**派生候选环**里是正常产物（裁切 / Margin 投影会插入
+    # 重复顶点）。以前这里直接抛 ValueError，会把整个 eligibility 请求打成 500；
+    # 正确行为是"该候选环不合格、跳过"。这里先做几何等价去重，只有调用方显式
+    # strict=True（真正的输入校验）时才当错误。
+    if len(a) >= 2:
+        keep = np.r_[True, np.linalg.norm(np.diff(a, axis=0), axis=1) > 1e-10]
+        a = a[keep]
+        if len(a) >= 2 and np.linalg.norm(a[0] - a[-1]) <= 1e-10:
+            a = a[:-1]
+    if len(a) < 2:
+        if strict:
+            raise ValueError("Margin contains duplicate adjacent points")
+        return np.full(len(np.asarray(points, float)), np.inf)
     delta = np.roll(a, -1, axis=0) - a
     denominator = np.einsum("ij,ij->i", delta, delta)
     if np.any(denominator <= 1e-20):
-        raise ValueError("Margin contains duplicate adjacent points")
+        if strict:
+            raise ValueError("Margin contains duplicate adjacent points")
+        denominator = np.maximum(denominator, 1e-20)
     values = []
     for chunk in np.array_split(np.asarray(points, float), max(1, len(points) // 512 + 1)):
         rel = chunk[:, None, :] - a[None, :, :]

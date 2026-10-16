@@ -1,8 +1,28 @@
-"""Read-only eligibility and generation candidates without replacing accepted geometry."""
+"""Read-only eligibility and deterministic generation candidates."""
 import json
 from pathlib import Path
 from fastapi import HTTPException
 from .design_dependencies import confirmed_inputs, dependency_digest, file_digest
+
+LATEST_AUTO_NEIGHBOR_SCOPE = 'AUTO_CAD1_CORONAL_MD_NEIGHBOR_V5'
+CAD1_DEFAULT_PROXIMAL_TARGET_MM = -0.02
+CAD1_DEFAULT_OCCLUSAL_TARGET_MM = 0.02
+
+
+def _resolved_contact_targets(params):
+    """CAD-1 always has explicit usable contact defaults.
+
+    Existing designs created before these fields were persisted must not silently
+    degrade to PROXIMAL_ONLY / no occlusion. User values still win.
+    """
+    p = params.get('proximal_target_mm')
+    o = params.get('occlusal_target_mm')
+    return (
+        CAD1_DEFAULT_PROXIMAL_TARGET_MM if p is None else float(p),
+        CAD1_DEFAULT_OCCLUSAL_TARGET_MM if o is None else float(o),
+        'DEFAULT_POLICY' if p is None else 'USER',
+        'DEFAULT_POLICY' if o is None else 'USER',
+    )
 
 
 def eligibility(d):
@@ -22,19 +42,35 @@ def eligibility(d):
     try: _,frame=frame_from(d)
     except (HTTPException,KeyError): pass
     if not frame:
-        # A1：坐标帧是 live 生成的**前置条件**（模板放置的横向轴只能来自确认帧），
-        # 不再允许"没确认就先放一个，方向靠世界轴猜"。
         blockers.append({'stage':'FRAME','message':'请先确认近中/颊侧方向与毫米单位（坐标确认），再生成外形'})
-    neighbors=json.loads(d.get('neighbors_json') or '{}');sides={}
+
+    neighbors=json.loads(d.get('neighbors_json') or '{}');sides={};stale_auto=[]
     for side in ('mesial','distal'):
         item=neighbors.get(side,{})
         valid=bool(frame and item.get('frame_revision_id')==frame['revision_id'])
+        scope=str(item.get('scope') or '')
+        if (
+            d.get('support_type')=='abutment'
+            and scope.startswith('AUTO_CAD1_CORONAL_MD_NEIGHBOR_')
+            and scope != LATEST_AUTO_NEIGHBOR_SCOPE
+        ):
+            valid=False
+            stale_auto.append(side)
         if valid and item.get('confirmation_status')=='CONFIRMED':
             try:
                 valid=(scan_reference(d['case_id'],item['source']['kind'])==item['source']
                        and Path(item['path']).is_file() and file_digest(item['path'])==item['region_sha256'])
             except (HTTPException,KeyError,OSError): valid=False
         sides[side]=item.get('confirmation_status','UNKNOWN') if valid else 'UNKNOWN'
+    if stale_auto:
+        blockers.append({
+            'stage':'PROXIMAL',
+            'code':'AUTO_NEIGHBOR_REFERENCE_STALE',
+            'message':'自动邻牙参考面算法版本已更新，请先刷新邻牙参考后再生成',
+            'sides':stale_auto,
+            'required_scope':LATEST_AUTO_NEIGHBOR_SCOPE,
+        })
+
     bite=json.loads(d.get('bite_json') or '{}');bite_valid=bool(frame and bite.get('revision_id')
         and bite.get('pose_confirmed') and bite.get('frame_revision_id')==frame['revision_id'] and bite.get('transform'))
     if bite_valid:
@@ -44,15 +80,19 @@ def eligibility(d):
         blockers.append({'stage':'OCCLUSAL','code':'OCCLUSION_REGISTRATION_UNVERIFIED',
                          'message':'基台冠需先确认上下颌咬合配准，才能测量对颌空间并生成初稿'})
     params=json.loads(d['parameters_json'])
+    proximal_target,occlusal_target,prox_source,occl_source=_resolved_contact_targets(params)
     proximal=bool(frame and any(v=='CONFIRMED' for v in sides.values())
-        and all(v in ('CONFIRMED','ABSENT') for v in sides.values()) and params.get('proximal_target_mm') is not None)
-    occlusal=bool(bite_valid and params.get('occlusal_target_mm') is not None)
+        and all(v in ('CONFIRMED','ABSENT') for v in sides.values()))
+    occlusal=bool(bite_valid)
     mode='BOTH' if proximal and occlusal else 'PROXIMAL_ONLY' if proximal else 'OCCLUSAL_ONLY' if occlusal else None
     return {'input_digest':dependency_digest(d),'blockers':blockers,'template_allowed':not blockers,
         'support_contract':support_contract.as_report() if support_contract else None,
         'automatic_mode':mode if not blockers else None,'frame_confirmed':bool(frame),'neighbors':sides,
-        'bite_confirmed':bite_valid,'proximal_target_confirmed':params.get('proximal_target_mm') is not None,
-        'occlusal_target_confirmed':params.get('occlusal_target_mm') is not None,
+        'bite_confirmed':bite_valid,'proximal_target_confirmed':True,
+        'occlusal_target_confirmed':True,
+        'proximal_target_mm':proximal_target,'occlusal_target_mm':occlusal_target,
+        'proximal_target_source':prox_source,'occlusal_target_source':occl_source,
+        'neighbor_reference_version':LATEST_AUTO_NEIGHBOR_SCOPE,
         'release_status':'NOT_PRODUCTION_APPROVED'}
 
 
@@ -82,39 +122,68 @@ def generate_candidate(d,kind):
     if diagnostics['codes']:
         raise HTTPException(422,{'message':'预备体组件或边界不满足构冠要求，请检查边缘或上传独立预备体',
             'geometry':diagnostics,'repair_stage':'PREP'})
-    placement,baseline=initialize_draft_outer(d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
+
+    # One-click AUTO is an idempotent build from the same confirmed inputs.
+    # Never use a previously accepted outer as the next automatic baseline:
+    # doing so compounds proximal/occlusal deformation every time the user clicks
+    # Generate.  The same generation job now also builds the intaglio + stitched
+    # watertight final so Step 5 starts from a complete crown, not a solid outer.
+    placement,baseline=initialize_draft_outer(
+        d,AutoOuterRequest(margin_points=margin,insertion_axis=axis))
     if kind=='AUTO':
-        frame,ref=frame_from(d);_,report,artifacts=propose(d,frame,ref,state['automatic_mode'],baseline_path=baseline)
+        placement['placement_path']='FRESH_TEMPLATE_INITIALIZATION'
+
+    if kind=='AUTO':
+        effective=dict(d)
+        effective_params=json.loads(d['parameters_json'])
+        effective_params.setdefault('proximal_target_mm',state['proximal_target_mm'])
+        effective_params.setdefault('occlusal_target_mm',state['occlusal_target_mm'])
+        effective['parameters_json']=json.dumps(effective_params,ensure_ascii=False)
+        frame,ref=frame_from(effective);_,report,artifacts=propose(
+            effective,frame,ref,state['automatic_mode'],baseline_path=baseline,run_w3_preflight=True)
         artifacts['baseline']=str(baseline);report['candidate_kind']='AUTO_FIT_CANDIDATE'
+        report['baseline_source']=placement.get('placement_path') or 'TEMPLATE_INITIALIZATION'
+        report['resolved_contact_targets']={
+            'proximal_target_mm':state['proximal_target_mm'],
+            'occlusal_target_mm':state['occlusal_target_mm'],
+            'proximal_source':state['proximal_target_source'],
+            'occlusal_source':state['occlusal_target_source'],
+        }
+        final_ready=(report.get('w3_preflight') or {}).get('status')=='CONSTRUCTED_ENGINEERING' \
+            and bool(artifacts.get('final')) and bool(artifacts.get('cutter'))
+        report['complete_crown_ready']=bool(final_ready)
+        if not final_ready:
+            report['warnings'].append({'stage':'FINAL_CONSTRUCTION','reason':
+                (report.get('w3_preflight') or {}).get('reason') or 'FINAL_OR_INTAGLIO_NOT_CONSTRUCTED'})
+            report['status']='REVIEW_REQUIRED'
     else:
         report={'type':'template_draft','candidate_kind':'TEMPLATE_ONLY_DRAFT','status':'TEMPLATE_REVIEW_REQUIRED',
             'stages':[{'stage':'TEMPLATE','status':'PLACED'},{'stage':'PROXIMAL','status':'NOT_ASSESSED'},
                       {'stage':'OCCLUSAL','status':'NOT_ASSESSED'}],
-            'w3_preflight':{'status':'INPUT_CHECKED','reason':'预备体输入检查通过；内冠与壁厚仍需最终构建检查'}}
+            'w3_preflight':{'status':'NOT_ASSESSED','reason':'模板草稿不生成最终内冠；请使用一键自动生成完成冠体'},
+            'complete_crown_ready':False}
         artifacts={'outer':str(baseline),'baseline':str(baseline)}
     report.update(eligibility=state,input_diagnostics=diagnostics,
         completed_stages=[s['stage'] for s in report['stages'] if s['status'] in ('PLACED','PASS_ENGINEERING')],
-        blocked_stages=[s for s in report['stages'] if s['status'] in ('NOT_ASSESSED','INPUT_UNVERIFIED','BLOCKED')],        review_required_stages=['CANDIDATE','FINAL_QC'],manufacturing_status='NOT_PRODUCTION_APPROVED',
+        blocked_stages=[s for s in report['stages'] if s['status'] in ('NOT_ASSESSED','INPUT_UNVERIFIED','BLOCKED')],
+        review_required_stages=['CANDIDATE','FINAL_QC'],manufacturing_status='NOT_PRODUCTION_APPROVED',
         candidate_outer_sha256=file_digest(artifacts['outer']),
         artifact_sha256={k:file_digest(v) for k,v in artifacts.items()})
-    # A1：候选报告必须自证 truth source（哪颗模板 / 哪个确认帧 / 哪条放置实现），
-    # 否则"几何来自 A、报告写着 B"这类断链在报告层无法被发现。
-    report['template_source']=placement.get('template_source')
-    report['template_source_warning']=placement.get('template_source_warning')
-    report['frame_source']=placement.get('frame_source')
+    report['template_source']=placement.get('template_source') or report.get('template_source')
+    report['template_source_warning']=placement.get('template_source_warning') or report.get('template_source_warning')
+    report['frame_source']=placement.get('frame_source') or report.get('frame_source')
     report['patient_frame']={'revision_id':(json.loads(d.get('autofit_frame_json') or 'null') or {}).get('revision_id'),
                              'source':'CONFIRMED'}
-    report['placement_path']=placement.get('placement_path')
+    report['placement_path']=placement.get('placement_path') or report.get('placement_path')
     report['baseline_sha256']=file_digest(artifacts['baseline'])
-    # B：放置路径给出**同一有符号口径**的接触快照（未确认的输入只标未评估，绝不猜符号）。
-    # 快照不是门禁：失败时如实记下原因，而不是让候选生成整个失败。
     from .contact_measurement import measure_confirmed_inputs, serializable_measurement
     from fastapi import HTTPException as _HTTPException
     parameters=json.loads(d['parameters_json'])
+    proximal_target,occlusal_target,_ps,_os=_resolved_contact_targets(parameters)
     try:
         contact=measure_confirmed_inputs(d,json.loads(d.get('autofit_frame_json') or 'null') or {},
-            artifacts['baseline'],target_proximal=parameters.get('proximal_target_mm'),
-            target_occlusal=parameters.get('occlusal_target_mm'),strict=False)
+            artifacts['baseline'],target_proximal=proximal_target,
+            target_occlusal=occlusal_target,strict=False)
         report['placement_contact']=serializable_measurement(contact)
     except (_HTTPException,ValueError,OSError) as exc:
         report['placement_contact']={'status':'NOT_ASSESSED','reason':'PLACEMENT_SNAPSHOT_FAILED: %s'%exc}

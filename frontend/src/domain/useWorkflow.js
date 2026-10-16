@@ -21,8 +21,8 @@ export const DEFAULT_PARAMS = {
   enforce_minimum_thickness: false,
   machine_axes: 5,
   cement_gap_start_mm: 0,
-  proximal_target_mm: 0.05,
-  occlusal_target_mm: 0.05,
+  proximal_target_mm: -0.02,
+  occlusal_target_mm: 0.02,
 };
 
 /** 第 4 页暴露给用户的 5 个核心参数（其余走"更多参数"）。 */
@@ -30,8 +30,8 @@ export const CORE_PARAMS = [
   { key: "cement_gap_mm", label: "Cement Gap", hint: "粘接间隙", step: 0.005, min: 0, max: 0.3 },
   { key: "margin_gap_mm", label: "Margin Gap", hint: "边缘区域（当前版本固定）", step: 0.005, min: 0, max: 0.2, fixed: true },
   { key: "minimum_thickness_mm", label: "Minimum Thickness", hint: "最小壁厚", step: 0.05, min: 0.3, max: 2.5 },
-  { key: "proximal_target_mm", label: "Proximal Contact", hint: "邻牙接触目标", step: 0.01, min: 0, max: 0.5, optional: true },
-  { key: "occlusal_target_mm", label: "Occlusal Clearance", hint: "对颌间隙目标", step: 0.01, min: 0, max: 0.5, optional: true },
+  { key: "proximal_target_mm", label: "Proximal Contact", hint: "邻牙接触：0=刚好接触，负值=轻微压接", step: 0.01, min: -0.1, max: 0.5 },
+  { key: "occlusal_target_mm", label: "Occlusal Clearance", hint: "静态对颌目标间隙，默认近接触", step: 0.01, min: 0, max: 0.5 },
 ];
 
 export const ADVANCED_PARAMS = [
@@ -85,10 +85,6 @@ export default function useWorkflow() {
   const [brush, setBrush] = useState({ radius: 1.5, strength: 0.3, falloff: 2 });
   const [editState, setEditState] = useState("IDLE");
   const [editFailure, setEditFailure] = useState(null);
-  // 微调保存**不走全局 busy**：全屏遮罩只留给生成/内冠/咬合这类长任务。
-  const [savingEdit, setSavingEdit] = useState(false);
-  const savingEditRef = useRef(false);
-  const pendingEdit = useRef(null);
   const [pickRole, setPickRole] = useState(null);
   const [neighborSelection, setNeighborSelection] = useState(null);
   const [supportCenter, setSupportCenter] = useState(null);
@@ -539,70 +535,23 @@ export default function useWorkflow() {
     void loadContacts(kind);
   };
 
-  /**
-   * 后台刷新语义映射（sculpt-session）。**不 await、失败不打断画笔**：
-   * 这一步以前是同步等待的，也是"每笔微调卡一下"的主因（放大到 1MB / 2.5s）。
-   */
-  const refreshSculptSession = async () => {
-    if (!design?.id) return;
-    try {
-      const session = await adapter.sculptSessionLight(design.id);
-      setSculpt(session);
-      setRegionMap(session.region_map || null);
-      setEditState((state) => (state === "VALIDATING" || state === "SAVED" ? "READY" : state));
-    } catch { /* 后台刷新失败保留现状，不打断用户的笔 */ }
-  };
-
-  /**
-   * 微调提交（**非阻塞**）：一笔画完发一次提交，但期间画布保持可用。
-   * 提交在途时又画了：只保留**最新一笔**，上一笔落地后自动接着提交（连笔画合并往返）。
-   */
-  const commitEdit = (payload) => {
-    if (!design?.id) { setMsg("请先创建设计"); return Promise.resolve(false); }
-    pendingEdit.current = payload;
-    return drainEditQueue();
-  };
-
-  const drainEditQueue = async () => {
-    if (savingEditRef.current || !pendingEdit.current) return false;
-    const payload = pendingEdit.current;
-    pendingEdit.current = null;
-    savingEditRef.current = true;
-    setSavingEdit(true);
+  const commitEdit = (payload) => work(async () => {
+    if (!design?.id) throw new Error("请先创建设计");
     setEditState("VALIDATING");
     setEditFailure(null);
-    try {
-      const result = await adapter.applyFreeformEdit(design.id, payload);
-      setDesign(await api.design(design.id));       // 轻（~20KB）：拿到新外形路径与版本
-      setMeshVersion(Date.now());
-      setRegionWeights(null);                       // 外形变了 ⇒ 逐顶点权重作废
-      if (result?.thickness_audit) setThickness(result.thickness_audit);
-      if (result?.contacts?.status) setAdaptStatus({ status: result.contacts.status });
-      setEditState("SAVED");
-      setMsg(`已保存本次微调（${payload.operation}）`);
-      void refreshSculptSession();                  // 重活全部后台化
-      void loadContacts(contactKind);
-      return result;
-    } catch (error) {
-      if (error?.payload?.status === "REJECTED_AND_ROLLED_BACK") {
-        setEditState("REJECTED");
-        setEditFailure(error.payload);
-      } else if (error?.status === 409 && /编辑|会话|输入/.test(error?.message || "")) {
-        setEditState("STALE");
-      }
-      setMsg(error?.network
-        ? "连接中断，无法确认本次微调是否已保存；请重新打开病例核对结果，避免重复提交"
-        : `微调未保存：${error?.message || "请稍后重试"}`);
-      void refreshSculptSession();                  // 被拒 ⇒ 拉回服务端真状态
-      return false;
-    } finally {
-      savingEditRef.current = false;
-      setSavingEdit(false);
-      if (pendingEdit.current) void drainEditQueue();
-    }
-  };
-
-  const markEditPreview = () => { if (!savingEditRef.current) setEditState("PREVIEW"); };
+    const result = await adapter.applyFreeformEdit(design.id, payload);
+    await reloadAfterOuterChange();
+    if (result?.thickness_audit) setThickness(result.thickness_audit);
+    if (result?.contacts?.status) setAdaptStatus({ status: result.contacts.status });
+    setEditState("SAVED");
+    // 1.0：微调一律保存；质量类问题只在消息里如实提示，不再回滚。
+    const warnings = result?.edit?.quality_warnings || [];
+    setMsg(warnings.length
+      ? `已保存到外形修订（${payload.operation}）· 质量提示 ${warnings.length} 项：${warnings.slice(0, 2).join("；")}${warnings.length > 2 ? " …" : ""}`
+      : `已应用并保存到外形修订（${payload.operation}）`);
+    return result;
+  }, "正在验证并保存本次微调…", "微调未保存");
+  const markEditPreview = () => { if (!busy) setEditState("PREVIEW"); };
   const clearEditFailure = () => { setEditFailure(null); setEditState(s => s === "REJECTED" ? "READY" : s); };
 
   const loadContacts = async (kind = contactKind) => {
@@ -714,7 +663,7 @@ export default function useWorkflow() {
     margin, marginSession, marginUndo, marginRedo, detection, axis, axisInfo,
     params, templates, library, selectedTemplate, templateCandidate, generatedCandidate, sculpt, contacts, contactKind, contactUpdating, thickness,
     regionMap, regionWeights, regionProtection,
-    adaptStatus, qc, meshVersion, view, designTool, brush, editState, editFailure, savingEdit, marginTool, featureMode, smoothStrength,
+    adaptStatus, qc, meshVersion, view, designTool, brush, editState, editFailure, marginTool, featureMode, smoothStrength,
     pickRole, supportCenter, neighborSelection,
     // 派生
     upper: url("upper"), lower: url("lower"), support: url("support"),

@@ -1,0 +1,88 @@
+name: CAD-1 Space Regression
+
+on:
+  push:
+    branches:
+      - feat/cad1-semantic-zones
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/cad1-space-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Build frontend
+        run: npm run build
+
+  geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Compile backend
+        run: python -m compileall -q app tests
+      - name: Generation reuse and timing audit regression
+        run: pytest tests/unit/services/test_generation_runtime.py -q
+      - name: Three hard constraints regression
+        run: pytest tests/unit/geometry/test_three_hard_constraints.py -q
+      - name: Space-driven embryo regression
+        if: always()
+        run: |
+          pytest tests/unit/geometry/test_space_driven_embryo.py -q
+          pytest tests/unit/geometry/test_patient_space_envelope.py -q
+          pytest tests/unit/geometry/test_space_contact_patient_envelope.py -q
+          pytest tests/unit/geometry/test_cad1_proximal_guardrails.py -q
+      - name: Margin and occlusion regressions
+        if: always()
+        run: |
+          pytest tests/unit/geometry/test_patient_adaptation.py -q
+          pytest tests/unit/geometry/test_occlusal_active_subset_acceptance.py -q
+      - name: Abutment support selection regression
+        if: always()
+        run: pytest tests/unit/geometry/test_abutment_support_selection.py -q
+      - name: Abutment and final-surface regressions
+        if: always()
+        run: |
+          pytest tests/unit/services/test_abutment_fast.py -q
+          pytest tests/unit/geometry/test_nonplanar_source_extraction.py -q
+          pytest tests/unit/services/test_sculpt_final_sync.py -q
+      - name: Pack current source for real-case replay
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: tar --exclude='.git' -czf /tmp/cad1-current-source.tar.gz backend frontend testdata .github
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cad1-current-source
+          path: /tmp/cad1-current-source.tar.gz
+          retention-days: 7

@@ -20,45 +20,45 @@ export default function HomePage({ wf }) {
   return <div className="cd-home">
     <section className="cd-hero">
       <div>
-        <div className="cd-eyebrow">CROWN DESIGN WORKSPACE</div>
-        <h1>数字牙冠设计</h1>
-        <p>病例导入、边缘线与插入轴确认、牙冠模板与参数、邻牙与对颌适配、最终检查与导出。</p>
+        <div className="cd-eyebrow">CROWNFLOW 1.0</div>
+        <h1>自动牙冠设计</h1>
+        <p>基台冠走快速订单：上传已咬合上下颌、选择牙位/牙库/参数后直接自动生成；天然牙预备体继续保留完整 Margin / Axis 复核流程。</p>
         <div className="cd-hero-actions">
-          <button type="button" className="cd-btn primary" disabled={wf.busy} onClick={wf.createCase}>＋ 新建病例</button>
+          <button type="button" className="cd-btn primary" disabled={wf.busy} onClick={wf.createCase}>＋ 创建订单</button>
           <button type="button" className="cd-btn secondary" disabled={wf.busy}
-            onClick={() => wf.setMsg("打开病例：从下面的最近病例里选择")}>打开病例</button>
+            onClick={() => wf.setMsg("打开订单：从下面的最近订单里选择")}>打开订单</button>
         </div>
       </div>
       <div className="cd-hero-info">
-        <div><span>工作流</span><b>6 步</b></div>
-        <div><span>修复类型</span><b>基台 / 天然牙</b></div>
+        <div><span>基台冠</span><b>快速自动化</b></div>
+        <div><span>天然牙</span><b>完整复核</b></div>
         <div><span>输出</span><b>Final Crown STL</b></div>
       </div>
     </section>
 
-    <PageHead title="最近病例" hint="选择一条继续设计，或新建病例。" />
+    <PageHead title="最近订单" hint="选择一条继续设计，或创建新订单。" />
     <div className="cd-cases">
       {recent.map((row) => <div key={row.caseId} className="cd-case-entry"><button type="button" className="cd-case" disabled={wf.busy}
         onClick={() => (row.design ? wf.resumeDesign(row.design.id, row.caseId) : wf.openCase(row.caseId))}>
         <div className="cd-case-icon">{row.design ? row.design.target_fdi : "＋"}</div>
         <div className="cd-case-body">
           <b>{row.name}</b>
-          <p>{row.design ? `FDI ${row.design.target_fdi} · ${row.design.support_type === "abutment" ? "种植基台" : "天然牙预备体"}` : "尚未选择牙位"}</p>
+          <p>{row.design ? `FDI ${row.design.target_fdi} · ${row.design.support_type === "abutment" ? "种植基台快速流程" : "天然牙预备体"}` : "尚未选择牙位"}</p>
           {row.state && <small className={row.state.tone}>{row.state.label}</small>}
         </div>
       </button>
-        <button type="button" className="cd-case-delete" disabled={wf.busy} aria-label={`删除病例 ${row.name}`}
+        <button type="button" className="cd-case-delete" disabled={wf.busy} aria-label={`删除订单 ${row.name}`}
           onClick={() => { setDeleting(row); deleteDialog.current.showModal(); }}>删除</button>
       </div>)}
       <button type="button" className="cd-case cd-case-add" disabled={wf.busy} onClick={wf.createCase}>
-        <strong>＋</strong><span>新建病例</span>
+        <strong>＋</strong><span>创建订单</span>
       </button>
     </div>
 
     <dialog ref={deleteDialog} className="cd-delete-dialog" aria-labelledby="delete-case-title" onCancel={() => setDeleting(null)}>
-      <h3 id="delete-case-title">删除病例</h3>
+      <h3 id="delete-case-title">删除订单</h3>
       <p>确定永久删除“{deleting?.name}”？</p>
-      <p className="cd-hint">该病例的设计记录和扫描文件将一并删除，无法恢复。</p>
+      <p className="cd-hint">该订单的设计记录和扫描文件将一并删除，无法恢复。</p>
       <div className="cd-btn-row">
         <button type="button" className="cd-btn secondary" autoFocus onClick={() => { deleteDialog.current.close(); setDeleting(null); }}>取消</button>
         <button type="button" className="cd-btn primary" disabled={wf.busy || !deleting} onClick={() => {
@@ -67,6 +67,6 @@ export default function HomePage({ wf }) {
       </div>
     </dialog>
 
-    {wf.cases.length === 0 && !wf.busy && <Panel><p className="cd-hint">还没有病例。点“新建病例”开始，或在病例页导入一个订单包。</p></Panel>}
+    {wf.cases.length === 0 && !wf.busy && <Panel><p className="cd-hint">还没有订单。点“创建订单”开始，或导入已有订单包。</p></Panel>}
   </div>;
 }

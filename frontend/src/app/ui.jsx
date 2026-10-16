@@ -1,11 +1,12 @@
 /** 新 UI 的基础部件：步进条、页面骨架、面板、字段、指标行。全部无状态。 */
 import React from "react";
-import { FLOW, progressPercent, stepState } from "../domain/steps";
+import { FLOW, progressPercent } from "../domain/steps";
 
-export function Stepper({ step, facts, onGo, busy }) {
+export function Stepper({ step, facts, onGo, busy, flow = FLOW }) {
+  const activeIndex = Math.max(0, flow.findIndex((item) => item.id === step));
   return <nav className="cd-steps" aria-label="设计流程">
-    {FLOW.map((item, index) => {
-      const state = stepState(item.id, step);
+    {flow.map((item, index) => {
+      const state = index === activeIndex ? "active" : index < activeIndex ? "done" : "todo";
       return <React.Fragment key={item.id}>
         {index > 0 && <em className={state === "todo" ? "" : "on"} />}
         <button type="button" className={`cd-step ${state}`} aria-current={state === "active" ? "step" : undefined}

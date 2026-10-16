@@ -28,6 +28,38 @@ def _failure_region(frame, vertices, moved):
     return 'BUCCAL' if rel[1]>=0 else 'LINGUAL'
 
 
+def _edit_quality_warnings(gate, shape_check, flipped_count, shape):
+    """质量类判据转为警告（不再回滚），每条带实测数值，供 Review / 检查页复核。
+
+    1.0 起微调"改了就改了"：拉伸/面积比例、翻面、自交、三角质量退化都只记录。
+    这些判据用的是**无量纲比例**（4x / 2x / 6x），而牙冠网格的边长跨 3 个数量级
+    （实测最短边 0.0025 mm、笔刷范围内 p05 0.049 mm），任何 0.2–0.3 mm 的笔刷位移
+    压在 sliver 边上都会被误判为"拉伸 50 倍"，从而把正常修改全部挡掉。
+    """
+    out=[]
+    for reason in (shape_check.get('reasons') or []):
+        if reason=='EDGE_STRETCH_MAX':
+            out.append('局部拉伸 %.1f 倍（已保存，建议后续平滑）'%float(shape.get('edge_stretch_max') or 0.0))
+        elif reason=='EDGE_STRETCH_P95':
+            out.append('p95 拉伸 %.2f 倍（已保存）'%float(shape.get('edge_stretch_p95') or 0.0))
+        elif reason=='LOCAL_AREA_STRETCH':
+            out.append('局部面积放大 %.1f 倍（已保存）'%float(shape.get('area_ratio_p95') or 0.0))
+        elif reason=='LOCAL_AREA_COLLAPSE':
+            out.append('局部面积塌陷到 %.2f 倍（已保存）'%float(shape.get('area_ratio_p05') or 0.0))
+        elif reason=='TRIANGLE_QUALITY_DEGRADED':
+            out.append('三角质量下降（已保存）')
+        else:
+            out.append(str(reason))
+    if flipped_count:
+        out.append('引入 %d 处翻面（已保存，可在检查页复核）'%int(flipped_count))
+    for violation in (gate.violations or []):
+        if violation.startswith('self_intersection') or violation.startswith('new_self_intersections'):
+            out.append('自交检查：%s（已保存）'%violation)
+        elif violation.startswith('locked_displacement'):
+            out.append('颈缘固定区位移 %s（已保存）'%violation.split('=')[-1])
+    return out
+
+
 def _rejection_report(operation, frame, v0, v1, faces, focus, gate=None, reason='GEOMETRY_GATE', message=None):
     moved=np.linalg.norm(np.asarray(v1)-np.asarray(v0),axis=1)
     focus=np.asarray(focus,int) if focus is not None else np.zeros(0,int)
@@ -149,20 +181,25 @@ def sculpt_edit(mesh,margin,axis,request,frame):
         shape_check=shape_gate(shape,max_edge_stretch=4.0,p95_edge_stretch=2.0,
                                min_quality_floor=.015,relative_quality_floor=.30,
                                min_area_ratio=.10,max_area_ratio=6.0)
-        if not gate.ok or len(strict_flips) or len(degenerate) or not shape_check['ok']:
-            report=_rejection_report(op,frame,v,result,faces,focus,gate,reason='GEOMETRY_GATE' if shape_check['ok'] else 'SHAPE_QUALITY_GATE')
-            report['failure_face_ids']=list(dict.fromkeys(report['failure_face_ids']+strict_flips[:80].astype(int).tolist()+degenerate[:80].astype(int).tolist()))[:120]
+        # 1.0：微调一律保存（"改了就改了"）。质量类判据（拉伸/面积比例、翻面、自交、
+        # 三角质量）只写进 quality_warnings，不再回滚。仍硬拦的只有两类"会弄坏数据"
+        # 的情况：非有限坐标、零面积退化面（以及下面的闭合拓扑丢失）。
+        quality_warnings=_edit_quality_warnings(gate,shape_check,len(strict_flips),shape)
+        if not np.isfinite(result).all() or len(degenerate):
+            report=_rejection_report(op,frame,v,result,faces,focus,gate,
+                reason='BROKEN_MESH' if len(degenerate) else 'NONFINITE_GEOMETRY',
+                message='本次修改会产生零面积退化面/非有限坐标（会弄坏数据），未保存并已回滚')
+            report['failure_face_ids']=list(dict.fromkeys(report['failure_face_ids']+degenerate[:80].astype(int).tolist()))[:120]
             report['degenerate_face_count']=int(len(degenerate))
             report['shape_quality']=shape;report['shape_gate']=shape_check
-            if not shape_check['ok']:
-                report['message']='本次修改会造成局部拉伸/薄片形变，未保存并已回滚'
             raise SculptEditRejected(report)
     else:
-        shape={'focus_face_count':0};shape_check={'ok':True,'reasons':[]}
+        shape={'focus_face_count':0};shape_check={'ok':True,'reasons':[]};quality_warnings=[]
     if mesh.is_watertight and not candidate.is_watertight:
         raise SculptEditRejected(_rejection_report(op,frame,v,result,faces,focus,None,
             reason='WATERTIGHTNESS_LOST',message='本次修改会破坏闭合拓扑，未保存并已回滚'))
     return candidate,{'affected_area_mm2':float(mesh.area_faces[focus].sum()),
         'max_displacement_mm':float(moved.max()),'p95_displacement_mm':float(np.quantile(moved,.95)),
         'affected_vertex_count':int((moved>1e-9).sum()),'cervical_locked':True,'frame_revision_id':frame.revision_id,
-        'shape_quality':shape,'shape_gate':shape_check}
+        'shape_quality':shape,'shape_gate':shape_check,
+        'quality_warnings':quality_warnings,'quality_warning_count':len(quality_warnings)}

@@ -1,4 +1,5 @@
 """Dependency checks for the manual workbench; research runs remain separate."""
+from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
@@ -46,8 +47,7 @@ def dependency_digest(design, *, stage="final", conn=None):
     data['sha256']={}
     for p in files:
         if p and Path(p).is_file():
-            with Path(p).open('rb') as source:
-                data['sha256'][p]=hashlib.file_digest(source,'sha256').hexdigest()
+            data['sha256'][p]=file_digest(p)
     return hashlib.sha256(json.dumps(data,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 
 
@@ -63,9 +63,19 @@ def require_current_final(design):
             raise HTTPException(409,'产物文件缺失或已变化，请重新生成并检查')
 
 
-def file_digest(path):
-    with Path(path).open('rb') as stream:
+@lru_cache(maxsize=512)
+def _file_digest_cached(resolved_path, size, mtime_ns, ctime_ns):
+    # size/mtime/ctime participate in the cache key.  Replacing or modifying an
+    # artifact therefore invalidates the cached digest while repeated workflow
+    # eligibility checks stop re-reading multi-megabyte STL files.
+    with Path(resolved_path).open('rb') as stream:
         return hashlib.file_digest(stream,'sha256').hexdigest()
+
+
+def file_digest(path):
+    p=Path(path).resolve()
+    stat=p.stat()
+    return _file_digest_cached(str(p),int(stat.st_size),int(stat.st_mtime_ns),int(stat.st_ctime_ns))
 
 
 def confirmed_inputs(design, *, require_profile=True):

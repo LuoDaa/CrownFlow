@@ -6,7 +6,7 @@ from .prep_conditioning import PreparedSurfaceContract, Indication, Readiness
 from .design_dependencies import file_digest
 from ..geometry.abutment_support import extract_abutment_support, SupportExtractionError
 from ..geometry.io import load_mesh
-from ..geometry.nonplanar_crown import fitting_support_above_margin
+from ..geometry.nonplanar_crown import fitting_support_above_margin, MarginBuildError
 
 def indication_of(design):
     return design.get('indication') or ('CROWN_ON_EXISTING_ABUTMENT' if design.get('support_type')=='abutment' else 'NATURAL_PREP')
@@ -17,9 +17,12 @@ def assess_abutment_surface(support,margin,axis,*,source_sha256=None,margin_revi
         source_asset_sha256=source_sha256,margin_revision_id=margin_revision_id,insertion_axis_revision_id=axis_revision_id,
         provenance={'support_type':'abutment','margin_semantics':'CROWN_FINISH_LINE',
                     'patient_frame_revision_id':patient_frame_revision_id,'source_abutment_sha256':source_sha256})
-    def rejected(code,reason,readiness='REVIEW_REQUIRED'):
+    def rejected(code,reason,readiness='REVIEW_REQUIRED',diagnostics=None):
         contract.readiness=readiness;contract.rejection_code=code;contract.rejection_reason=reason
         contract.rejection_class='UNSUPPORTED_INDICATION' if readiness=='UNSUPPORTED_INDICATION' else 'REVIEW_REQUIRED'
+        if diagnostics:
+            contract.diagnostics={'extraction_error':diagnostics}
+            contract.provenance['extraction_error_diagnostics']=diagnostics
         return contract,None
     if indication!='CROWN_ON_EXISTING_ABUTMENT':return rejected('CUSTOM_ABUTMENT_NOT_SUPPORTED' if indication=='CUSTOM_IMPLANT_ABUTMENT' else 'UNSUPPORTED_INDICATION',
         '当前流程只支持已有实体基台上的粘接冠','UNSUPPORTED_INDICATION')
@@ -33,10 +36,11 @@ def assess_abutment_surface(support,margin,axis,*,source_sha256=None,margin_revi
             if loop['classification']=='CROWN_MARGIN':
                 loop['confirmed']=True;loop['margin_revision_id']=margin_revision_id
         if report['readiness']=='ABUTMENT_SUPPORT_READY':
-            # The existing input predicate remains authoritative after explicit conditioning.
             fitting_support_above_margin(prepared.mesh,margin,axis,prepared=True)
-    except ValueError as exc:
-        return rejected(getattr(exc,'code','MARGIN_NOT_ON_SUPPORT' if '缺口' in str(exc) else 'SUPPORT_EXTRACTION_AMBIGUOUS'),str(exc))
+    except SupportExtractionError as exc:
+        return rejected(getattr(exc,'code','SUPPORT_EXTRACTION_AMBIGUOUS'),str(exc),diagnostics=getattr(exc,'diagnostics',None))
+    except MarginBuildError as exc:
+        return rejected(getattr(exc,'code','MARGIN_NOT_ON_SUPPORT'),str(exc))
     contract.readiness=report['readiness'];contract.rejection_code=report['rejection_code']
     contract.rejection_reason={'SCREW_CHANNEL_CONFIRMATION_REQUIRED':'请核对并确认基台顶部螺丝通道开口',
         'UNKNOWN_SUPPORT_HOLE':'存在未分类孔洞，请检查扫描来源，禁止自动封闭'}.get(contract.rejection_code,'')
@@ -45,7 +49,8 @@ def assess_abutment_surface(support,margin,axis,*,source_sha256=None,margin_revi
     contract.conditioned_mesh_sha256=report['conditioned_support_sha256'];contract.source_face_ids=report['source_face_ids']
     contract.operations=report['virtual_cap_operations'];contract.diagnostics=report
     contract.provenance.update(conditioned_support_sha256=report['conditioned_support_sha256'],
-        algorithm_version=report['algorithm_version'],screw_channel_present=report['screw_channel_present'])
+        algorithm_version=report['algorithm_version'],screw_channel_present=report['screw_channel_present'],
+        support_region_selection=report.get('support_region_selection'))
     return contract,prepared
 
 def prepare_design_support(design,*,require_ready=True,lookup_asset=True,reference_override=None):

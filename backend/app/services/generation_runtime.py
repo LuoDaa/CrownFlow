@@ -1,0 +1,221 @@
+"""Runtime audit + reuse cache for CAD-1 automatic crown generation.
+
+Every expensive stage is durably timed and invariant patient geometry is cached
+by content-derived keys.  Runtime/candidate revision ids never belong in a
+geometry cache key.
+"""
+from __future__ import annotations
+
+from collections import OrderedDict
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import hashlib
+import json
+import logging
+from pathlib import Path
+import threading
+import time
+from uuid import uuid4
+
+from ..config import CASE_DIR
+from ..geometry.io import load_mesh, save_mesh
+
+_LOG = logging.getLogger("uvicorn.error")
+_OBJECT_CACHE = OrderedDict()
+_CACHE_LOCK = threading.Lock()
+_OBJECT_CACHE_LIMIT = 16
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def stable_key(payload) -> str:
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _rounded_geometry(value, digits=8):
+    """Canonicalise numeric geometry without adding revision/runtime metadata."""
+    if isinstance(value, dict):
+        return {str(k): _rounded_geometry(v, digits) for k, v in sorted(value.items())}
+    if isinstance(value, (list, tuple)):
+        return [_rounded_geometry(v, digits) for v in value]
+    if isinstance(value, float):
+        return round(value, digits)
+    return value
+
+
+def _stable_support_fingerprint(prepared_support):
+    """Strip volatile contract/revision fields from the intaglio cache owner.
+
+    ``PreparedSurfaceContract.as_report`` includes design/source revision ids that
+    legitimately change after each accepted outer candidate even though the
+    conditioned abutment mesh does not.  FDI46 exposed this as three guaranteed
+    cache misses.  Only conditioned geometry + extraction algorithm/selection own
+    the actual intaglio preview.
+    """
+    if not isinstance(prepared_support, dict):
+        return prepared_support
+    geometry = prepared_support.get("geometry") or {}
+    provenance = prepared_support.get("provenance") or {}
+    diagnostics = prepared_support.get("diagnostics") or {}
+    return {
+        "conditioned_mesh_sha256": geometry.get("conditioned_mesh_sha256")
+            or provenance.get("conditioned_support_sha256"),
+        "algorithm_version": provenance.get("algorithm_version")
+            or diagnostics.get("algorithm_version"),
+        "support_region_selection": provenance.get("support_region_selection")
+            or diagnostics.get("support_region_selection"),
+    }
+
+
+def intaglio_cache_payload(*, support_sha256, margin, axis, parameters, prepared_support=None):
+    """Inputs that can actually change blockout/gap geometry, and nothing else."""
+    keys = (
+        "cement_gap_mm", "cement_gap_start_mm", "cement_gap_top_mm",
+        "margin_gap_mm", "margin_extension_mm", "untouchable_zone_mm",
+        "machine_axes", "undercut_policy", "blockout_angle_deg",
+        "border_horizontal_mm", "border_angled_mm", "border_angle_deg",
+        "border_vertical_mm", "tool_radius_mm", "tool_compensation_enabled",
+    )
+    return {
+        "version": "intaglio-preview-cache/v2-stable-geometry-owner",
+        "support_sha256": support_sha256,
+        "margin": _rounded_geometry(margin),
+        "axis": _rounded_geometry(axis),
+        "parameters": {key: _rounded_geometry(parameters.get(key)) for key in keys},
+        "prepared_support": _rounded_geometry(_stable_support_fingerprint(prepared_support)),
+    }
+
+
+def antagonist_cache_payload(*, scan_sha256, transform, frame_revision_id, frame_z):
+    return {
+        "version": "antagonist-surface-cache/v1",
+        "scan_sha256": scan_sha256,
+        "transform": transform,
+        "frame_revision_id": frame_revision_id,
+        "frame_z": frame_z,
+    }
+
+
+def neighbor_cache_payload(*, region_sha256, outward_normal):
+    return {
+        "version": "neighbor-surface-cache/v1",
+        "region_sha256": region_sha256,
+        "outward_normal": outward_normal,
+    }
+
+
+def _cache_dir(case_id: str) -> Path:
+    path = CASE_DIR / case_id / ".generation_cache"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def cached_mesh(case_id: str, namespace: str, payload, builder, *, trace=None):
+    key = stable_key(payload)
+    root = _cache_dir(case_id)
+    mesh_path = root / f"{namespace}_{key}.stl"
+    meta_path = root / f"{namespace}_{key}.json"
+    if mesh_path.is_file() and meta_path.is_file():
+        try:
+            mesh = load_mesh(mesh_path)
+            metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+            if trace is not None:
+                trace.cache(namespace, True, key, path=str(mesh_path))
+            return mesh.copy(), metadata, True, mesh_path
+        except Exception:
+            pass
+    started = time.perf_counter()
+    mesh, metadata = builder()
+    save_mesh(mesh, mesh_path)
+    meta_path.write_text(json.dumps(metadata or {}, ensure_ascii=False, indent=1), encoding="utf-8")
+    if trace is not None:
+        trace.cache(namespace, False, key, path=str(mesh_path), build_elapsed_s=time.perf_counter() - started)
+    return mesh.copy(), metadata or {}, False, mesh_path
+
+
+def cached_object(namespace: str, payload, builder, *, trace=None):
+    key = f"{namespace}:{stable_key(payload)}"
+    with _CACHE_LOCK:
+        value = _OBJECT_CACHE.get(key)
+        if value is not None:
+            _OBJECT_CACHE.move_to_end(key)
+    if value is not None:
+        if trace is not None:
+            trace.cache(namespace, True, key.split(":", 1)[1], memory=True)
+        return value, True
+    started = time.perf_counter(); value = builder()
+    with _CACHE_LOCK:
+        _OBJECT_CACHE[key] = value; _OBJECT_CACHE.move_to_end(key)
+        while len(_OBJECT_CACHE) > _OBJECT_CACHE_LIMIT:
+            _OBJECT_CACHE.popitem(last=False)
+    if trace is not None:
+        trace.cache(namespace, False, key.split(":", 1)[1], memory=True,
+                    build_elapsed_s=time.perf_counter() - started)
+    return value, False
+
+
+class GenerationTrace:
+    """Append-only per-design audit plus per-candidate timing snapshot."""
+
+    def __init__(self, case_id: str, design_id: str, *, baseline_sha256: str | None = None):
+        self.case_id = case_id; self.design_id = design_id; self.run_id = uuid4().hex
+        self.baseline_sha256 = baseline_sha256; self.started_at = _utc_now(); self._started = time.perf_counter()
+        self.events = []
+        self.audit_path = CASE_DIR / case_id / f"{design_id}_generation_audit.jsonl"
+        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+        self.event("RUN_START", status="STARTED", baseline_sha256=baseline_sha256)
+
+    def _append(self, event: dict):
+        payload = {"run_id": self.run_id, "case_id": self.case_id, "design_id": self.design_id,
+                   "timestamp": _utc_now(), **event}
+        self.events.append(payload)
+        with self.audit_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
+        elapsed = payload.get("elapsed_s")
+        suffix = f" elapsed={elapsed:.3f}s" if isinstance(elapsed, (int, float)) else ""
+        _LOG.info("CAD1 run=%s stage=%s status=%s%s", self.run_id,
+                  payload.get("stage"), payload.get("status"), suffix)
+        return payload
+
+    def event(self, stage: str, *, status="INFO", **metadata):
+        return self._append({"stage": stage, "status": status, **metadata})
+
+    def cache(self, namespace: str, hit: bool, key: str, **metadata):
+        return self.event(f"CACHE_{namespace.upper()}", status="HIT" if hit else "MISS",
+                          cache_key=key, **metadata)
+
+    @contextmanager
+    def span(self, stage: str, **metadata):
+        started = time.perf_counter(); self.event(stage, status="STARTED", **metadata)
+        try:
+            yield
+        except Exception as exc:
+            self._append({"stage": stage, "status": "ERROR", "elapsed_s": time.perf_counter() - started,
+                          "error": str(exc), **metadata})
+            raise
+        else:
+            self._append({"stage": stage, "status": "DONE", "elapsed_s": time.perf_counter() - started,
+                          **metadata})
+
+    def summary(self):
+        completed = [e for e in self.events if e.get("status") in ("DONE", "ERROR")]
+        stage_seconds = {}
+        for event in completed:
+            if isinstance(event.get("elapsed_s"), (int, float)):
+                stage_seconds[event["stage"]] = stage_seconds.get(event["stage"], 0.0) + float(event["elapsed_s"])
+        return {"run_id": self.run_id, "started_at": self.started_at,
+                "total_elapsed_s": float(time.perf_counter() - self._started),
+                "stage_elapsed_s": stage_seconds,
+                "cache_hits": sum(1 for e in self.events if e.get("status") == "HIT"),
+                "cache_misses": sum(1 for e in self.events if e.get("status") == "MISS"),
+                "audit_jsonl": str(self.audit_path)}
+
+    def snapshot(self, path: Path, *, extra=None) -> Path:
+        summary = self.summary(); self.event("RUN_END", status="DONE", total_elapsed_s=summary["total_elapsed_s"])
+        payload = {"summary": self.summary(), "events": self.events}
+        if extra: payload["extra"] = extra
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+        return path
