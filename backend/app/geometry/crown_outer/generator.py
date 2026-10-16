@@ -47,6 +47,16 @@ def _patient_frame_for_generation(patient_frame, margin, insertion_axis):
     return patient_frame
 
 
+def _occlusal_anchor_indices(placed, crown_idx, patient_frame, percentile):
+    """Select high-crown weak anchors along Patient Frame +Z, never world-Z."""
+    placed = np.asarray(placed, dtype=float)
+    crown_idx = np.asarray(crown_idx, dtype=np.int64)
+    axial = ((placed - np.asarray(patient_frame.origin, float))
+             @ np.asarray(patient_frame.z, float))
+    threshold = np.percentile(axial[crown_idx], float(percentile))
+    return crown_idx[axial[crown_idx] >= threshold]
+
+
 def generate_crown_outer_v0(
     template: CrownTemplate,
     patient_margin: np.ndarray,
@@ -108,9 +118,8 @@ def generate_crown_outer_v0(
         crown_idx = np.flatnonzero(template.crown_vertex_mask)
         # 咬合弱锚：必须沿**确认 Patient Frame 的 +Z**取高分位，不能看 world-Z。
         # 否则同一病例整体旋转后会换一批锚点，破坏 rigid-transform equivariance。
-        axial = (placed - np.asarray(pf.origin, float)) @ np.asarray(pf.z, float)
-        z_thr = np.percentile(axial[crown_idx], config.occlusal_anchor_percentile)
-        occ_idx = crown_idx[axial[crown_idx] >= z_thr]
+        occ_idx = _occlusal_anchor_indices(
+            placed, crown_idx, pf, config.occlusal_anchor_percentile)
         res.mesh_qc["occlusal_anchor"] = {
             "frame": "patient_z",
             "percentile": float(config.occlusal_anchor_percentile),
