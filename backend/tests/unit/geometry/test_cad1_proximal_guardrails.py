@@ -105,4 +105,4 @@ def test_proximal_solver_preserves_margin_band_occlusal_zone_and_all_axial_heigh
     for side in ("mesial", "distal"):
         growth = report["large_scale_reach"][side]["total_growth_mm"]
         assert growth <= MAX_BROAD_SIDE_GROWTH_MM + 1e-9
-    assert report["solver"] == "SPACE_DRIVEN_PROXIMAL_BOUNDED_FRAME_V5"
+    assert report["solver"] == "SPACE_DRIVEN_PROXIMAL_BOUNDED_FRAME_V6_PHYSICAL_SIDE"
