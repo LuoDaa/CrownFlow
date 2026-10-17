@@ -91,8 +91,7 @@ export default function SetupPage({ wf }) {
     }
 
     setGenerating(true);
-    wf.setMsg("正在生成完整牙冠：外冠、邻接、咬合与内冠会在一次操作中完成…");
-    let finalWarning = null;
+    wf.setMsg("正在生成完整牙冠：外冠、邻接、咬合与患者基台内冠会在一次操作中完成…");
     try {
       // 参数和牙库选择只在用户明确点击“牙冠生成”后写入/计算。
       await adapter.saveProfile(wf.design.id, wf.params);
@@ -103,24 +102,19 @@ export default function SetupPage({ wf }) {
       }
 
       const generated = await adapter.generateInitialCrown(wf.design.id, { kind: "AUTO" });
-      await adapter.confirmCrownCandidate(wf.design.id, generated.id);
-
-      // Candidate 阶段已经带 design intaglio；这里做一次且只做一次 exact
-      // finalize，把 cutter / cervical stitch / final crown 同步好再进入微调。
-      try {
-        await adapter.finalize(wf.design.id, { preserveCervical: true });
-      } catch (error) {
-        // 1.0 generation-first：final 构造失败不能把已经生成的 outer/intaglio
-        // 从用户眼前拿走。进入微调后仍可看到并继续处理。
-        finalWarning = error?.message || "最终闭合暂未完成";
-      }
+      // Accept endpoint is the CrownFlow 1.0 transaction boundary: it publishes
+      // the solved outer and persists (or regenerates) the patient-owned open
+      // intaglio. Do NOT immediately run the legacy manufacturing finalizer here;
+      // that second geometry pass can be slow and can replace the review geometry
+      // with a stitched/Boolean result. Hollow stitching is deferred to export.
+      const accepted = await adapter.confirmCrownCandidate(wf.design.id, generated.id);
 
       await wf.resumeDesign(wf.design.id, wf.caseId);
       wf.setStep("design");
       wf.reloadMeshes();
-      wf.setMsg(finalWarning
-        ? `外冠与内冠预览已生成并进入微调；最终闭合提示：${finalWarning}`
-        : "完整牙冠已生成：外冠、内冠、邻接和咬合已同步，可直接微调或导出。");
+      wf.setMsg(accepted?.inner_geometry_ready
+        ? "牙冠已生成：外冠、患者基台内冠、邻接和咬合已固定，可直接微调或导出空心 STL。"
+        : "外冠已生成并进入微调；内冠会由画布按当前基台继续生成，不会触发第二次外冠求解。");
     } catch (error) {
       wf.setMsg(`牙冠生成失败：${error?.message || "请检查输入后重试"}`);
     } finally {
@@ -130,7 +124,7 @@ export default function SetupPage({ wf }) {
 
   return <div className="cd-page">
     <PageHead eyebrow="STEP 4" title="CAD 1.0 自动牙冠设计"
-      hint="先选牙位参数和参考牙库；只有点击右下角“牙冠生成”才开始计算。一次生成同时完成外冠、邻接/咬合适配与内冠。" />
+      hint="先选牙位参数和参考牙库；只有点击右下角“牙冠生成”才开始计算。一次生成同时完成外冠、邻接/咬合适配与患者基台内冠。" />
 
     <div className="cd-grid setup">
       <Panel title={`参考牙库 · FDI ${wf.fdi || "—"}`} subtitle="点击模板只选择牙型，不会立即开始生成">
