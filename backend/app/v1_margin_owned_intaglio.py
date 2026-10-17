@@ -6,7 +6,7 @@ The contracts are intentionally one-way and independent:
 - ConfirmedMargin owns the final cervical boundary;
 - the collar is generated topology only, never a reason to reshape the body.
 
-Boolean remains an audit.  It is never used to rediscover the clinical surfaces.
+Boolean remains an audit. It is never used to rediscover clinical surfaces.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from .geometry.canonical_intaglio import (
     cervical_feasibility,
     extract_support_owned_intaglio,
 )
+from .geometry.cervical_geodesic import inset_open_surface_geodesic
 
 
 _FINALIZATION_OUTER_FROZEN: ContextVar[bool] = ContextVar(
@@ -88,10 +89,10 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
                         quality_mode="DESIGN"):
     """Build final crown after outer is already accepted.
 
-    No accepted outer vertex is moved here.  The intaglio component is proven by
-    PreparedSupport correspondence before any cervical triangles are generated.
-    Both clinical source bodies are then connected to one resampled exact Margin
-    through deterministic two-layer canonical collars.
+    `margin_band_mm` is interpreted as a surface/geodesic cervical width, not as
+    an insertion-axis height. The exact Margin first separates supra/sub-margin
+    geometry; then the source bodies are inset by geodesic distance without moving
+    any accepted body vertex.
     """
     params = parameters or {}
     curtain = _npc.MarginCurtain(margin, axis)
@@ -105,39 +106,50 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
     record_topology("01_input_outer", outer)
     record_topology("02_input_cutter", cutter)
 
-    # OUTER: Margin proximity is a valid source-body selector because the accepted
-    # crown has one anatomical body.  This does not move the source anatomy.
-    outside, outer_extract = _npc._single_open_surface_above_margin(
-        outer, curtain, float(transition_mm), "OUTER", invert=False
+    # OUTER: exact 3D Margin first, then constant surface-width transition.  The
+    # accepted body is never deformed; only below-band source faces are discarded.
+    outside_margin, outer_margin_extract = _npc._single_open_surface_above_margin(
+        outer, curtain, 1e-6, "OUTER", invert=False
     )
+    outside, outer_geodesic = inset_open_surface_geodesic(
+        outside_margin, float(transition_mm), role="OUTER"
+    )
+    outer_extract = {
+        "method": "EXACT_MARGIN_THEN_SURFACE_GEODESIC",
+        "margin_clip": outer_margin_extract,
+        "geodesic_transition": outer_geodesic,
+    }
     record_topology("10_outer_selected", outside)
 
-    # INTAGLIO: never share OUTER's selection heuristic.  Cutter may contain
-    # artificial closure/blockout faces, so PreparedSupport must prove ownership.
+    # INTAGLIO: component ownership is proven on the full supramarginal cutter
+    # before any collar-width trimming. Margin is boundary owner, not component owner.
     try:
-        inside, inner_extract = extract_support_owned_intaglio(
-            cutter, support, curtain, float(transition_mm), params
+        inside_margin, inner_ownership = extract_support_owned_intaglio(
+            cutter, support, curtain, 1e-6, params
         )
     except IntaglioOwnershipError as exc:
         raise _npc.MarginBuildError(f"{exc.code}: {exc.report}") from exc
-    record_topology("29_intaglio_selected", inside)
-
-    # A selected component that cannot be proven by support is not allowed to
-    # become a fake `final_ready` crown even if a watertight shell could be built.
-    if not inner_extract.get("selected_hard_valid"):
+    if not inner_ownership.get("selected_hard_valid"):
         raise _npc.MarginBuildError(
-            "INTAGLIO_COMPONENT_NOT_PROVEN_BY_SUPPORT: " + str(inner_extract)
+            "INTAGLIO_COMPONENT_NOT_PROVEN_BY_SUPPORT: " + str(inner_ownership)
         )
+    inside, inner_geodesic = inset_open_surface_geodesic(
+        inside_margin, float(transition_mm), role="INTAGLIO"
+    )
+    inner_extract = {
+        **inner_ownership,
+        "geodesic_transition": inner_geodesic,
+    }
+    record_topology("29_intaglio_selected", inside)
 
     feasible, feasibility = cervical_feasibility(outside, inside, curtain.points)
     feasibility["intaglio_component_valid"] = True
+    feasibility["transition_owner"] = "SURFACE_GEODESIC"
     if not feasible:
         raise _npc.MarginBuildError(
             "CERVICAL_ASSEMBLY_NOT_FEASIBLE: " + str(feasibility)
         )
 
-    # Final-stage material thickness remains audit-only.  Design-stage solvers had
-    # the only opportunity to grow the crown; W3 never pushes the accepted body.
     thickness_policy = None
     if params.get("enforce_minimum_thickness"):
         thickness_policy = {
@@ -153,7 +165,6 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
     record_topology("41_inner_collar_final", inner_surface)
     record_topology("50_final", final)
 
-    # Read-only source separation report after ownership, before downstream QC.
     outer_loop = _npc._boundary_loops(np.asarray(outside.faces, np.int64))[0]
     outer_ring = np.asarray(outside.vertices, float)[np.asarray(outer_loop, np.int64)]
     _cp, separation, _ = closest_point(inside, outer_ring)
@@ -175,7 +186,7 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
 
     from .geometry.cervical_cleanup import mesh_diagnostics
     cervical_report = {
-        "status": "CANONICAL_SHARED_MARGIN_COLLAR",
+        "status": "GEODESIC_CANONICAL_SHARED_MARGIN_COLLAR",
         "outer_before": mesh_diagnostics(outside, curtain.points),
         "inner_before": mesh_diagnostics(inside, curtain.points),
         "scope": "CROWN_CERVICAL_REGION_ONLY",
@@ -187,12 +198,13 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
 
     report = {
         "status": "ENGINEERING_ONLY",
-        "method": "SUPPORT_OWNED_INTAGLIO_CANONICAL_SHARED_MARGIN_V2",
+        "method": "SUPPORT_OWNED_INTAGLIO_GEODESIC_CANONICAL_MARGIN_V3",
         "assembly_order": [
             "ACCEPTED_OUTER_FROZEN",
             "PATIENT_BLOCKOUT_GAP_CUTTER",
-            "DIRECT_OUTER_SUPRAMARGINAL_CLIP",
+            "EXACT_3D_MARGIN_SUPRAMARGINAL_SPLIT",
             "PREPARED_SUPPORT_OWNS_INTAGLIO_COMPONENT",
+            "SURFACE_GEODESIC_CERVICAL_TRANSITION",
             "CERVICAL_FEASIBILITY_GATE",
             "CANONICAL_MARGIN_ARCLENGTH_COLLAR",
             "BOOLEAN_AUDIT_ONLY",
@@ -201,11 +213,13 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
             "outer_owner": "ACCEPTED_OUTER",
             "intaglio_owner": "PREPARED_SUPPORT",
             "cervical_boundary_owner": "CONFIRMED_MARGIN",
+            "cervical_width_owner": "SURFACE_GEODESIC",
             "finalization_outer_mutability": "FROZEN",
         },
         "margin": _npc.margin_plane_diagnostics(curtain.points),
         "scan_adherence": scan,
         "transition_mm": float(transition_mm),
+        "transition_semantics": "SURFACE_GEODESIC_DISTANCE_FROM_CONFIRMED_MARGIN",
         "outer_frozen": True,
         "body_vertices_moved": 0,
         "body_outer_vertex_count": int(len(outside.vertices)),
@@ -218,7 +232,7 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
         "final_stage_thickness_policy": thickness_policy,
         "cervical_cleanup": cervical_report,
         "surface_extraction": {
-            "method": "ROLE_SEPARATED_SOURCE_EXTRACTION_V2",
+            "method": "ROLE_SEPARATED_GEODESIC_SOURCE_EXTRACTION_V3",
             "outer": outer_extract,
             "intaglio": inner_extract,
             "cervical_separation": source_separation,
@@ -232,12 +246,9 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
     return _npc.NonplanarCrownBuild(final, outer_surface, inner_surface, report)
 
 
-# Install before pipeline/auto_fit capture the function by value.
 _npc.build_nonplanar_crown = _margin_owned_build
 
 
-# Freeze the accepted outer only while pipeline.finalize_crown is running.  The
-# design-stage INNER_SHELL_RECHECK still delegates to its established solver.
 from .services import pipeline as _pipeline
 _ORIGINAL_FINALIZE = _pipeline.finalize_crown
 
