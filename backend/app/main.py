@@ -18,6 +18,11 @@ from . import v1_final_geometry_guards as _v1_final_geometry_guards  # noqa: F40
 # large conflicts to the local proximal/occlusal owners instead of globally
 # squashing the crown.  This must run before auto_fit binds space-morph symbols.
 from . import v1_morphology_preservation_guard as _v1_morphology_preservation_guard  # noqa: F401
+# Occlusal height is now owned only by the local antagonist solver; broad height
+# drop/scale is disabled.  AUTO generation also constructs exact W3/intaglio in
+# the same job as the outer so sculpt never receives an intentionally outer-only
+# crown merely because finalization was deferred.
+from . import v1_occlusal_intaglio_completion_guard as _v1_occlusal_intaglio_completion_guard  # noqa: F401
 # Some real abutment scans create a second tiny boundary loop *on the confirmed
 # Margin itself* after the non-planar clip.  Recover only that proven derived
 # sliver before services bind extract_abutment_support; genuine holes and
