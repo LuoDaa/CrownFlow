@@ -34,6 +34,7 @@ from .api.routes import router
 from .api.relocation import router as relocation_router
 from .api.designer import router as designer_router
 from .api.design_inputs import router as inputs_router
+from .api.v1_inner_complete import router as v1_inner_complete_router
 from .api.complete_generation import router as complete_generation_router
 from .api.auto_fit import router as auto_fit_router
 from .api.abutment_fast import router as abutment_fast_router
@@ -59,9 +60,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Complete Crown 1.0 owns the accept + rebuild-cervical compatibility URLs.
-# It must be registered before the legacy routes with the same paths so an
-# already-generated intaglio/final is never discarded or rebuilt a second time.
+# CrownFlow 1.0 inner lifecycle owns these compatibility URLs first: the intaglio
+# generated during AUTO stays attached after accept/sculpt and rebuild-cervical
+# cannot turn a valid design inner into a 400. The legacy routers remain below as
+# fallbacks for cases without a generated inner or with a true finalized crown.
+app.include_router(v1_inner_complete_router)
 app.include_router(complete_generation_router)
 app.include_router(inner_preview_router)
 app.include_router(router)
