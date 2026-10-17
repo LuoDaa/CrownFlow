@@ -6,11 +6,13 @@ import ViewTools, { useViewTools } from "../components/ViewTools";
  * 3D 视口外壳：Viewer / ViewTools（相机与显示工具）在这里接一次，
  * 各页面只决定"画什么 + 显示开关"，不重复写渲染代码。
  *
- * 1.0 预览策略：渲染与审核彻底解耦。只要本轮生成出了候选几何，画布
- * 就优先展示 candidatePreview；是否 PASS/REVIEW_REQUIRED/是否已采纳都
- * 不能阻止用户先看到结果。AUTO 候选同时发布设计时 intaglio preview；
- * W3 成功后 `/inner-preview.stl` 优先返回与最终 Crown 共享 Margin seam 的
- * intaglio_surface，而不是带人工下封口的 Boolean cutter。
+ * CrownFlow 1.0 几何语义：
+ * - outer/candidate 是外冠解剖面；
+ * - intaglio_surface / intaglio / intaglio_preview 才是可见内冠；
+ * - cutter 只是 Boolean 运算体，底部有人为封口，永远不能作为内冠显示。
+ *
+ * 渲染与审核彻底解耦：只要本轮生成出了候选几何，画布就优先展示；
+ * PASS/REVIEW_REQUIRED/是否已采纳都不能把结果隐藏或切回旧网格。
  */
 export default function ViewerStage({
   wf, mode = "patient", renderUpper = true, renderLower = true, renderSupport = true,
@@ -37,24 +39,23 @@ export default function ViewerStage({
       : wf.outer ? "accepted" : "none";
 
   const candidateArtifacts = wf.generatedCandidate?.artifacts || {};
+  // Closed cutter deliberately excluded. It contains the Boolean bottom closure
+  // and is not a patient fitting surface.
   const candidateInnerLabel = candidateArtifacts.intaglio_surface ? "intaglio_surface"
     : candidateArtifacts.intaglio ? "intaglio"
-      : candidateArtifacts.intaglio_preview ? "intaglio_preview"
-        : candidateArtifacts.cutter ? "cutter" : null;
+      : candidateArtifacts.intaglio_preview ? "intaglio_preview" : null;
   const candidateInner = !hasFinal && wf.generatedCandidate?.id && candidateInnerLabel
     ? `/api/designs/${wf.design.id}/auto-fit/${wf.generatedCandidate.id}/artifact/${candidateInnerLabel}?v=${wf.meshVersion}`
     : null;
 
-  // Important for CrownFlow 1.0: accepting the outer (or editing it locally)
-  // must not make the already-generated intaglio disappear.  The previous guard
-  // required wf.outer, but during one-click generation the canvas can still be
-  // driven by candidatePreview while the accepted outer state is catching up.
-  // Ask the semantic inner-preview endpoint whenever *any* current outer is
-  // visible; the backend resolves the matching AUTO candidate by proposal id.
-  const acceptedInner = !hasFinal && !candidateInner && wf.design?.id && latestOuter
+  // After acceptance/sculpt, the semantic endpoint resolves finalized intaglio or
+  // the persisted patient-owned design intaglio and can regenerate it from the
+  // preparation if an older candidate did not publish one. Prefer it to every
+  // legacy cutter URL.
+  const semanticInner = !hasFinal && wf.design?.id && latestOuter
     ? `/api/designs/${wf.design.id}/inner-preview.stl?v=${wf.meshVersion}`
     : null;
-  const activeInner = wf.innerCrown || candidateInner || acceptedInner || null;
+  const activeInner = candidateInner || semanticInner || wf.innerCrown || null;
 
   return <section className="cd-viewport-card">
     <div className="cd-viewport-head">
@@ -64,7 +65,7 @@ export default function ViewerStage({
       <small>
         右键旋转 · 滚轮缩放 · 左右键平移
         {previewSource === "candidate" ? " · 正在显示本次生成候选（审核不阻止预览）" : ""}
-        {activeInner ? " · 同步显示当前内冠" : ""}
+        {activeInner ? " · 同步显示患者基台内冠" : ""}
         {mode === "final" && previewSource !== "final" && previewSource !== "none"
           ? " · 最终冠未完成，显示最新可用外冠" : ""}
       </small>
