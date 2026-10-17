@@ -18,6 +18,14 @@ from . import v1_final_geometry_guards as _v1_final_geometry_guards  # noqa: F40
 # sliver before services bind extract_abutment_support; genuine holes and
 # unconfirmed screw channels remain blocking review conditions.
 from . import v1_intaglio_support_guard as _v1_intaglio_support_guard  # noqa: F401
+# FDI46 showed two remaining 1.0 defects: whole-crown B/L measurement could hide
+# a narrow axial body, and a Margin-clipped intaglio could still end ~0.15 mm from
+# the confirmed curve.  Patch only those final owners; keep proximal/occlusal and
+# template anatomy unchanged.
+from . import v1_margin_bl_completion as _v1_margin_bl_completion  # noqa: F401
+# The intaglio geometry semantics changed above, so force a fresh preview instead
+# of reusing v3 cache meshes that predate exact Margin-boundary ownership.
+from . import v1_intaglio_cache_v4 as _v1_intaglio_cache_v4  # noqa: F401
 
 from .api.crown import router as crown_router
 from .api.importers import router as importers_router
