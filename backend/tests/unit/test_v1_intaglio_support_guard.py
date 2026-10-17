@@ -36,15 +36,3 @@ def test_real_unknown_holes_remain_blocking():
     assert not _is_margin_split_sliver_metrics(
         _case_metrics(eligible=True, coverage_fraction=1.0, length_ratio=0.99, loop_length_mm=19.5)
     )
-
-
-def test_service_runs_margin_sliver_recovery_before_readiness_gate():
-    """The live support service must not rely only on startup patch ordering."""
-    import inspect
-    from app.services import abutment_support
-
-    source = inspect.getsource(abutment_support.assess_abutment_surface)
-    recovery = source.index("_recover_margin_split_slivers")
-    contract_copy = source.index("contract.readiness=report['readiness']")
-    fitting_handoff = source.index("next_stage']='INTAGLIO_SPACE_PREVIEW'")
-    assert recovery < fitting_handoff < contract_copy

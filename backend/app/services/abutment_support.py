@@ -4,8 +4,7 @@ from pathlib import Path
 from fastapi import HTTPException
 from .prep_conditioning import PreparedSurfaceContract, Indication, Readiness
 from .design_dependencies import file_digest
-from ..geometry import abutment_support as _abutment_geometry
-from ..geometry.abutment_support import SupportExtractionError
+from ..geometry.abutment_support import extract_abutment_support, SupportExtractionError
 from ..geometry.io import load_mesh
 from ..geometry.nonplanar_crown import fitting_support_above_margin, MarginBuildError
 
@@ -31,37 +30,13 @@ def assess_abutment_surface(support,margin,axis,*,source_sha256=None,margin_revi
     if not margin_revision_id:return rejected('MARGIN_NOT_CONFIRMED','请先确认基台冠终止线')
     if not axis_revision_id or not patient_frame_revision_id:return rejected('SUPPORT_EXTRACTION_AMBIGUOUS','请先确认插入轴和当前 PatientFrame')
     try:
-        # Resolve through the geometry module at call time instead of keeping a
-        # copied function reference.  CrownFlow 1.0 installs a narrowly guarded
-        # Margin-sliver recovery on that module during app startup; dynamic
-        # lookup guarantees eligibility/intaglio/QC all consume the same active
-        # extractor regardless of Python import order.
-        prepared=_abutment_geometry.extract_abutment_support(
-            support,margin,axis,seed=seed,confirmed_loop_ids=confirmed_loop_ids)
-
-        # Belt-and-suspenders for the 1.0 generation path: do not rely on import
-        # order/monkey-patch state to decide whether the proven FDI36 Margin split
-        # sliver is recovered.  If extraction still reports UNKNOWN_SUPPORT_HOLE,
-        # explicitly run the same narrowly guarded recovery *before* readiness is
-        # copied into the public support contract.  The recovery itself only caps
-        # tiny loops proven to lie on the confirmed Margin; genuine holes remain
-        # REVIEW_REQUIRED.
-        if prepared is not None and prepared.report.get('rejection_code')=='UNKNOWN_SUPPORT_HOLE':
-            from ..v1_intaglio_support_guard import _recover_margin_split_slivers
-            prepared=_recover_margin_split_slivers(prepared,margin)
-            prepared.report.setdefault('support_prepare_flow',{})['service_recovery_invoked']=True
-
+        prepared=extract_abutment_support(support,margin,axis,seed=seed,confirmed_loop_ids=confirmed_loop_ids)
         report=prepared.report
         for loop in report['loops']:
             if loop['classification']=='CROWN_MARGIN':
                 loop['confirmed']=True;loop['margin_revision_id']=margin_revision_id
         if report['readiness']=='ABUTMENT_SUPPORT_READY':
-            # This call is the final hand-off gate into INTAGLIO_SPACE_PREVIEW.
-            # Once it succeeds, generation can continue to blockout + cement gap
-            # instead of stopping at SUPPORT_PREPARE.
             fitting_support_above_margin(prepared.mesh,margin,axis,prepared=True)
-            report.setdefault('support_prepare_flow',{})['fitting_surface_verified']=True
-            report['support_prepare_flow']['next_stage']='INTAGLIO_SPACE_PREVIEW'
     except SupportExtractionError as exc:
         return rejected(getattr(exc,'code','SUPPORT_EXTRACTION_AMBIGUOUS'),str(exc),diagnostics=getattr(exc,'diagnostics',None))
     except MarginBuildError as exc:

@@ -18,14 +18,6 @@ from . import v1_final_geometry_guards as _v1_final_geometry_guards  # noqa: F40
 # sliver before services bind extract_abutment_support; genuine holes and
 # unconfirmed screw channels remain blocking review conditions.
 from . import v1_intaglio_support_guard as _v1_intaglio_support_guard  # noqa: F401
-# FDI46 showed two remaining 1.0 defects: whole-crown B/L measurement could hide
-# a narrow axial body, and a Margin-clipped intaglio could still end ~0.15 mm from
-# the confirmed curve.  Patch only those final owners; keep proximal/occlusal and
-# template anatomy unchanged.
-from . import v1_margin_bl_completion as _v1_margin_bl_completion  # noqa: F401
-# The intaglio geometry semantics changed above, so force a fresh preview instead
-# of reusing v3 cache meshes that predate exact Margin-boundary ownership.
-from . import v1_intaglio_cache_v4 as _v1_intaglio_cache_v4  # noqa: F401
 
 from .api.crown import router as crown_router
 from .api.importers import router as importers_router
@@ -34,7 +26,6 @@ from .api.routes import router
 from .api.relocation import router as relocation_router
 from .api.designer import router as designer_router
 from .api.design_inputs import router as inputs_router
-from .api.v1_inner_complete import router as v1_inner_complete_router
 from .api.complete_generation import router as complete_generation_router
 from .api.auto_fit import router as auto_fit_router
 from .api.abutment_fast import router as abutment_fast_router
@@ -60,11 +51,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# CrownFlow 1.0 inner lifecycle owns these compatibility URLs first: the intaglio
-# generated during AUTO stays attached after accept/sculpt and rebuild-cervical
-# cannot turn a valid design inner into a 400. The legacy routers remain below as
-# fallbacks for cases without a generated inner or with a true finalized crown.
-app.include_router(v1_inner_complete_router)
+# Complete Crown 1.0 owns the accept + rebuild-cervical compatibility URLs.
+# It must be registered before the legacy routes with the same paths so an
+# already-generated intaglio/final is never discarded or rebuilt a second time.
 app.include_router(complete_generation_router)
 app.include_router(inner_preview_router)
 app.include_router(router)
