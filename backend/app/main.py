@@ -5,11 +5,27 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-# CrownFlow 1.0 geometry policies used to be imported independently here.  That
-# made startup import order a hidden part of the algorithm: a later module could
-# silently replace B/L or intaglio ownership.  One canonical contract now imports
-# every policy in the validated order and fails fast if any live binding drifts.
-from .v1_pipeline_contract import ACTIVE_CONTRACT as _v1_active_contract  # noqa: F401
+# CrownFlow 1.0 engineering-test geometry policy.  Import this before the API /
+# service graph so patient-space sizing and safe anatomy refinement are the
+# defaults used by all subsequently imported generation code.
+from . import v1_test_geometry_overrides as _v1_test_geometry_overrides  # noqa: F401
+# Last-mile tuning is deliberately layered on top of the established policy:
+# stronger patient B/L fullness, one-side proximal closure and antagonist-owned
+# occlusal relief. Import before API/services capture the patched functions.
+from . import v1_final_geometry_guards as _v1_final_geometry_guards  # noqa: F401
+# Some real abutment scans create a second tiny boundary loop *on the confirmed
+# Margin itself* after the non-planar clip.  Recover only that proven derived
+# sliver before services bind extract_abutment_support; genuine holes and
+# unconfirmed screw channels remain blocking review conditions.
+from . import v1_intaglio_support_guard as _v1_intaglio_support_guard  # noqa: F401
+# FDI46 showed two remaining 1.0 defects: whole-crown B/L measurement could hide
+# a narrow axial body, and a Margin-clipped intaglio could still end ~0.15 mm from
+# the confirmed curve.  Patch only those final owners; keep proximal/occlusal and
+# template anatomy unchanged.
+from . import v1_margin_bl_completion as _v1_margin_bl_completion  # noqa: F401
+# The intaglio geometry semantics changed above, so force a fresh preview instead
+# of reusing v3 cache meshes that predate exact Margin-boundary ownership.
+from . import v1_intaglio_cache_v4 as _v1_intaglio_cache_v4  # noqa: F401
 
 from .api.crown import router as crown_router
 from .api.importers import router as importers_router
