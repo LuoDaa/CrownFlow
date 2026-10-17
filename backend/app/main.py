@@ -32,6 +32,11 @@ from . import v1_intaglio_support_guard as _v1_intaglio_support_guard  # noqa: F
 # of tearing/flipping the proven outer anatomy.  Install this before auto_fit
 # imports cervical_fit_to_margin so every generation path gets the same guard.
 from . import v1_cervical_fit_guard as _v1_cervical_fit_guard  # noqa: F401
+# Final W3 assembly is strictly outer -> inner.  Once the outer has been solved,
+# it is frozen; patient blockout+gap defines the intaglio, both source skins are
+# clipped directly above the confirmed non-planar Margin, and Boolean is audit
+# only.  This must load before pipeline/auto_fit capture finalization functions.
+from . import v1_margin_owned_intaglio as _v1_margin_owned_intaglio  # noqa: F401
 
 from .api.crown import router as crown_router
 from .api.importers import router as importers_router
