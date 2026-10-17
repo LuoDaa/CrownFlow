@@ -4,7 +4,8 @@ from pathlib import Path
 from fastapi import HTTPException
 from .prep_conditioning import PreparedSurfaceContract, Indication, Readiness
 from .design_dependencies import file_digest
-from ..geometry.abutment_support import extract_abutment_support, SupportExtractionError
+from ..geometry import abutment_support as _abutment_geometry
+from ..geometry.abutment_support import SupportExtractionError
 from ..geometry.io import load_mesh
 from ..geometry.nonplanar_crown import fitting_support_above_margin, MarginBuildError
 
@@ -30,13 +31,29 @@ def assess_abutment_surface(support,margin,axis,*,source_sha256=None,margin_revi
     if not margin_revision_id:return rejected('MARGIN_NOT_CONFIRMED','请先确认基台冠终止线')
     if not axis_revision_id or not patient_frame_revision_id:return rejected('SUPPORT_EXTRACTION_AMBIGUOUS','请先确认插入轴和当前 PatientFrame')
     try:
-        prepared=extract_abutment_support(support,margin,axis,seed=seed,confirmed_loop_ids=confirmed_loop_ids)
+        # Resolve through the geometry module at call time instead of keeping a
+        # copied function reference. CrownFlow installs the narrowly guarded
+        # Margin-sliver recovery on that module during app startup; dynamic
+        # lookup guarantees eligibility/intaglio/QC consume the same extractor.
+        prepared=_abutment_geometry.extract_abutment_support(
+            support,margin,axis,seed=seed,confirmed_loop_ids=confirmed_loop_ids)
+
+        # Do not rely on import order alone. If extraction still reports an
+        # UNKNOWN_SUPPORT_HOLE, run the same strict recovery before readiness is
+        # copied into the public contract. Genuine holes remain REVIEW_REQUIRED.
+        if prepared is not None and prepared.report.get('rejection_code')=='UNKNOWN_SUPPORT_HOLE':
+            from ..v1_intaglio_support_guard import _recover_margin_split_slivers
+            prepared=_recover_margin_split_slivers(prepared,margin)
+            prepared.report.setdefault('support_prepare_flow',{})['service_recovery_invoked']=True
+
         report=prepared.report
         for loop in report['loops']:
             if loop['classification']=='CROWN_MARGIN':
                 loop['confirmed']=True;loop['margin_revision_id']=margin_revision_id
         if report['readiness']=='ABUTMENT_SUPPORT_READY':
             fitting_support_above_margin(prepared.mesh,margin,axis,prepared=True)
+            report.setdefault('support_prepare_flow',{})['fitting_surface_verified']=True
+            report['support_prepare_flow']['next_stage']='INTAGLIO_SPACE_PREVIEW'
     except SupportExtractionError as exc:
         return rejected(getattr(exc,'code','SUPPORT_EXTRACTION_AMBIGUOUS'),str(exc),diagnostics=getattr(exc,'diagnostics',None))
     except MarginBuildError as exc:
