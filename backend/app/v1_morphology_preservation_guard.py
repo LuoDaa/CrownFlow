@@ -1,13 +1,13 @@
 """CrownFlow 1.0 morphology-preservation policy.
 
 Real-case bundles showed the broad PatientEnvelope pass shrinking posterior
-anatomy to ~70% M/D and ~72% height before the local proximal/occlusal solvers
-ran.  PatientEnvelope is a maximum feasible space, not a requested tooth-size
-box, so hard conflicts must be reported and delegated to local owners instead of
-being solved by a destructive whole-crown squash.
+anatomy before the local proximal/occlusal solvers ran. PatientEnvelope is a
+maximum feasible space, not a requested tooth-size box, so hard conflicts must
+be reported and delegated to local owners instead of being solved by a
+destructive whole-crown squash.
 
 This module is intentionally layered after the established 1.0 width/contact/
-occlusion overrides and before services import the geometry functions.  It only
+occlusion overrides and before services import the geometry functions. It only
 changes broad pre-fit budgets; Margin, proximal v9, local occlusion targets,
 support recovery and intaglio construction remain untouched.
 """
@@ -19,23 +19,24 @@ from .geometry.crown_outer import patient_envelope as _envelope
 from .geometry.crown_outer import space_morph as _space
 
 
-# A broad feasibility pass may make a modest global correction, but it must not
-# erase the selected library tooth's anatomical proportions.  Larger conflicts
-# are left visible in the report for the corresponding local solver/review step.
+# A broad feasibility pass may make a modest M/D correction, but it must not
+# erase the selected library tooth's anatomical proportions. Vertical crown
+# height is now fully preserved here: the confirmed antagonist is handled later
+# by the local OCCLUSAL owner, not by a global height scale.
 MORPH_MD_MIN_SCALE = 0.90
-MORPH_HEIGHT_MIN_SCALE = 0.90
+MORPH_HEIGHT_MIN_SCALE = 1.00
 MORPH_BL_MIN_SCALE = 1.00
 
-# Occlusal height pre-fit is a coarse initializer only.  Actual antagonist
-# collision relief belongs to the local OCCLUSAL solver, which already has
-# protected proximal/cervical regions and geometry gates.
+# Kept as conservative compatibility defaults. The dedicated 1.0 occlusal-owner
+# guard bypasses broad antagonist height deformation entirely, so these values
+# are only relevant to callers that explicitly opt out of that policy.
 HEIGHT_PREFIT_MAX_STEP_MM = 0.35
 HEIGHT_PREFIT_MAX_ITERATIONS = 4
 HEIGHT_PREFIT_LOCAL_BLEND = 0.35
 HEIGHT_PREFIT_SMOOTHING_PASSES = 2
 
 
-# Capture the already-active 1.0 wrappers.  In particular, the envelope factory
+# Capture the already-active 1.0 wrappers. In particular, the envelope factory
 # below still inherits v1_test_geometry_overrides' B/L no-compression policy and
 # the space factory keeps its conservative shell push limits.
 _ACTIVE_ENVELOPE_CONFIG = _envelope.PatientEnvelopeConfig
@@ -96,7 +97,7 @@ def _preserving_morph(mesh, frame, margin, envelope, *, config=None):
 
 # Patch both module namespaces. space_morph imported the envelope function by
 # value, so patching only patient_envelope would leave the live generation path
-# on the old 0.70/0.72 global-squash implementation.
+# on the old global-squash implementation.
 _envelope.PatientEnvelopeConfig = _preserving_envelope_config
 _space.PatientEnvelopeConfig = _preserving_envelope_config
 _envelope.morph_embryo_to_patient_envelope = _preserving_morph
