@@ -6,7 +6,9 @@ The contracts are intentionally one-way and independent:
 - ConfirmedMargin owns the final cervical boundary;
 - the collar is generated topology only, never a reason to reshape the body.
 
-Boolean remains an audit. It is never used to rediscover clinical surfaces.
+The final Margin seam is fixed at 128 points, but the real outer/intaglio source
+boundaries keep their complete cardinality.  Every actual source boundary edge
+is consumed by the final normalized-arclength collar.
 """
 from __future__ import annotations
 
@@ -87,12 +89,12 @@ def _boolean_audit(outer, cutter):
 def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
                         prepared_support=False, parameters=None, protected_surfaces=(),
                         quality_mode="DESIGN"):
-    """Build final crown after outer is already accepted.
+    """Build the patient intaglio after the accepted outer is frozen.
 
-    The body surfaces remain frozen. PreparedSupport first proves the clinical
-    intaglio component. The final cervical topology is then intentionally simple:
-    outer boundary[128] -> Margin[128] and inner boundary[128] -> Margin[128].
-    No DP zipper and no intermediate collar ring are used.
+    PreparedSupport proves the inner fitting surface.  Confirmed Margin is the
+    shared 128-point cervical seam.  Source boundary cardinality is unrestricted:
+    the full actual outer/intaglio loops are consumed by normalized-arclength
+    collar triangulation; no sparse 128-point source substitution is allowed.
     """
     params = parameters or {}
     curtain = _npc.MarginCurtain(margin, axis)
@@ -106,9 +108,6 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
     record_topology("01_input_outer", outer)
     record_topology("02_input_cutter", cutter)
 
-    # Outer stays anatomy-owned. Exact Margin separates valid crown surface; a
-    # constant surface-width band keeps the generated collar local while moving no
-    # accepted outer body vertex.
     outside_margin, outer_margin_extract = _npc._single_open_surface_above_margin(
         outer, curtain, 1e-6, "OUTER", invert=False
     )
@@ -122,8 +121,6 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
     }
     record_topology("10_outer_selected", outside)
 
-    # PreparedSupport, not Margin proximity, proves which cutter component is the
-    # fitting surface. The same local band is then applied to its cervical edge.
     try:
         inside_margin, inner_ownership = extract_support_owned_intaglio(
             cutter, support, curtain, 1e-6, params
@@ -146,7 +143,7 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
     feasible, feasibility = cervical_feasibility(outside, inside, curtain.points)
     feasibility["intaglio_component_valid"] = True
     feasibility["transition_owner"] = "SURFACE_GEODESIC"
-    feasibility["final_mapping"] = "STRICT_FIXED_128_POINT_TO_POINT"
+    feasibility["final_mapping"] = "FULL_SOURCE_BOUNDARY_ARCLENGTH_TO_FIXED_MARGIN_128"
     if not feasible:
         raise _npc.MarginBuildError(
             "CERVICAL_ASSEMBLY_NOT_FEASIBLE: " + str(feasibility)
@@ -163,8 +160,8 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
     final, outer_surface, inner_surface, collar = build_fixed_128_margin_crown(
         outside, inside, curtain.points
     )
-    record_topology("40_outer_fixed128_margin", outer_surface)
-    record_topology("41_inner_fixed128_margin", inner_surface)
+    record_topology("40_outer_full_boundary_margin128", outer_surface)
+    record_topology("41_inner_full_boundary_margin128", inner_surface)
     record_topology("50_final", final)
 
     outer_loop = _npc._boundary_loops(np.asarray(outside.faces, np.int64))[0]
@@ -188,7 +185,7 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
 
     from .geometry.cervical_cleanup import mesh_diagnostics
     cervical_report = {
-        "status": "FIXED_128_SHARED_MARGIN_COLLAR",
+        "status": "FULL_SOURCE_BOUNDARY_TO_FIXED_128_MARGIN",
         "outer_before": mesh_diagnostics(outside, curtain.points),
         "inner_before": mesh_diagnostics(inside, curtain.points),
         "scope": "CROWN_CERVICAL_REGION_ONLY",
@@ -198,9 +195,13 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
         "fixed_128_collar": collar,
     }
 
+    stitch_warnings = []
+    if collar.get("self_intersections_review_required"):
+        stitch_warnings.append("CERVICAL_COLLAR_SELF_INTERSECTION_REVIEW_REQUIRED")
+
     report = {
         "status": "ENGINEERING_ONLY",
-        "method": "SUPPORT_OWNED_INTAGLIO_FIXED_128_SHARED_MARGIN_V4",
+        "method": "SUPPORT_OWNED_INTAGLIO_FULL_BOUNDARY_TO_MARGIN128_V5",
         "assembly_order": [
             "ACCEPTED_OUTER_FROZEN",
             "PATIENT_BLOCKOUT_GAP_CUTTER",
@@ -208,18 +209,18 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
             "PREPARED_SUPPORT_OWNS_INTAGLIO_COMPONENT",
             "SURFACE_GEODESIC_CERVICAL_TRANSITION",
             "CERVICAL_FEASIBILITY_GATE",
-            "OUTER_BOUNDARY_CONFORMING_RESAMPLE_128",
-            "INTAGLIO_BOUNDARY_CONFORMING_RESAMPLE_128",
-            "CONFIRMED_MARGIN_ARCLENGTH_RESAMPLE_128",
-            "STRICT_INDEXED_OUTER_I_TO_MARGIN_I",
-            "STRICT_INDEXED_INNER_I_TO_MARGIN_I",
+            "OUTER_FULL_SOURCE_BOUNDARY_PRESERVED",
+            "INTAGLIO_FULL_SOURCE_BOUNDARY_PRESERVED",
+            "EXACT_CONFIRMED_MARGIN_128",
+            "NORMALIZED_ARCLENGTH_OUTER_TO_MARGIN_128",
+            "NORMALIZED_ARCLENGTH_INNER_TO_MARGIN_128",
             "BOOLEAN_AUDIT_ONLY",
         ],
         "contracts": {
             "outer_owner": "ACCEPTED_OUTER",
             "intaglio_owner": "PREPARED_SUPPORT",
             "cervical_boundary_owner": "CONFIRMED_MARGIN",
-            "cervical_topology_owner": "FIXED_128_SHARED_INDEX",
+            "cervical_topology_owner": "FULL_SOURCE_BOUNDARY_TO_FIXED_128_MARGIN",
             "cervical_width_owner": "SURFACE_GEODESIC",
             "finalization_outer_mutability": "FROZEN",
         },
@@ -240,7 +241,7 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
         "final_stage_thickness_policy": thickness_policy,
         "cervical_cleanup": cervical_report,
         "surface_extraction": {
-            "method": "ROLE_SEPARATED_GEODESIC_SOURCE_EXTRACTION_FIXED128_V4",
+            "method": "ROLE_SEPARATED_GEODESIC_FULL_BOUNDARY_MARGIN128_V5",
             "outer": outer_extract,
             "intaglio": inner_extract,
             "cervical_separation": source_separation,
@@ -249,7 +250,7 @@ def _margin_owned_build(outer, cutter, support, margin, axis, *, transition_mm,
         "boolean_audit": _boolean_audit(outer, cutter),
         "quality_mode": quality_mode,
         "design_mode_exception": None,
-        "stitch_warnings": [],
+        "stitch_warnings": stitch_warnings,
     }
     return _npc.NonplanarCrownBuild(final, outer_surface, inner_surface, report)
 
