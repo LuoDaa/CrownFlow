@@ -33,11 +33,11 @@ def _open_cup(n, radius, z0, ztop, *, inward=False, phase=0.0):
     return trimesh.Trimesh(vertices, faces, process=False)
 
 
-def test_full_dense_source_boundaries_close_against_exact_margin_128():
-    # Deliberately choose two source cardinalities >128 and unequal.  This is the
-    # exact condition that the old sparse `_conforming_ring(..., 128)` path broke.
-    outer = _open_cup(257, 4.2, 1.2, 4.4)
-    inner = _open_cup(181, 3.1, 0.8, 3.7, inward=True, phase=0.04)
+def test_dense_source_boundaries_reduce_progressively_to_exact_margin_128():
+    # Case-63-like density mismatch: the inner boundary can exceed one thousand
+    # vertices while the clinical Margin remains exactly 128 points.
+    outer = _open_cup(148, 4.2, 0.55, 4.4)
+    inner = _open_cup(1043, 3.1, 0.35, 3.7, inward=True, phase=0.04)
     outer_before = np.asarray(outer.vertices).copy()
     inner_before = np.asarray(inner.vertices).copy()
 
@@ -56,15 +56,22 @@ def test_full_dense_source_boundaries_close_against_exact_margin_128():
     assert len(final.split(only_watertight=False)) == 1
     assert report["edge_incidence"]["boundary_edges"] == 0
     assert report["edge_incidence"]["nonmanifold_edges"] == 0
-    assert report["outer_source_boundary_vertices"] == 257
-    assert report["inner_source_boundary_vertices"] == 181
+    assert report["outer_source_boundary_vertices"] == 148
+    assert report["inner_source_boundary_vertices"] == 1043
     assert report["margin_topology_samples"] == 128
     assert report["confirmed_margin_points_preserved_exactly"] is True
-    assert report["mapping"] == "FULL_SOURCE_BOUNDARY_ARCLENGTH_TO_MARGIN_128"
+    assert report["mapping"] == "FULL_SOURCE_BOUNDARY_PROGRESSIVE_ARCLENGTH_TO_MARGIN_128"
     assert report["sparse_source_boundary_substitution_used"] is False
-    assert report["outer_collar_triangles"] == 257 + 128
-    assert report["inner_collar_triangles"] == 181 + 128
+    assert report["intermediate_collar_ring_used"] is True
 
-    # Finalization may add collar triangles, but it may not deform source bodies.
+    # Dense compression must be distributed across bounded-ratio stages rather
+    # than one 1043 -> 128 fan.
+    inner_progress = report["inner_progressive_collar"]
+    assert inner_progress["count_schedule"][0] == 1043
+    assert inner_progress["count_schedule"][-1] == 128
+    assert inner_progress["generated_ring_count"] >= 2
+    assert inner_progress["max_adjacent_count_ratio"] <= 1.85 + 1e-9
+
+    # Outer accepted anatomy and support-derived inner body remain immutable.
     assert np.array_equal(np.asarray(outer.vertices), outer_before)
     assert np.array_equal(np.asarray(inner.vertices), inner_before)
