@@ -23,9 +23,15 @@ from . import v1_intaglio_support_guard as _v1_intaglio_support_guard  # noqa: F
 # the confirmed curve.  Patch only those final owners; keep proximal/occlusal and
 # template anatomy unchanged.
 from . import v1_margin_bl_completion as _v1_margin_bl_completion  # noqa: F401
-# The intaglio geometry semantics changed above, so force a fresh preview instead
-# of reusing v3 cache meshes that predate exact Margin-boundary ownership.
+# v5 completion: patient-frame B/L is widened bilaterally without changing M/D,
+# and the design intaglio is always an open prepared-abutment fitting surface with
+# an exact confirmed-Margin boundary; the artificial Boolean cutter bottom is
+# never used as the visible inner crown.
+from . import v1_patient_hollow_crown as _v1_patient_hollow_crown  # noqa: F401
+# The intaglio geometry semantics changed above, so force fresh previews rather
+# than reusing caches from the earlier margin-only implementations.
 from . import v1_intaglio_cache_v4 as _v1_intaglio_cache_v4  # noqa: F401
+from . import v1_intaglio_cache_v5 as _v1_intaglio_cache_v5  # noqa: F401
 
 from .api.crown import router as crown_router
 from .api.importers import router as importers_router
