@@ -26,11 +26,12 @@ def test_intaglio_component_is_proven_by_support_before_collar():
     ownership = source.index("def extract_support_owned_intaglio")
     coverage = source.index('"support_coverage"')
     axial = source.index('"axial_span_fraction"')
-    collar = source.index("def build_canonical_margin_crown")
-    assert ownership < coverage < collar
-    assert ownership < axial < collar
+    assert ownership < coverage
+    assert ownership < axial
     assert "PREPARED_SUPPORT_CORRESPONDENCE_V1" in source
     policy = (ROOT / "v1_margin_owned_intaglio.py").read_text(encoding="utf-8")
+    fixed = policy.index("build_fixed_128_margin_crown(")
+    assert policy.index("extract_support_owned_intaglio(") < fixed
     assert "INTAGLIO_COMPONENT_NOT_PROVEN_BY_SUPPORT" in policy
 
 
@@ -44,22 +45,25 @@ def test_surface_geodesic_band_replaces_axial_transition_semantics():
     assert "body_vertices_moved\": 0" in geodesic
 
 
-def test_pre_stitch_gate_runs_before_any_canonical_collar():
+def test_pre_stitch_gate_runs_before_fixed_128_collar():
     source = (ROOT / "v1_margin_owned_intaglio.py").read_text(encoding="utf-8")
     gate = source.index("cervical_feasibility(outside, inside")
-    build = source.index("build_canonical_margin_crown(")
+    build = source.index("build_fixed_128_margin_crown(")
     assert gate < build
     assert "CERVICAL_ASSEMBLY_NOT_FEASIBLE" in source
 
 
-def test_canonical_collar_uses_equal_count_margin_sampling_without_moving_body():
-    source = (ROOT / "geometry" / "canonical_intaglio.py").read_text(encoding="utf-8")
+def test_margin_and_both_cervical_rings_are_strictly_128_point_to_point():
+    source = (ROOT / "geometry" / "fixed_margin_128.py").read_text(encoding="utf-8")
+    assert "FIXED_MARGIN_SAMPLES = 128" in source
     assert "_conforming_ring" in source
-    assert "CANONICAL_MARGIN_ARCLENGTH_TWO_LAYER_COLLAR_V1" in source
-    assert "shared_margin_vertices" in source
-    assert "outer_source_vertices_unchanged" in source
-    assert "inner_source_vertices_unchanged" in source
-    assert "_quad_strip" in source
+    assert "margin128 = _resample_closed_polyline(margin, FIXED_MARGIN_SAMPLES)" in source
+    assert "OUTER_I_TO_MARGIN_I_AND_INNER_I_TO_MARGIN_I" in source
+    assert '"dp_zipper_used": False' in source
+    assert '"intermediate_collar_ring_used": False' in source
+    policy = (ROOT / "v1_margin_owned_intaglio.py").read_text(encoding="utf-8")
+    assert '"cervical_topology_owner": "FIXED_128_SHARED_INDEX"' in policy
+    assert '"margin_topology_samples": 128' in policy
 
 
 def test_accepted_outer_is_frozen_only_during_finalization():
