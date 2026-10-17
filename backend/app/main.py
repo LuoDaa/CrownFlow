@@ -18,6 +18,10 @@ from . import v1_final_geometry_guards as _v1_final_geometry_guards  # noqa: F40
 # sliver before services bind extract_abutment_support; genuine holes and
 # unconfirmed screw channels remain blocking review conditions.
 from . import v1_intaglio_support_guard as _v1_intaglio_support_guard  # noqa: F401
+# Margin fitting is allowed to improve the cervical seam, but never at the cost
+# of tearing/flipping the proven outer anatomy.  Install this before auto_fit
+# imports cervical_fit_to_margin so every generation path gets the same guard.
+from . import v1_cervical_fit_guard as _v1_cervical_fit_guard  # noqa: F401
 
 from .api.crown import router as crown_router
 from .api.importers import router as importers_router
