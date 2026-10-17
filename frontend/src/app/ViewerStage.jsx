@@ -45,14 +45,13 @@ export default function ViewerStage({
     ? `/api/designs/${wf.design.id}/auto-fit/${wf.generatedCandidate.id}/artifact/${candidateInnerLabel}?v=${wf.meshVersion}`
     : null;
 
-  // A completed generation may intentionally keep generatedCandidate around so
-  // the user can still inspect the just-generated outer.  That must NOT make its
-  // pre-finalization intaglio_preview win over the finalized crown inner wall.
-  // `wf.innerCrown` points at the semantic `/inner-preview.stl` endpoint once the
-  // design has a finalized cutter; that endpoint prefers W3 `intaglio_surface`,
-  // whose cervical boundary is the exact shared 3D Margin seam.  Only fall back
-  // to the AUTO candidate preview when finalization has not produced an inner yet.
-  const acceptedInner = !hasFinal && !candidateInner && wf.design?.id && wf.outer
+  // Important for CrownFlow 1.0: accepting the outer (or editing it locally)
+  // must not make the already-generated intaglio disappear.  The previous guard
+  // required wf.outer, but during one-click generation the canvas can still be
+  // driven by candidatePreview while the accepted outer state is catching up.
+  // Ask the semantic inner-preview endpoint whenever *any* current outer is
+  // visible; the backend resolves the matching AUTO candidate by proposal id.
+  const acceptedInner = !hasFinal && !candidateInner && wf.design?.id && latestOuter
     ? `/api/designs/${wf.design.id}/inner-preview.stl?v=${wf.meshVersion}`
     : null;
   const activeInner = wf.innerCrown || candidateInner || acceptedInner || null;
