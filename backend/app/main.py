@@ -13,6 +13,11 @@ from . import v1_test_geometry_overrides as _v1_test_geometry_overrides  # noqa:
 # stronger patient B/L fullness, one-side proximal closure and antagonist-owned
 # occlusal relief. Import before API/services capture the patched functions.
 from . import v1_final_geometry_guards as _v1_final_geometry_guards  # noqa: F401
+# PatientEnvelope is a maximum feasible space, not a target tooth-size box.
+# Preserve template M/D/height proportions during the broad pre-fit and leave
+# large conflicts to the local proximal/occlusal owners instead of globally
+# squashing the crown.  This must run before auto_fit binds space-morph symbols.
+from . import v1_morphology_preservation_guard as _v1_morphology_preservation_guard  # noqa: F401
 # Some real abutment scans create a second tiny boundary loop *on the confirmed
 # Margin itself* after the non-planar clip.  Recover only that proven derived
 # sliver before services bind extract_abutment_support; genuine holes and
