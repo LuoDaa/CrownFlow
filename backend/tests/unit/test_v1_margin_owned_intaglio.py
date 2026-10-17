@@ -53,17 +53,28 @@ def test_pre_stitch_gate_runs_before_fixed_128_collar():
     assert "CERVICAL_ASSEMBLY_NOT_FEASIBLE" in source
 
 
-def test_margin_and_both_cervical_rings_are_strictly_128_point_to_point():
+def test_fixed_margin_uses_full_source_boundaries_not_sparse_128_substitution():
     source = (ROOT / "geometry" / "fixed_margin_128.py").read_text(encoding="utf-8")
     assert "FIXED_MARGIN_SAMPLES = 128" in source
-    assert "_conforming_ring" in source
-    assert "margin128 = _resample_closed_polyline(margin, FIXED_MARGIN_SAMPLES)" in source
-    assert "OUTER_I_TO_MARGIN_I_AND_INNER_I_TO_MARGIN_I" in source
+    assert "_conforming_ring" not in source
+    assert "_normalized_arclength_zipper" in source
+    assert "FULL_SOURCE_BOUNDARY_ARCLENGTH_TO_MARGIN_128" in source
+    assert "EXACT_CONFIRMED_MARGIN_128" in source
+    assert '"sparse_source_boundary_substitution_used": False' in source
+    assert '"zipper_mode": "DETERMINISTIC_NORMALIZED_ARCLENGTH"' in source
     assert '"dp_zipper_used": False' in source
-    assert '"intermediate_collar_ring_used": False' in source
     policy = (ROOT / "v1_margin_owned_intaglio.py").read_text(encoding="utf-8")
-    assert '"cervical_topology_owner": "FIXED_128_SHARED_INDEX"' in policy
+    assert '"cervical_topology_owner": "FULL_SOURCE_BOUNDARY_TO_FIXED_128_MARGIN"' in policy
     assert '"margin_topology_samples": 128' in policy
+
+
+def test_fixed_margin_preserves_exact_128_margin_and_reports_design_self_intersections():
+    source = (ROOT / "geometry" / "fixed_margin_128.py").read_text(encoding="utf-8")
+    assert "confirmed_margin_points_preserved_exactly" in source
+    assert "self_intersections_review_required" in source
+    assert "FIXED_128_FULL_BOUNDARY_INCIDENCE_FAILED" in source
+    policy = (ROOT / "v1_margin_owned_intaglio.py").read_text(encoding="utf-8")
+    assert "CERVICAL_COLLAR_SELF_INTERSECTION_REVIEW_REQUIRED" in policy
 
 
 def test_accepted_outer_is_frozen_only_during_finalization():
