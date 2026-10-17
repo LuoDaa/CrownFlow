@@ -37,6 +37,10 @@ from . import v1_cervical_fit_guard as _v1_cervical_fit_guard  # noqa: F401
 # clipped directly above the confirmed non-planar Margin, and Boolean is audit
 # only.  This must load before pipeline/auto_fit capture finalization functions.
 from . import v1_margin_owned_intaglio as _v1_margin_owned_intaglio  # noqa: F401
+# Closed morphology templates can contain an artificial basal fan.  Keep the
+# accepted outer immutable, but strip a *proven* fan from the derived W3 source
+# before cervical extraction and reject partial outer loops before Margin stitch.
+from . import v1_outer_closure_intaglio_guard as _v1_outer_closure_intaglio_guard  # noqa: F401
 
 from .api.crown import router as crown_router
 from .api.importers import router as importers_router
