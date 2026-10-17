@@ -30,7 +30,18 @@ def test_intaglio_component_is_proven_by_support_before_collar():
     assert ownership < coverage < collar
     assert ownership < axial < collar
     assert "PREPARED_SUPPORT_CORRESPONDENCE_V1" in source
-    assert "INTAGLIO_COMPONENT_NOT_PROVEN_BY_SUPPORT" in (ROOT / "v1_margin_owned_intaglio.py").read_text(encoding="utf-8")
+    policy = (ROOT / "v1_margin_owned_intaglio.py").read_text(encoding="utf-8")
+    assert "INTAGLIO_COMPONENT_NOT_PROVEN_BY_SUPPORT" in policy
+
+
+def test_surface_geodesic_band_replaces_axial_transition_semantics():
+    source = (ROOT / "v1_margin_owned_intaglio.py").read_text(encoding="utf-8")
+    geodesic = (ROOT / "geometry" / "cervical_geodesic.py").read_text(encoding="utf-8")
+    assert "SURFACE_GEODESIC_DISTANCE_FROM_CONFIRMED_MARGIN" in source
+    assert "inset_open_surface_geodesic" in source
+    assert "SURFACE_GRAPH_GEODESIC_TRIANGLE_CLIP_V1" in geodesic
+    assert "_clip_by_scalar" in geodesic
+    assert "body_vertices_moved\": 0" in geodesic
 
 
 def test_pre_stitch_gate_runs_before_any_canonical_collar():
