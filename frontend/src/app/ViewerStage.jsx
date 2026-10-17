@@ -11,6 +11,10 @@ import ViewTools, { useViewTools } from "../components/ViewTools";
  * 不能阻止用户先看到结果。AUTO 候选同时发布设计时 intaglio preview；
  * W3 成功后 `/inner-preview.stl` 优先返回与最终 Crown 共享 Margin seam 的
  * intaglio_surface，而不是带人工下封口的 Boolean cutter。
+ *
+ * 重要：DesignPage 的默认 select 状态必须展示已经生成完成的完整冠，而
+ * 不是继续用封底的 accepted outer 假装它就是颈缘/内冠结果。用户一旦选择
+ * 任何真正的塑形工具，再自动切回 SculptCanvas 编辑 accepted outer。
  */
 export default function ViewerStage({
   wf, mode = "patient", renderUpper = true, renderLower = true, renderSupport = true,
@@ -28,8 +32,16 @@ export default function ViewerStage({
   }, true, wf.step === "design");
 
   const visible = wf.view;
+  const stableCompletePreview = mode === "outer"
+    && wf.step === "design"
+    && wf.hasFinal
+    && Boolean(wf.finalCrown)
+    && wf.designTool === "select";
+  const renderMode = stableCompletePreview ? "final" : mode;
+  const renderEditorScene = stableCompletePreview ? null : editorScene;
+
   const latestOuter = wf.candidatePreview || wf.outer || null;
-  const hasFinal = mode === "final" && !!wf.finalCrown;
+  const hasFinal = renderMode === "final" && !!wf.finalCrown;
   const activeOuter = hasFinal ? null : latestOuter;
   const activeFinal = hasFinal ? wf.finalCrown : null;
   const previewSource = hasFinal ? "final"
@@ -65,8 +77,9 @@ export default function ViewerStage({
       <small>
         右键旋转 · 滚轮缩放 · 左右键平移
         {previewSource === "candidate" ? " · 正在显示本次生成候选（审核不阻止预览）" : ""}
-        {activeInner ? " · 同步显示当前内冠" : ""}
-        {mode === "final" && previewSource !== "final" && previewSource !== "none"
+        {stableCompletePreview ? " · 当前显示完整外冠 + 内冠；选择塑形工具会自动切回可编辑外冠" : ""}
+        {!stableCompletePreview && activeInner ? " · 同步显示当前内冠" : ""}
+        {renderMode === "final" && previewSource !== "final" && previewSource !== "none"
           ? " · 最终冠未完成，显示最新可用外冠" : ""}
       </small>
     </div>
@@ -76,7 +89,7 @@ export default function ViewerStage({
     </div>
     <div className="cd-viewport">
       <Viewer
-        mode={hasFinal ? "final" : mode === "final" ? "patient" : mode}
+        mode={hasFinal ? "final" : renderMode === "final" ? "patient" : renderMode}
         upper={renderUpper && visible.upper ? wf.upper : null}
         lower={renderLower && visible.lower ? wf.lower : null}
         support={renderSupport && visible.support ? wf.support : null}
@@ -92,7 +105,7 @@ export default function ViewerStage({
         marginMode="move"
         marginPatch={[]}
         marginRadius={1.5}
-        onMarginCurveChange={mode === "patient" && wf.margin.length >= 12 && !wf.busy && wf.marginTool !== "patch"
+        onMarginCurveChange={renderMode === "patient" && wf.margin.length >= 12 && !wf.busy && wf.marginTool !== "patch"
           ? (points) => wf.editMargin(points) : undefined}
         onMarginError={wf.setMsg}
         pickRole={wf.pickRole === "marginAnchor" || wf.pickRole === "margin" ? "support"
@@ -105,9 +118,9 @@ export default function ViewerStage({
         tools={tools}
         scanOpacity={visible.scanOpacity}
         headlight={headlight}
-        editorScene={editorScene}
+        editorScene={renderEditorScene}
         onRetryMesh={wf.reloadMeshes}
-        sceneKey={`${wf.caseId}:${mode}:${wf.meshVersion}:${wf.candidatePreview || ""}:${wf.finalCrown || ""}:${activeInner || ""}`}
+        sceneKey={`${wf.caseId}:${renderMode}:${wf.meshVersion}:${wf.candidatePreview || ""}:${wf.finalCrown || ""}:${activeInner || ""}:${stableCompletePreview ? "complete" : "edit"}`}
       />
       {!wf.upper && !wf.lower && !wf.support && !activeOuter && !activeFinal
         && <div className="cd-empty">导入病例文件后，这里显示牙列与牙冠</div>}
